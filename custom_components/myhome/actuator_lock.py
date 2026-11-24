@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import CALLBACK_TYPE, callback
@@ -26,10 +27,12 @@ __all__ = [
     "actuator_locks_of",
     "apply_actuator_lock_state",
     "is_lockable_entity",
+    "split_point_key",
 ]
 
 _AREA_WHERES = frozenset({"00", "1", "2", "3", "4", "5", "6", "7", "8", "9", "100"})
 _LOCKABLE_PLATFORMS = frozenset({"light", "switch", "cover"})
+_LOCK_SEQ = itertools.count(1)
 
 
 def _is_ascii_uint(value: str) -> bool:
@@ -73,6 +76,8 @@ def _split_point_key(where: Any, interface: Any = None) -> tuple[str, str | None
     if where is None or isinstance(where, bool) or isinstance(interface, bool):
         return ("", None)
     raw = str(where).strip()
+    if raw[:2] in ("1-", "2-"):
+        raw = raw[2:]
     if not raw or raw.startswith("#") or "#9" in raw:
         return ("", None)
     base_raw, routing, inline_iface = raw.rpartition("#4#")
@@ -99,6 +104,9 @@ def _split_point_key(where: Any, interface: Any = None) -> tuple[str, str | None
     if not _is_valid_point_where(canon):
         return ("", None)
     return (canon, iface)
+
+
+split_point_key = _split_point_key
 
 
 def _entity_key(entity: Any) -> tuple[str, str | None]:
@@ -173,6 +181,7 @@ class ActuatorLockManager:
         """Initialize the actuator lock manager for a gateway."""
         self.handler = handler
         self._locks: dict[tuple[str, str | None], bool] = {}
+        self._lock_seq: dict[tuple[str, str | None], int] = {}
         self._observed_keys: set[tuple[str, str | None]] = set()
         self._entities: dict[tuple[str, str | None], list[MyHOMEEntity]] = {}
 
@@ -236,10 +245,21 @@ class ActuatorLockManager:
                     entries.append(entry)
         return entries
 
+    def _copy_locks_to(self, target: ActuatorLockManager) -> None:
+        """Copy cached lock states and monotonic sequences to ``target``."""
+        for key, locked in self._locks.items():
+            target._locks[key] = locked
+            target._lock_seq[key] = self._lock_seq.get(key, 0)
+            if key in self._observed_keys:
+                target._observed_keys.add(key)
+            else:
+                target._observed_keys.discard(key)
+
     def _sync_secondary_gateways(self) -> None:
         """Adopt entities and lock states queued on secondary gateways before primary loaded."""
         if getattr(self.handler, "is_follower", False) is True:
             return
+        touched_keys: set[tuple[str, str | None]] = set()
         for entry in self._bus_config_entries():
             rt = get_runtime_data(entry)
             gw = getattr(rt, "gateway", None) if rt is not None else None
@@ -251,25 +271,40 @@ class ActuatorLockManager:
             ):
                 continue
             for key, locked in sec_mgr._locks.items():
-                if key in sec_mgr._observed_keys and key not in self._observed_keys:
+                sec_obs = key in sec_mgr._observed_keys
+                sec_seq = sec_mgr._lock_seq.get(key, 0)
+                cur_obs = key in self._observed_keys
+                cur_seq = self._lock_seq.get(key, 0)
+                if (sec_obs and (not cur_obs or sec_seq > cur_seq)) or (
+                    not cur_obs and (key not in self._locks or sec_seq > cur_seq)
+                ):
                     self._locks[key] = locked
-                    self._observed_keys.add(key)
-                elif key not in self._locks:
-                    self._locks[key] = locked
+                    self._lock_seq[key] = sec_seq
+                    if sec_obs:
+                        self._observed_keys.add(key)
+                    touched_keys.add(key)
             for key, ents in list(sec_mgr._entities.items()):
                 bucket = self._entities.setdefault(key, [])
                 for ent in ents:
                     if ent not in bucket:
                         bucket.append(ent)
-                    if key in self._locks:
-                        if key in self._observed_keys:
-                            ent.handle_actuator_lock(self._locks[key])
-                        elif getattr(ent, "_actuator_locked", None) is None:
-                            apply_actuator_lock_state(ent, self._locks[key])
+                    touched_keys.add(key)
             sec_mgr.clear()
+
+        for key in touched_keys:
+            if key not in self._locks:
+                continue
+            locked = self._locks[key]
+            is_obs = key in self._observed_keys
+            for ent in list(self._entities.get(key, ())):
+                if is_obs:
+                    ent.handle_actuator_lock(locked)
+                elif getattr(ent, "_actuator_locked", None) is None:
+                    apply_actuator_lock_state(ent, locked)
 
     def evacuate_secondary_entities(self) -> None:
         """Re-home still-loaded secondary entities and bus locks before primary unload."""
+        copied_mgrs: set[int] = set()
         for entry in self._bus_config_entries():
             rt = get_runtime_data(entry)
             gw = getattr(rt, "gateway", None) if rt is not None else None
@@ -277,10 +312,8 @@ class ActuatorLockManager:
                 continue
             sec_mgr = getattr(gw, "_actuator_locks", None)
             if isinstance(sec_mgr, ActuatorLockManager):
-                for key, locked in self._locks.items():
-                    sec_mgr._locks[key] = locked
-                    if key in self._observed_keys:
-                        sec_mgr._observed_keys.add(key)
+                self._copy_locks_to(sec_mgr)
+                copied_mgrs.add(id(sec_mgr))
         for key, ents in list(self._entities.items()):
             for ent in list(ents):
                 ent_gw = getattr(ent, "_gateway_handler", None)
@@ -288,10 +321,9 @@ class ActuatorLockManager:
                     continue
                 sec_mgr = getattr(ent_gw, "_actuator_locks", None)
                 if isinstance(sec_mgr, ActuatorLockManager):
-                    if key in self._locks:
-                        sec_mgr._locks[key] = self._locks[key]
-                        if key in self._observed_keys:
-                            sec_mgr._observed_keys.add(key)
+                    if id(sec_mgr) not in copied_mgrs:
+                        self._copy_locks_to(sec_mgr)
+                        copied_mgrs.add(id(sec_mgr))
                     sec_bucket = sec_mgr._entities.setdefault(key, [])
                     if ent not in sec_bucket:
                         sec_bucket.append(ent)
@@ -311,6 +343,7 @@ class ActuatorLockManager:
     def _apply_observed_key(self, key: tuple[str, str | None], locked: bool) -> None:
         """Record a live bus lock observation on ``key`` and notify registered entities."""
         self._locks[key] = locked
+        self._lock_seq[key] = next(_LOCK_SEQ)
         self._observed_keys.add(key)
         for entity in list(self._entities.get(key, ())):
             entity.handle_actuator_lock(locked)
@@ -488,6 +521,7 @@ class ActuatorLockManager:
             if key in self._observed_keys:
                 return
             self._locks[key] = lock_state
+            self._lock_seq[key] = next(_LOCK_SEQ)
             for entity in list(self._entities.get(key, ())):
                 if getattr(entity, "_actuator_locked", None) is None:
                     apply_actuator_lock_state(entity, lock_state)
@@ -503,10 +537,18 @@ class ActuatorLockManager:
         if not key[0]:
             return
         self._locks[key] = False
+        self._lock_seq[key] = next(_LOCK_SEQ)
         self._observed_keys.add(key)
         for entity in list(self._entities.get(key, ())):
+            changed = False
             if getattr(entity, "_actuator_locked", None) is True:
                 apply_actuator_lock_state(entity, False)
+                changed = True
+            if getattr(entity, "_actuation_unconfirmed", False) is True:
+                setattr(entity, "_actuation_unconfirmed", False)
+                setattr(entity, "_scope_run_active_until", None)
+                changed = True
+            if changed:
                 entity._publish_state()
 
     def is_locked(self, where: Any, interface: Any = None) -> bool | None:
@@ -520,5 +562,6 @@ class ActuatorLockManager:
     def clear(self) -> None:
         """Clear all cached lock states, observed keys, and registered entities."""
         self._locks.clear()
+        self._lock_seq.clear()
         self._observed_keys.clear()
         self._entities.clear()

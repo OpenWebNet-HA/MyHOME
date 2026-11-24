@@ -261,6 +261,8 @@ def test_actuator_lock_address_and_group_helpers() -> None:
     assert _split_point_key("2#1") == ("", None)
     assert _split_point_key("100") == ("", None)
     assert _split_point_key("0004#4#2") == ("04", "02")
+    assert _split_point_key("1-04", "01") == ("04", "01")
+    assert _split_point_key("2-35") == ("35", None)
 
     # Group tag helpers
     assert _parse_hash_group(None) is None
@@ -648,6 +650,15 @@ async def test_entity_lock_lifecycle_soft_restore_and_colocated_clear(hass: Home
     assert calls_when_already_false == [False]
     assert ent1.publish_count == 2
 
+    # clear_lock_from_actuation also clears _actuation_unconfirmed / _scope_run_active_until
+    # on co-located cover entities even when _actuator_locked is already False (or None)!
+    setattr(ent2, "_actuation_unconfirmed", True)
+    setattr(ent2, "_scope_run_active_until", 999.0)
+    mgr.clear_lock_from_actuation("56")
+    assert getattr(ent2, "_actuation_unconfirmed") is False
+    assert getattr(ent2, "_scope_run_active_until") is None
+    assert ent2.publish_count == 4
+
 
 async def test_added_to_hass_restore_without_manager_and_non_bool_attr(hass: HomeAssistant) -> None:
     """Verify MyHOMEEntity.async_added_to_hass soft-restores when gateway has no manager and ignores non-bool."""
@@ -996,3 +1007,57 @@ async def test_f422_cover_scope_members_and_multi_gateway_lifecycle_failover_and
             res2 = await pri_gw_2.send(unlock_cmd)
             assert res2 == "sec_ok"
             sec_send.assert_awaited_once()
+
+    # 4. Multi-secondary evacuation & reload sync preserves newer observation on 2nd secondary
+    # AND notifies entities already registered on Primary!
+    s2_mac = "00:03:50:cc:00:13"
+    _, sec2_gw = _make_gateway(
+        hass,
+        mac=s2_mac,
+        model="F454",
+        options={
+            CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED,
+            CONF_GATEWAY_ROLE: ROLE_SECONDARY,
+            CONF_PRIMARY_GATEWAY: p_mac,
+            CONF_DELEGATED_WHOS: [4],
+        },
+    )
+    assert pri_gw_2._actuator_locks.observe(OWNActuatorLockCommand.parse("*14*0*33##")) is True
+    pri_gw_2._actuator_locks.set_point_lock("34", None, True, observed=False)
+    sec2_gw._actuator_locks._observed_keys.add(("34", None))
+    await pri_gw_2.close_listener()
+    # Both secondaries received evacuated ("33", None) == True and soft ("34", None) == True (discarding stale obs)
+    assert sec_gw._actuator_locks.is_locked("33") is True
+    assert sec2_gw._actuator_locks.is_locked("33") is True
+    assert ("34", None) not in sec2_gw._actuator_locks._observed_keys
+    # While Primary is reloading, sec2_gw (2nd secondary) observes *14*1*33## (Unlock)!
+    assert sec2_gw._actuator_locks.observe(OWNActuatorLockEvent.parse("*14*1*33##")) is True
+
+    pri_gw_3 = MyHOMEGatewayHandler(hass, pri_entry)
+    pri_gw_3.is_connected = True
+    pri_gw_3._event_session_ready.set()
+    pri_entry.runtime_data = MyHOMERuntimeData(gateway=pri_gw_3)
+    # Register an entity on Primary directly + an unseen secondary entity before secondary sync runs
+    pri_ent_33 = _DummyPointEntity(hass, pri_gw_3, who="1", platform="light", where="33")
+    sec_unseen_99 = _DummyPointEntity(hass, sec2_gw, who="1", platform="light", where="99")
+    sec2_gw._actuator_locks._entities[("99", None)] = [sec_unseen_99]
+    pri_gw_3._actuator_locks._entities[("33", None)] = [pri_ent_33]
+    pri_gw_3._actuator_locks._sync_secondary_gateways()
+    assert pri_gw_3._actuator_locks.is_locked("33") is False
+    assert pri_ent_33.actuator_locked is False
+    assert sec_unseen_99.actuator_locked is None
+
+    # Also cover evacuate_secondary_entities when an entity's gateway is not in _bus_config_entries
+    standalone_sec = SimpleNamespace(
+        mac="00:03:50:cc:00:44",
+        unique_id="00:03:50:cc:00:44",
+        device_registry_id=None,
+        availability_signal=f"{DOMAIN}_44_avail",
+        _actuator_locks=ActuatorLockManager(SimpleNamespace()),  # type: ignore[arg-type]
+    )
+    orphan_sec_ent = _DummyPointEntity(hass, standalone_sec, who="1", platform="light", where="44")
+    pri_gw_3._actuator_locks._locks[("44", None)] = True
+    pri_gw_3._actuator_locks._entities[("44", None)] = [orphan_sec_ent]
+    pri_gw_3._actuator_locks.evacuate_secondary_entities()
+    assert standalone_sec._actuator_locks.is_locked("44") is True
+    assert orphan_sec_ent in standalone_sec._actuator_locks._entities[("44", None)]

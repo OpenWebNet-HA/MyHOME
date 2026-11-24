@@ -61,7 +61,7 @@ from .access_policy import (
     Effect,
     Intent,
 )
-from .actuator_lock import actuator_locks_of, apply_actuator_lock_state
+from .actuator_lock import actuator_locks_of, apply_actuator_lock_state, split_point_key
 from .const import (
     BUS_ROUTING,
     CALIBRATION_CUTOFF_EARLY,
@@ -184,7 +184,6 @@ from .where_grammar import (
     automation_dim10_info,
     canonical_point_spelling,
     expose_message_where,
-    normalize_expose_where,
     normalize_where,
 )
 
@@ -272,15 +271,6 @@ def _normalize_bus_interface(raw: Any) -> str | None:
     if not text:
         return None
     return text.zfill(2) if text.isdigit() else text
-
-
-def _canonical_impulse_where(address: str) -> str:
-    """Canonicalize a point WHO=1 WHERE including zero-padded ``#4#II`` interface suffix."""
-    norm = normalize_expose_where(1, address.removeprefix("1-"))
-    base, sep, suffix = norm.rpartition("#4#")
-    if sep and suffix.isascii() and suffix.isdigit():
-        return f"{base}#4#{int(suffix):02d}"
-    return norm
 
 
 def _message_has_calibrated_dim10(message: Any) -> bool:
@@ -615,7 +605,6 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     _following_scope: bool = False
     _expected_run_duration: float | None = None
     _scope_run_active_until: float | None = None
-    _last_move_generation: int = 0
     _unconfirmed_move_unsub: CALLBACK_TYPE | None = None
     _unconfirmed_move_task: asyncio.Task[None] | None = None
 
@@ -658,7 +647,16 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         )
 
         self._interface = interface
-        self._full_where = f"{self._where}#4#{self._interface}" if self._interface is not None else self._where
+        pt_canon, iface_canon = split_point_key(self._where, self._interface)
+        self._full_where = (
+            f"{pt_canon}#4#{iface_canon}"
+            if pt_canon and iface_canon is not None
+            else pt_canon
+            if pt_canon
+            else f"{self._where}#4#{self._interface}"
+            if self._interface is not None
+            else self._where
+        )
         # A configured class (myhome.yaml `class:`) wins; slat tilt only picks BLIND without one (#39).
         self._configured_device_class = device_class
         if device_class is not None:
@@ -840,7 +838,6 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._following_scope = False
         self._expected_run_duration = None
         self._scope_run_active_until = None
-        self._last_move_generation = 0
         self._unconfirmed_move_unsub = None
         self._unconfirmed_move_task = None
 
@@ -866,18 +863,18 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     def handle_actuator_lock(self, locked: bool) -> None:
         """Apply WHO=14 / Dimension 10 lock state, halting any active timed run or tilt."""
         lock_state = bool(locked)
+        already_same = self._actuator_locked is lock_state
         was_unconfirmed = self._actuation_unconfirmed
         self._actuation_unconfirmed = False
         self._scope_run_active_until = None
-        if self._actuator_locked is lock_state:
-            if was_unconfirmed:
-                self._publish_state()
-            return
-        apply_actuator_lock_state(self, lock_state)
+        if not already_same:
+            apply_actuator_lock_state(self, lock_state)
         if lock_state:
             self._clear_relay_hold()
+            calibrating_interrupted = False
             if self._calibrating:
                 self._interrupt_calibration("actuator locked (WHO=14)")
+                calibrating_interrupted = True
             if self._is_tilting:
                 self._cancel_stop_task()
                 self._run_generation += 1
@@ -902,6 +899,14 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 else:
                     self._abort_motion()
                     return
+                self._publish_state()
+                return
+            if already_same and not was_unconfirmed and not calibrating_interrupted:
+                return
+            self._publish_state()
+            return
+        if already_same and not was_unconfirmed:
+            return
         self._publish_state()
 
     def _run_may_finish_in_echo_window(self) -> bool:
@@ -2725,6 +2730,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         *,
         pre_stopped: bool = False,
         expected_run_duration: float | None = None,
+        _gen_out: list[int] | None = None,
     ) -> asyncio.Future[Any] | None:
         """Queue a direction command and return its delivery future."""
         if not pre_stopped and self._stops_before_move(is_tilting):
@@ -2733,7 +2739,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         if expected_run_duration is not None:
             self._expected_run_duration = expected_run_duration
         move_gen = self._run_generation
-        self._last_move_generation = move_gen
+        if _gen_out is not None:
+            _gen_out.append(move_gen)
         if direction == "open":
             command = OWNAutomationCommand.raise_shutter(self._full_where)
         else:
@@ -2785,8 +2792,11 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             finally:
                 self._pending_timed_target = None
             pre_stopped = True
-        written = await self._async_move("open" if opening else "close", pre_stopped=pre_stopped)
-        if self._is_promoted_native():
+        gen_box: list[int] = []
+        written = await self._async_move(
+            "open" if opening else "close", pre_stopped=pre_stopped, _gen_out=gen_box
+        )
+        if self._is_promoted_native() or not gen_box or self._run_generation != gen_box[0]:
             return
         self._settle_run_to_end(opening, written)
 
@@ -3074,17 +3084,21 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             await self._async_run_to_end(False, pre_stopped=pre_stopped)
             return
 
+        gen_box: list[int] = []
         self._pending_timed_target = target_int
         try:
             written = await self._async_move(
-                direction, pre_stopped=True, expected_run_duration=run_duration
+                direction,
+                pre_stopped=True,
+                expected_run_duration=run_duration,
+                _gen_out=gen_box,
             )
         finally:
             self._pending_timed_target = None
-        if self._is_promoted_native() or self._run_generation != self._last_move_generation:
+        if self._is_promoted_native() or not gen_box or self._run_generation != gen_box[0]:
             return
         self._timed_target_position = target_int
-        generation = self._run_generation
+        generation = gen_box[0]
 
         async def _auto_stop() -> None:
             try:
@@ -3459,17 +3473,21 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._tilt_direction = direction
         self._tilt_start_time = None
 
+        gen_box: list[int] = []
         try:
-            written = await self._async_move(direction, is_tilting=True)
+            written = await self._async_move(direction, is_tilting=True, _gen_out=gen_box)
         except Exception:
             self._is_tilting = False
             self._tilt_direction = None
             raise
 
+        if not gen_box or self._run_generation != gen_box[0]:
+            return
+
         # _tilt_start_time stays None (no slat travel counted) until the frame is
         # written: on a busy queue the motor is still idle for a while.
         self._pulse_written = written
-        self._start_pulse_auto_stop(written, self._run_generation, self._motor_started)
+        self._start_pulse_auto_stop(written, gen_box[0], self._motor_started)
         if self.hass is not None:
             self.async_write_ha_state()
 
@@ -4263,7 +4281,16 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
             entity_name=entity_name,
         )
         self._interface = interface
-        self._full_where = f"{self._where}#4#{self._interface}" if self._interface is not None else self._where
+        pt_canon, iface_canon = split_point_key(self._where, self._interface)
+        self._full_where = (
+            f"{pt_canon}#4#{iface_canon}"
+            if pt_canon and iface_canon is not None
+            else pt_canon
+            if pt_canon
+            else f"{self._where}#4#{self._interface}"
+            if self._interface is not None
+            else self._where
+        )
         self._attr_device_class = device_class
         self._travel_time = travel_time
         self._pulse_duration = pulse_duration
@@ -4591,10 +4618,10 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
             or getattr(message, "is_group", False) is True
         ):
             return False
+        own_key = split_point_key(self._where, self._interface)
         msg_where = expose_message_where(message)
-        if not msg_where or msg_where == "0" or msg_where.startswith("#"):
-            return False
-        return _canonical_impulse_where(msg_where) == _canonical_impulse_where(self._full_where)
+        msg_iface = None if "#4#" in msg_where else getattr(message, "interface", None)
+        return bool(own_key[0]) and split_point_key(msg_where, msg_iface) == own_key
 
     @callback
     def handle_event(self, message: Any) -> None:

@@ -372,11 +372,11 @@ class GatewayEventDispatcher:
         if isinstance(message, OWNMessage):
             dispatcher_send(self.hass, f"myhome_message_{self.handler.mac}", message)
             self.tell_central_unit(message, *central)
+            self.handler._correlate_shared_bus_traffic(message)
+            self.handler._bridge_to_primary(message)
             echo_watchdog = echo_watchdog_of(self.handler)
             if echo_watchdog is not None:
                 echo_watchdog.status_seen(message)
-            self.handler._correlate_shared_bus_traffic(message)
-            self.handler._bridge_to_primary(message)
             # Diagnostic WHOs (1001 for lighting) belong to their functional subsystem:
             # on a shared bus only that subsystem's owner raises the device's issues.
             if who_int in (1, 4, 1001):

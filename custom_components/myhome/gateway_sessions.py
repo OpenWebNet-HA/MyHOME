@@ -1689,11 +1689,11 @@ class CommandWorkerPool:
                                 )
                                 if isinstance(events, GatewayEventDispatcher):
                                     events.tell_central_unit(resp, *central)
+                                # A reply to a request sent for an offline primary
+                                self.handler._bridge_to_primary(resp)
                                 echo_watchdog = echo_watchdog_of(self.handler)
                                 if echo_watchdog is not None:
                                     echo_watchdog.status_seen(resp)
-                                # A reply to a request sent for an offline primary
-                                self.handler._bridge_to_primary(resp)
                 except asyncio.CancelledError:
                     _cancel_written(task)
                     raise

@@ -24,6 +24,7 @@ import inspect
 import time
 from collections.abc import Callable
 from datetime import timedelta
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -1827,7 +1828,11 @@ async def test_audit_items_6_8_9_10_area0_canonical_advanced_restore_short_runs_
             assert gate_f422.is_opening is True
             gate_f422._cancel_travel_timer()
 
-            # Reverse direction: 2-digit interface="01" (with legacy 1- prefix) matches *1*1*04#4#1##
+            # Reverse direction: 2-digit interface="01" (with legacy 1- prefix) registers with
+            # ActuatorLockManager, transmits canonical 04#4#01, matches *1*1*04#4#1##, and handles
+            # event objects providing .interface without where_param!
+            assert gate_f422._full_where == "04#4#01"
+            assert gate_f422.extra_state_attributes["interface"] == "1"
             gate_f422_rev = MyHOMEImpulseCover(
                 hass=hass,
                 name="Riser Gate Rev",
@@ -1846,7 +1851,161 @@ async def test_audit_items_6_8_9_10_area0_canonical_advanced_restore_short_runs_
                 model="Impulse",
                 gateway=handler,
             )
+            gate_f422_rev.hass = hass
+            gate_f422_rev.entity_id = "cover.riser_gate_rev"
+            gate_f422_rev.async_write_ha_state = MagicMock()
+            gate_f422_rev.async_schedule_update_ha_state = MagicMock()
+            await gate_f422_rev.async_added_to_hass()
+            assert gate_f422_rev._full_where == "04#4#01"
+            assert handler._actuator_locks.observe(OWNActuatorLockCommand.parse("*14*0*04#4#01##")) is True
+            assert gate_f422_rev.actuator_locked is True
             assert gate_f422_rev._is_own_impulse_event(OWNEvent.parse("*1*1*04#4#1##")) is True
+            assert (
+                gate_f422_rev._is_own_impulse_event(
+                    SimpleNamespace(who=1, where="04", interface="1", where_param=[])
+                )
+                is True
+            )
+            assert (
+                gate_f422_rev._is_own_impulse_event(
+                    SimpleNamespace(who=1, where="04", interface="02", where_param=[])
+                )
+                is False
+            )
+            gate_f422_rev.handle_event(OWNEvent.parse("*1*1*04#4#1##"))
+            assert gate_f422_rev.actuator_locked is False
+            gate_f422_rev._cancel_travel_timer()
+
+            # 6. handle_actuator_lock(True) when _actuator_locked is ALREADY True (e.g. soft-restored)
+            # immediately aborts an in-flight Venetian slat tilt / calibration / motion, while staying
+            # a 0-publish idempotent no-op when completely idle!
+            cov_tilt = MyHOMECover(
+                hass=hass,
+                name="Venetian 36",
+                entity_name="Venetian 36",
+                device_id="36",
+                who="2",
+                where="36",
+                interface=None,
+                advanced=False,
+                slat_tilt=True,
+                slat_time=1.5,
+                manufacturer="BTicino",
+                model="F411/2",
+                gateway=handler,
+                travel_time=10,
+            )
+            cov_tilt.hass = hass
+            cov_tilt.entity_id = "cover.venetian_36"
+            cov_tilt.async_write_ha_state = MagicMock()
+            cov_tilt.async_schedule_update_ha_state = MagicMock()
+            bind_entity(hass, cov_tilt, gateway=handler)
+            await cov_tilt.async_added_to_hass()
+            cov_tilt._attr_current_cover_position = 50
+            cov_tilt._start_position = 50
+            cov_tilt._attr_current_cover_tilt_position = 0
+            assert handler._actuator_locks.observe(OWNActuatorLockCommand.parse("*14*0*36##")) is True
+            assert cov_tilt.actuator_locked is True
+            cov_tilt.async_schedule_update_ha_state.reset_mock()
+            # Duplicate idle lock is a 0-publish no-op
+            assert handler._actuator_locks.observe(OWNActuatorLockCommand.parse("*14*0*36##")) is True
+            assert cov_tilt.async_schedule_update_ha_state.call_count == 0
+            # Start tilt while locked -> mid-ECHO_WINDOW duplicate *14*0*36## aborts tilt immediately!
+            await cov_tilt.async_set_cover_tilt_position(tilt_position=100)
+            assert cov_tilt._is_tilting is True
+            assert cov_tilt._stop_task is not None
+            cov_tilt.async_schedule_update_ha_state.reset_mock()
+            assert handler._actuator_locks.observe(OWNActuatorLockCommand.parse("*14*0*36##")) is True
+            assert cov_tilt._is_tilting is False
+            assert cov_tilt._attr_current_cover_tilt_position == 0
+            assert cov_tilt.async_schedule_update_ha_state.call_count == 1
+            # Also interrupts active calibration when _actuator_locked is already True
+            cov_tilt._calibrating = True
+            cov_tilt._calibration_interrupted = None
+            cov_tilt.async_schedule_update_ha_state.reset_mock()
+            cov_tilt.handle_actuator_lock(True)
+            assert cov_tilt._calibration_interrupted == "actuator locked (WHO=14)"
+            assert cov_tilt.async_schedule_update_ha_state.call_count == 1
+            cov_tilt._calibrating = False
+
+            # 7. Concurrent async_set_cover_position / _async_run_to_end / _async_start_tilt calls
+            # isolate each call's generation via _gen_out instead of a shared _last_move_generation!
+            cov_race = MyHOMECover(
+                hass=hass,
+                name="Race 37",
+                entity_name="Race 37",
+                device_id="37",
+                who="2",
+                where="37",
+                interface=None,
+                advanced=False,
+                slat_tilt=True,
+                slat_time=1.5,
+                manufacturer="BTicino",
+                model="F411/2",
+                gateway=handler,
+                travel_time=10,
+            )
+            cov_race.hass = hass
+            cov_race.entity_id = "cover.race_37"
+            cov_race.async_write_ha_state = MagicMock()
+            cov_race.async_schedule_update_ha_state = MagicMock()
+            cov_race._attr_current_cover_position = 0
+            cov_race._start_position = 0
+            cov_race._attr_current_cover_tilt_position = 0
+            orig_send = handler.send
+            gate_send_a = asyncio.Event()
+            entered_send_a = asyncio.Event()
+            call_idx = 0
+
+            async def _interleaved_send(cmd: Any) -> Any:
+                nonlocal call_idx
+                call_idx += 1
+                if call_idx == 1:
+                    entered_send_a.set()
+                    await gate_send_a.wait()
+                fut: asyncio.Future[float] = hass.loop.create_future()
+                fut.set_result(time.monotonic())
+                return fut
+
+            handler.send = _interleaved_send  # type: ignore[method-assign]
+            try:
+                task_a = asyncio.create_task(cov_race.async_set_cover_position(position=40))
+                await entered_send_a.wait()
+                await cov_race.async_set_cover_position(position=70)
+                assert cov_race._timed_target_position == 70
+                task_b_stop = cov_race._stop_task
+                gate_send_a.set()
+                await task_a
+                # Call A must NOT overwrite Call B's _timed_target_position or _stop_task!
+                assert cov_race._timed_target_position == 70
+                assert cov_race._stop_task is task_b_stop
+                cov_race._cancel_stop_task()
+
+                # Same supersede guard in _async_run_to_end and _async_start_tilt
+                call_idx = 0
+                gate_send_a = asyncio.Event()
+                entered_send_a = asyncio.Event()
+                task_end_a = asyncio.create_task(cov_race._async_run_to_end(True, pre_stopped=True))
+                await entered_send_a.wait()
+                cov_race._run_generation += 1
+                gate_send_a.set()
+                await task_end_a
+                assert cov_race._stop_task is None
+
+                call_idx = 0
+                gate_send_a = asyncio.Event()
+                entered_send_a = asyncio.Event()
+                cov_race._attr_is_opening = False
+                cov_race._attr_is_closing = False
+                task_tilt_a = asyncio.create_task(cov_race._async_start_tilt(100))
+                await entered_send_a.wait()
+                cov_race._run_generation += 1
+                gate_send_a.set()
+                await task_tilt_a
+                assert cov_race._stop_task is None
+            finally:
+                handler.send = orig_send  # type: ignore[method-assign]
         finally:
             handler._command_pool.close()
             worker.cancel()

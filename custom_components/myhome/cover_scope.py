@@ -456,6 +456,7 @@ class MyHOMEScopeCover(MyHOMECover):
         *,
         pre_stopped: bool = False,
         expected_run_duration: float | None = None,
+        _gen_out: list[int] | None = None,
     ) -> asyncio.Future[Any] | None:
         if is_tilting and not self._fan_out():
             # On the local bus one scope frame turns every member's slats: they
@@ -470,6 +471,7 @@ class MyHOMEScopeCover(MyHOMECover):
             is_tilting=is_tilting,
             pre_stopped=pre_stopped,
             expected_run_duration=expected_run_duration,
+            _gen_out=_gen_out,
         )
         if not is_tilting:
             self._watch_run()

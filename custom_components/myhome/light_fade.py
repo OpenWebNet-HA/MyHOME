@@ -55,6 +55,7 @@ class SoftwareFadeEngine:
         self._step1_echo_event: asyncio.Event | None = None
         self.pending_first_step_pct: int | None = None
         self.fade_start_pct: int | None = None
+        self.last_instant_written: Any = None
 
     def notify_bus_echo(self) -> None:
         """Signal that a non-translation bus status or brightness echo arrived."""
@@ -94,10 +95,11 @@ class SoftwareFadeEngine:
     ) -> bool:
         """Execute instant brightness if delta <= 1%, skipping bus if already at target."""
         _ = is_on
+        self.last_instant_written = None
         delta_pct = abs(target_pct - start_pct)
         if delta_pct <= 1:
             if not (self.is_on_cb() and target_pct == start_pct):
-                await self.set_brightness_instant(target_pct)
+                self.last_instant_written = await self.set_brightness_instant(target_pct)
             return True
         return False
 
@@ -253,8 +255,9 @@ class SoftwareFadeEngine:
                         finally:
                             if self._step1_echo_event is echo_event:
                                 self._step1_echo_event = None
-                            self.pending_first_step_pct = None
-                            self.fade_start_pct = None
+                            if fade_id == self.fade_id:
+                                self.pending_first_step_pct = None
+                                self.fade_start_pct = None
                         if not confirmed:
                             LOGGER.debug(
                                 "%s Aborting software fade (id=%s): no bus echo within %.2fs",
@@ -284,8 +287,8 @@ class SoftwareFadeEngine:
         except Exception as err:  # prevent "Task exception was never retrieved"
             LOGGER.warning("%s Fade task error (id=%s): %s", self.where, fade_id, err)
         finally:
-            self._step1_echo_event = None
-            self.pending_first_step_pct = None
-            self.fade_start_pct = None
             if fade_id == self.fade_id:
+                self._step1_echo_event = None
+                self.pending_first_step_pct = None
+                self.fade_start_pct = None
                 self.fade_task = None
