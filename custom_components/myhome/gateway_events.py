@@ -53,6 +53,7 @@ from .where_grammar import (
     central_unit_season,
     four_zone_central_where,
     is_central_unit_report,
+    is_four_zone_controlled_zone_where,
     is_probe,
     thermo_event_interface,
     where_param,
@@ -87,7 +88,11 @@ def note_central_unit_report(handler: Any, message: Any) -> tuple[bool, bool]:
     (``GatewayEventDispatcher.note_central_unit``), and by the entity for a frame handed to
     it directly (``climate._handle_event``).
     """
-    if thermo_event_interface(message) is not None or four_zone_central_where(message) is not None:
+    if (
+        thermo_event_interface(message) is not None
+        or four_zone_central_where(message) is not None
+        or is_four_zone_controlled_zone_where(message)
+    ):
         return False, False
     news = getattr(handler, "has_central_unit", False) is not True
     found_by_zone = news and central_report_zone(message) is not None

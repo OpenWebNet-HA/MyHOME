@@ -219,6 +219,7 @@ __all__ = [
     "is_central_unit_actuator_status",
     "is_central_unit_report",
     "is_four_zone_central_where",
+    "is_four_zone_controlled_zone_where",
     "is_probe",
     "is_pump",
     "is_split_unit",
@@ -318,11 +319,10 @@ def canonical_central_zone(zone: str) -> str:
 
 
 def split_zone_routing(zone: str, routing: str) -> tuple[str, str]:
-    """Separate an inline ``#4#II`` F422 routing suffix from ``zone`` when ``routing`` is empty."""
-    if not routing:
-        base, sep, iface = zone.rpartition("#4#")
-        if sep and base and iface.isascii() and iface.isdigit() and 1 <= len(iface) <= 2:
-            return base, f"#4#{iface.zfill(2)}"
+    """Separate an inline ``#4#II`` F422 routing suffix from ``zone``."""
+    base, sep, iface = zone.rpartition("#4#")
+    if sep and base and iface.isascii() and iface.isdigit() and 1 <= len(iface) <= 2:
+        return base, routing or f"#4#{iface.zfill(2)}"
     return zone, routing
 
 
@@ -600,14 +600,35 @@ def central_unit_season(message: Any) -> str | None:
     return season if isinstance(season, str) else None
 
 
+def is_four_zone_controlled_zone_where(message: Any) -> bool:
+    """Whether ``message`` addresses a zone under a 4-zone central unit (``#Z#C`` / ``#Z#C#4#II``).
+
+    OWNd parses ``*4*110*#3#1##`` and ``*#4*#3#1*14*0180*1##`` as ``where="#3"``,
+    ``where_param=["1"]``. The 4695 implements ``#Z#C`` (SCS ``C2``) read-only and drops all
+    ``#Z#C`` / ``#Z`` writes (``plant-cu4695.tsv:27,35-36``), so a ``#Z#C`` report must never
+    flip ``has_central_unit`` or mark zone ``Z`` as controlled by a 99-zone central unit (#994).
+    """
+    raw = str(getattr(message, "where", None) or "").strip().removeprefix("4-")
+    if not raw.startswith("#"):
+        return False
+    zone_digits = raw[1:]
+    if not (_is_ascii_uint(zone_digits) and 1 <= int(zone_digits) <= 99):
+        return False
+    params = _where_params(message)
+    if len(params) == 3 and params[1] == "4" and _is_ascii_uint(params[2]) and 1 <= len(params[2]) <= 2:
+        params = params[:1]
+    return len(params) == 1 and _is_ascii_uint(params[0]) and 1 <= int(params[0]) <= 99
+
+
 def central_report_zone(message: Any) -> str | None:
-    """The zone (``"1"``..``"99"``) a central unit's own report is about, else ``None``.
+    """The zone (``"1"``..``"99"``) a 99-zone central unit's own report is about, else ``None``.
 
     For a frame :func:`is_central_unit_report` accepts whose WHERE is ``#Z``: ``*4*110*#3##``
-    and ``*#4*#3*14*0250*1##`` give ``"3"``. ``#0`` / ``#0#N`` (the central unit itself) and the
-    generic ``*4*310*#Z##`` / ``*4*311*#Z##`` give ``None``.
+    and ``*#4*#3*14*0250*1##`` give ``"3"``. ``#0`` / ``#0#N`` (a central unit itself),
+    4-zone controlled-zone reports (``#Z#C``, e.g. ``*4*110*#3#1##``), and the generic
+    ``*4*310*#Z##`` / ``*4*311*#Z##`` give ``None``.
     """
-    if not is_central_unit_report(message):
+    if not is_central_unit_report(message) or is_four_zone_controlled_zone_where(message):
         return None
     return canonical_thermo_zone(str(getattr(message, "where", None) or "").strip())
 

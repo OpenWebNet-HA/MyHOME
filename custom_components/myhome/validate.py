@@ -150,6 +150,7 @@ from .where_grammar import (
     canonical_central_zone,
     canonical_point_spelling,
     canonical_thermo_zone,
+    is_four_zone_central_where,
     parse_thermo_actuator_where,
     split_zone_routing,
     validate_thermo_trigger_command,
@@ -380,20 +381,24 @@ class MyHomeDeviceSchema(Schema):
             if CONF_WHERE in data[device]:
                 _rekeyed_data[f"{data[device][CONF_WHO]}-{data[device][CONF_WHERE]}{routing}"] = data[device]
             elif CONF_ZONE in data[device]:
-                _new_key = f"{data[device][CONF_WHO]}-{data[device][CONF_ZONE]}{routing}"
+                raw_base, raw_routing = split_zone_routing(str(data[device][CONF_ZONE]), routing)
+                _new_key = f"{data[device][CONF_WHO]}-{raw_base}{raw_routing}"
                 zone = str(data[device][CONF_ZONE])
-                if data[device][CONF_CENTRAL]:
-                    # 0, #0 and #0#0 are the 99-zone central unit (#0); #0#N is the 4-zone one
-                    # already; an interface written inside the zone (0#4#01) stays behind it.
+                if data[device][CONF_CENTRAL] or is_four_zone_central_where(zone):
+                    # 0, #0 and #0#0 are the 99-zone central unit (#0); #0#N / #0#0N is the
+                    # 4-zone one (canonicalized and marked central even when ``central: true``
+                    # is omitted); an interface written inside the zone (0#4#01) stays behind it.
                     zone = canonical_central_zone(zone)
-                data[device][CONF_ZONE] = zone
+                    data[device][CONF_CENTRAL] = True
+                base_zone, eff_routing = split_zone_routing(zone, routing)
+                full_zone = f"{base_zone}{eff_routing}"
+                data[device][CONF_ZONE] = base_zone if routing else full_zone
                 data[device][CONF_NAME] = (
                     data[device][CONF_NAME] if CONF_NAME in data[device] else "Central unit" if data[device][CONF_ZONE].startswith("#0") else f"Zone {data[device][CONF_ZONE]}"
                 )
                 _rekeyed_data[str(device)] = data[device]
-                base_zone, eff_routing = split_zone_routing(str(data[device][CONF_ZONE]), routing)
                 clean_zone = base_zone.split("#")[-1]
-                _rekeyed_data[f"{data[device][CONF_ZONE]}{routing}"] = data[device]
+                _rekeyed_data[full_zone] = data[device]
                 _zone_aliases = [_new_key, f"{clean_zone}{eff_routing}"]
                 if not eff_routing:
                     _zone_aliases.append(f"zone_{clean_zone}")

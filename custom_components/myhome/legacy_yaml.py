@@ -35,6 +35,7 @@ from .where_grammar import (
     canonical_central_zone,
     canonical_point_address,
     canonical_thermo_zone,
+    is_four_zone_central_where,
     split_zone_routing,
 )
 
@@ -132,7 +133,7 @@ def _apply_yaml_platforms(
                         )
                         configured_platforms[plat][where_key] = runtime_cfg
                 if z_val is not None:
-                    configured_platforms[plat][f"{z_val}{routing}"] = runtime_cfg
+                    configured_platforms[plat][f"{base_z}{eff_routing}"] = runtime_cfg
                     if base_z.startswith("#0#"):
                         central_aliases.extend((plat, alias, runtime_cfg) for alias in aliases)
                     else:
@@ -209,13 +210,18 @@ def canonicalise_imported_platforms(
             for cfg in devices.values()
             if plat == "climate"
             and isinstance(cfg, dict)
-            and cfg.get(CONF_CENTRAL)
+            and (cfg.get(CONF_CENTRAL) or is_four_zone_central_where(str(cfg.get(CONF_ZONE) or "")))
             and isinstance(cfg.get(CONF_ZONE), str)
             and canonical_central_zone(cfg[CONF_ZONE]) == cfg[CONF_ZONE]
         }
         for d_id, cfg in devices.items():
             who = str(cfg.get(CONF_WHO, "")) if isinstance(cfg, dict) else ""
-            stored_zone = cfg.get(CONF_ZONE) if plat == "climate" and isinstance(cfg, dict) and cfg.get(CONF_CENTRAL) else None
+            is_central_cfg = (
+                plat == "climate"
+                and isinstance(cfg, dict)
+                and (cfg.get(CONF_CENTRAL) or is_four_zone_central_where(str(cfg.get(CONF_ZONE) or "")))
+            )
+            stored_zone = cfg.get(CONF_ZONE) if is_central_cfg else None
             if isinstance(stored_zone, str) and (fixed_zone := canonical_central_zone(stored_zone)) != stored_zone:
                 # 2.0.0 stored ``zone: "0"`` with ``central: true`` as ``#0#0`` (and ``#0#1`` as
                 # ``#0##0#1``, ``0#4#01`` as ``#0#0#4#01``); the validator gives ``#0``
@@ -230,7 +236,7 @@ def canonicalise_imported_platforms(
                         plat, d_id, new_id if new_id != d_id else fixed_zone,
                     )
                     continue
-                new_devices[new_id] = {**cfg, CONF_ZONE: fixed_zone}
+                new_devices[new_id] = {**cfg, CONF_ZONE: fixed_zone, CONF_CENTRAL: True}
                 central_fixed = True
                 if new_id != d_id:
                     central_moved.append(f"{plat}: {d_id} -> {new_id}")

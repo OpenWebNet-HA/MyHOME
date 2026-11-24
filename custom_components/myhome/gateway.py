@@ -1119,6 +1119,9 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
     @property
     def general_zone_request_refused(self) -> bool:
         """Whether this gateway drops the general heating status request (``*#4*0##``)."""
+        target = self._who4_target()
+        if target is not self:
+            return target.general_zone_request_refused
         supported = getattr(getattr(self.gateway, "profile", None), "supports_general_heating_status", None)
         if isinstance(supported, bool):
             return not supported

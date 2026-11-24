@@ -122,6 +122,8 @@ from .where_grammar import (
     is_central_thermo_where,
     is_central_unit_report,
     is_external_probe,
+    is_four_zone_central_where,
+    is_four_zone_controlled_zone_where,
     is_probe,
     parse_thermo_actuator_where,
     thermo_dim19_status,
@@ -710,6 +712,8 @@ async def async_setup_entry(
 
     # ── WHO 4: 0-10 V proportional actuator output level sensors (#949) ──
     def _has_climate_zone_entity(zone: str, iface: str | None) -> bool:
+        if _unified_four_zone_central_meta(zone, iface) is not None:
+            return True
         reg = er.async_get(hass)
         for ent in er.async_entries_for_config_entry(reg, config_entry.entry_id):
             if ent.domain != "climate" or not ent.unique_id:
@@ -731,7 +735,7 @@ async def async_setup_entry(
             return not _has_climate_zone_entity(zone, iface)
         return False
 
-    def _is_explicit_standalone_zone(zone: str, iface: str | None) -> bool:
+    def _has_separate_master_zone(zone: str, iface: str | None) -> bool:
         if iface is None and zone in standalone_zones:
             return True
         z_cfg = _climate_zone_config(configured_climate, zone, iface) or (
@@ -739,13 +743,17 @@ async def async_setup_entry(
             if len(zone) == 1
             else {}
         )
-        return z_cfg.get(CONF_STANDALONE) is True
+        return (
+            bool(z_cfg)
+            and not bool(z_cfg.get(CONF_CENTRAL, False))
+            and not is_four_zone_central_where(str(z_cfg.get(CONF_ZONE, "")))
+        )
 
     def _unified_four_zone_central_meta(
         zone: str, iface: str | None
     ) -> tuple[str, str, str, str] | None:
         """Device metadata of a 4-zone central unit (#0#N) unifying ``(zone, iface)``, if any."""
-        if _is_explicit_standalone_zone(zone, iface):
+        if _has_separate_master_zone(zone, iface):
             return None
         default_name = (
             f"Central Unit {zone.zfill(2)}I{iface}"
@@ -959,7 +967,7 @@ async def async_setup_entry(
     is_follower = getattr(runtime, "is_follower", False) is True
     primary_mac = getattr(runtime, "primary_gateway_mac", None)
     known_climate_temp: dict[tuple[str, str | None], MyHOMEClimateTemperatureSensor] = {}
-    known_climate_humidity: set[tuple[str, str | None]] = set()
+    known_climate_humidity: dict[tuple[str, str | None], MyHOMEClimateHumiditySensor] = {}
 
     def _zone_key(zone: str, iface: str | None) -> str:
         return f"{zone}{BUS_ROUTING}{iface}" if iface else zone
@@ -1044,6 +1052,16 @@ async def async_setup_entry(
         )
         _apply_legacy_compat_name(sensor, reg)
         known_climate_temp[pair] = sensor
+
+        @callback
+        def _forget_climate_temp(
+            p: tuple[str, str | None] = pair,
+            s: MyHOMEClimateTemperatureSensor = sensor,
+        ) -> None:
+            if known_climate_temp.get(p) is s:
+                known_climate_temp.pop(p, None)
+
+        sensor.async_on_remove(_forget_climate_temp)
         sensor.async_on_remove(
             runtime.router.subscribe(
                 "4", [f"climate_sensor_zone:{_zone_key(zone, iface)}"], sensor.handle_event
@@ -1072,7 +1090,6 @@ async def async_setup_entry(
         zone_dev_id = device_id or meta_dev_id
         if _climate_companion_owned_by_primary(reg, zone, iface, zone_dev_id, "-humidity"):
             return None
-        known_climate_humidity.add(pair)
         sensor = MyHOMEClimateHumiditySensor(
             hass=hass,
             name=name or meta_name,
@@ -1084,6 +1101,17 @@ async def async_setup_entry(
             gateway=gateway,
             initial_value=initial_value,
         )
+        known_climate_humidity[pair] = sensor
+
+        @callback
+        def _forget_climate_humidity(
+            p: tuple[str, str | None] = pair,
+            s: MyHOMEClimateHumiditySensor = sensor,
+        ) -> None:
+            if known_climate_humidity.get(p) is s:
+                known_climate_humidity.pop(p, None)
+
+        sensor.async_on_remove(_forget_climate_humidity)
         sensor.async_on_remove(
             runtime.router.subscribe(
                 "4", [f"climate_sensor_zone:{_zone_key(zone, iface)}"], sensor.handle_event
@@ -2494,6 +2522,7 @@ class MyHOMEActuatorOutputSensor(MyHOMEEntity, SensorEntity):
             is_central_unit_report(message)
             and thermo_event_interface(message) is None
             and four_zone_central_where(message) is None
+            and not is_four_zone_controlled_zone_where(message)
         ):
             self._gateway_handler.has_central_unit = True
         if thermo_event_interface(message) != self._interface:

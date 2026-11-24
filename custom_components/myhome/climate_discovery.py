@@ -39,10 +39,11 @@ from OWNd.message import MESSAGE_TYPE_ACTION, OWNHeatingEvent
 from .const import (
     BUS_ROUTING,
     CONF_BUS_INTERFACE,
-    CONF_STANDALONE,
+    CONF_CENTRAL,
     CONF_STANDALONE_ZONES,
     CONF_WHERE,
     CONF_WHO,
+    CONF_ZONE,
     DOMAIN,
     LOGGER,
 )
@@ -64,7 +65,6 @@ from .where_grammar import (
     four_zone_central_zone,
     is_central_thermo_where,
     is_central_unit_actuator_status,
-    is_central_unit_report,
     is_four_zone_central_where,
     is_probe,
     is_pump,
@@ -230,14 +230,15 @@ def _calling_zones(message: Any) -> tuple[list[str], str | None]:
 def _zone_address(message: Any) -> Address | None:
     """The zone a frame discovers; ``None`` for broadcasts and probes.
 
-    A report of a 4-zone central unit (``#0#N``) discovers the central unit, not zone N (#994).
+    A non-dimension report of a 4-zone central unit (``*4*WHAT*#0#N##``) discovers the central
+    unit, not zone N (#994). Dimension frames on ``#0#N`` (``*#4*#0#N*DIM*...##``) are never
+    emitted by 4695 hardware (``plant-cu4695.tsv:19-21``) and discover neither ``#0#N`` nor Zone N.
     """
     zones, interface = _calling_zones(message)
     if not zones:
         return None
-    central = four_zone_central_where(message) if is_central_unit_report(message) else None
-    if central is not None:
-        return Address(central, interface)
+    if (central := four_zone_central_where(message)) is not None:
+        return None if getattr(message, "dimension", None) is not None else Address(central, interface)
     return Address(zones[0], interface)
 
 
@@ -443,13 +444,21 @@ class ZoneDiscovery:
             if not isinstance(task, asyncio.Future):
                 run.close()  # a config entry double that schedules nothing
 
-    def _is_explicit_standalone_zone(self, zone: str, interface: str | None) -> bool:
-        """Whether zone ``zone`` (on ``interface``) is explicitly configured ``standalone: true``."""
+    def _has_separate_master_zone(self, zone: str, interface: str | None) -> bool:
+        """Whether master zone ``zone`` (on ``interface``) stays separate from ``#0#N``.
+
+        True when ``zone`` is listed in ``standalone_zones`` gateway options or has its own
+        explicit non-central entry in ``myhome.yaml`` (independent of YAML key order).
+        """
         norm_if = _two_digit_interface(interface)
         if norm_if is None and zone in self._standalone_zones:
             return True
         for dev_id, cfg in self._configured.items():
-            if not isinstance(cfg, dict) or cfg.get(CONF_STANDALONE) is not True:
+            if (
+                not isinstance(cfg, dict)
+                or bool(cfg.get(CONF_CENTRAL, False))
+                or is_four_zone_central_where(str(cfg.get(CONF_ZONE, "")))
+            ):
                 continue
             addr = Address.from_config(dev_id, cfg)
             if (
@@ -490,7 +499,7 @@ class ZoneDiscovery:
         )
         pair = _zone_pair(ctx.address)
         if pair is None and (master := four_zone_central_zone(ctx.address.clean_where)) is not None:
-            if not self._is_explicit_standalone_zone(master, ctx.address.interface):
+            if not self._has_separate_master_zone(master, ctx.address.interface):
                 pair = (master, _two_digit_interface(ctx.address.interface))
                 if ctx.source == "bus":
                     self._prune_superseded_master_zone(pair, target=entity)
@@ -517,13 +526,24 @@ class ZoneDiscovery:
             and getattr(src, "_humidity_reported", False)
             and getattr(src, "_attr_current_humidity", None) is not None
         ):
-            dst._enable_humidity()
             dst._attr_current_humidity = src._attr_current_humidity
             dst._humidity_reported = True
         if not getattr(dst, "_local_offset_reported", False) and getattr(src, "_local_offset_reported", False):
             dst._local_offset = src._local_offset
             dst._local_offset_reported = True
             dst._knob_pos = src._knob_pos
+        if (
+            not getattr(dst, "_local_target_reported", False)
+            and getattr(src, "_local_target_reported", False)
+            and getattr(src, "_local_target_temperature", None) is not None
+            and not getattr(src, "_target_temperature_restored", False)
+        ):
+            dst._local_target_temperature = src._local_target_temperature
+            dst._local_target_reported = True
+            if getattr(src, "_attr_hvac_mode", None) not in (None, HVACMode.OFF) and getattr(
+                src, "_zone_operation", None
+            ) not in ("antifreeze", "thermal_protection"):
+                dst._local_target_from_active_master = True
         src_actuators = getattr(src, "_actuator_states", None)
         if not getattr(dst, "_actuator_states", None) and (src_actuators or getattr(src, "_zone_active", None) is not None):
             dst._actuator_states = dict(src_actuators or {})
@@ -532,6 +552,64 @@ class ZoneDiscovery:
             dst._zone_active = getattr(src, "_zone_active", None)
             dst._active_source = getattr(src, "_active_source", None)
             dst._active_sides = getattr(src, "_active_sides", None)
+            if (
+                getattr(dst, "_attr_hvac_action", None) is None
+                and getattr(src, "_attr_hvac_action", None) is not None
+            ):
+                dst._attr_hvac_action = src._attr_hvac_action
+
+    def _rehome_master_output_sensors(
+        self,
+        registry: er.EntityRegistry,
+        pair: ZonePair,
+        target: Any = None,
+        *,
+        source_device_id: str | None = None,
+    ) -> None:
+        """Move any 0-10 V actuator output sensors from a superseded Zone N device onto ``#0#N``."""
+        routing = f"{BUS_ROUTING}{pair[1]}" if pair[1] else ""
+        devices = dr.async_get(self._hass)
+        zone_dev = devices.async_get(source_device_id) if source_device_id else None
+        if zone_dev is None:
+            zone_ident = (DOMAIN, f"{self._gateway.mac}-4-{pair[0]}{routing}")
+            zone_dev = next(
+                (
+                    d
+                    for d in dr.async_entries_for_config_entry(devices, self._config_entry.entry_id)
+                    if zone_ident in d.identifiers
+                ),
+                None,
+            )
+        if zone_dev is None:
+            return
+        output_entries = [
+            e
+            for e in er.async_entries_for_device(
+                registry, zone_dev.id, include_disabled_entities=True
+            )
+            if e.domain == Platform.SENSOR
+            and e.config_entry_id == self._config_entry.entry_id
+            and (e.unique_id or "").endswith("-output-level")
+        ]
+        if not output_entries:
+            return
+        cu_uid = f"{self._gateway.mac}-4-#0#{pair[0]}{routing}"
+        default_name = (
+            f"Central Unit {pair[0].zfill(2)}I{pair[1]}"
+            if pair[1]
+            else f"Central Unit {pair[0].zfill(2)}"
+        )
+        cu_device = devices.async_get_or_create(
+            config_entry_id=self._config_entry.entry_id,
+            identifiers={(DOMAIN, cu_uid)},
+            name=str(getattr(target, "_device_name", "") or default_name),
+            manufacturer=str(getattr(target, "_manufacturer", "") or "BTicino"),
+            model=str(getattr(target, "_model", "") or "Central Unit (4695)"),
+        )
+        for out_ent in output_entries:
+            registry.async_update_entity(out_ent.entity_id, device_id=cu_device.id)
+        if not er.async_entries_for_device(registry, zone_dev.id, include_disabled_entities=True):
+            devices.async_remove_device(zone_dev.id)
 
     def _prune_superseded_master_zone(self, pair: ZonePair, target: Any = None) -> None:
         """Remove an existing unconfigured master zone entity once unified Central Unit 0N arrives."""
@@ -540,13 +618,17 @@ class ZoneDiscovery:
         if not _own_entry(zone_addr, zone_cfg or {}):
             live_climates = getattr(self._runtime, "entities", {}).get(Platform.CLIMATE)
             superseded = live_climates.pop(zone_addr.key, None) if isinstance(live_climates, dict) else None
-            if target is not None and superseded is not None and superseded is not target:
-                self._seed_master_zone_telemetry(superseded, target)
+            if superseded is not None and superseded is not target:
+                superseded._superseded_by_central = True
+                if target is not None:
+                    self._seed_master_zone_telemetry(superseded, target)
         try:
             registry = er.async_get(self._hass)
             entries = list(er.async_entries_for_config_entry(registry, self._config_entry.entry_id))
         except Exception:  # pragma: no cover - registry unavailable in minimal unit doubles
             return
+        if not _own_entry(zone_addr, zone_cfg or {}):
+            self._rehome_master_output_sensors(registry, pair, target=target)
         gw_mac = str(self._gateway.mac)
         for entry in entries:
             if entry.domain != Platform.CLIMATE or not entry.unique_id:
@@ -558,6 +640,9 @@ class ZoneDiscovery:
             cfg = _zone_config(self._configured, addr, addr.key)
             if _own_entry(addr, cfg or {}):
                 continue
+            self._rehome_master_output_sensors(
+                registry, pair, target=target, source_device_id=entry.device_id
+            )
             LOGGER.info(
                 "climate: pruning live master zone %s unified into 4-zone central unit #0#%s (#994)",
                 entry.entity_id,
@@ -744,20 +829,21 @@ class ZoneDiscovery:
             match = _SAVED_CENTRAL_DOUBLED.fullmatch(str(entry.unique_id))
             if entry.domain != Platform.CLIMATE or match is None or f"{match[2]}{match[3]}" in configured:
                 continue
-            corrected = f"{match[1]}{canonical_central_zone(match[2])}{match[3]}"
+            fixed_addr = canonical_central_zone(f"{match[2]}{match[3]}")
+            corrected = f"{match[1]}{fixed_addr}"
             if kept := registry.async_get_entity_id(entry.domain, entry.platform, corrected):
                 self._hand_over_device_settings(entry.device_id, getattr(registry.async_get(kept), "device_id", None))
                 registry.async_remove(entry.entity_id)
                 LOGGER.info(
                     "climate: %s was saved as central unit %s next to the central unit %s; removed",
-                    entry.entity_id, f"{match[2]}{match[3]}", f"{canonical_central_zone(match[2])}{match[3]}",
+                    entry.entity_id, f"{match[2]}{match[3]}", fixed_addr,
                 )
             else:
                 registry.async_update_entity(entry.entity_id, new_unique_id=corrected)
                 self._move_device_identifier(entry.device_id, str(entry.unique_id), corrected)
                 LOGGER.info(
                     "climate: %s was saved as central unit %s; it is the central unit %s",
-                    entry.entity_id, f"{match[2]}{match[3]}", f"{canonical_central_zone(match[2])}{match[3]}",
+                    entry.entity_id, f"{match[2]}{match[3]}", fixed_addr,
                 )
 
     def _hand_over_device_settings(self, removed_id: str | None, kept_id: str | None) -> None:
@@ -804,9 +890,12 @@ class ZoneDiscovery:
         if (
             pair is not None
             and not _own_entry(ctx.address, ctx.cfg or {})
-            and not self._is_explicit_standalone_zone(pair[0], pair[1])
+            and not self._has_separate_master_zone(pair[0], pair[1])
             and pair in self._four_zone_central_pairs()
         ):
+            self._rehome_master_output_sensors(
+                er.async_get(self._hass), pair, source_device_id=entry.device_id
+            )
             LOGGER.info(
                 "climate: pruning master zone %s unified into 4-zone central unit #0#%s (#994)",
                 entry.entity_id,
@@ -836,13 +925,13 @@ class ZoneDiscovery:
             # The same central unit behind an interface, whichever of the two was there first:
             # its frames come under ``#0#4#II``, ``myhome.yaml`` may call it ``0``.
             keys += [f"#0{routing}", f"0{routing}"]
-        if (master := four_zone_central_zone(ctx.address.clean_where)) is not None and (
-            not self._is_explicit_standalone_zone(master, ctx.address.interface)
-        ):
-            keys += [
-                f"{spelling}{routing}"
-                for spelling in (master, f"#{master}", master.zfill(2), f"#{master.zfill(2)}")
-            ]
+        if (master := four_zone_central_zone(ctx.address.clean_where)) is not None:
+            keys.append(f"#0#{master}{routing}")
+            if not self._has_separate_master_zone(master, ctx.address.interface):
+                keys += [
+                    f"{spelling}{routing}"
+                    for spelling in (master, f"#{master}", master.zfill(2), f"#{master.zfill(2)}")
+                ]
         if "#" not in ctx.address.clean_where.removeprefix("#") and (
             number := canonical_thermo_zone(ctx.address.clean_where)
         ):

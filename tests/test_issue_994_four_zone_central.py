@@ -322,7 +322,8 @@ async def test_unified_four_zone_central_ingests_master_zone_telemetry_and_actua
     assert central.hvac_action == HVACAction.HEATING
     assert central.extra_state_attributes["actuators"] == {"1": "on"}
 
-    # Going OFF and waking back up must never queue a zone dimension query for #0#1.
+    # Going OFF and waking back up queries master zone 1's actuators (*#4*1*20##) for short-OFF
+    # recovery, never #0#1 (*#4*#0#1*20##).
     async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*4*103*#0#1##"))
     await hass.async_block_till_done()
     assert central.hvac_action == HVACAction.OFF
@@ -330,7 +331,7 @@ async def test_unified_four_zone_central_ingests_master_zone_telemetry_and_actua
     await hass.async_block_till_done()
     assert central.hvac_mode == HVACMode.HEAT
     assert central.target_temperature == 17.0
-    gateway.request_zone_dimension.assert_not_called()
+    gateway.request_zone_dimension.assert_called_once_with("1", 20, again=True)
 
     # Plain master-zone season frame does not clobber AUTO mode on #0#1, and plain zone mode is ignored.
     await central.async_set_hvac_mode(HVACMode.AUTO)
@@ -560,7 +561,7 @@ async def test_stale_master_zone_registry_entry_is_pruned_when_four_zone_central
         "01": {"zone": "01", "standalone": True},
         "cu5": {"zone": "#0#5"},
     }
-    assert discovery._is_explicit_standalone_zone("1", None) is True
+    assert discovery._has_separate_master_zone("1", None) is True
     discovery._hass = None  # type: ignore[assignment]
     assert discovery._four_zone_central_pairs() == {("5", None)}
 
@@ -947,14 +948,22 @@ async def test_four_zone_central_polls_status_and_master_temp_after_f454_sweep(
     assert central._poll_on_add is True
     assert central.current_temperature == 19.4  # already reported by sweep
 
-    # Sweep already reported temperature -> only *#4*#0#1## is polled (no redundant *#4*1*0##).
-    await central.async_update()
+    # Startup poll (skip_reported=True) with temperature already reported skips redundant *#4*1*0##.
+    await central._async_send_zone_polls(skip_reported=True)
     assert [str(c.args[0]) for c in gateway.send_status_request.await_args_list] == ["*#4*#0#1##"]
 
-    # Without a live temperature report (e.g. F461 / MHS1 / F455), both *#4*#0#1## and *#4*1*0## are polled.
+    # Manual update_entity (skip_reported=False) refreshes both *#4*#0#1## and master *#4*1*0##.
+    gateway.send_status_request.reset_mock()
+    await central.async_update()
+    assert [str(c.args[0]) for c in gateway.send_status_request.await_args_list] == [
+        "*#4*#0#1##",
+        "*#4*1*0##",
+    ]
+
+    # Startup poll without a live temperature report polls both *#4*#0#1## and *#4*1*0##.
     gateway.send_status_request.reset_mock()
     central._attr_native_current_temperature = None
-    await central.async_update()
+    await central._async_send_zone_polls(skip_reported=True)
     assert [str(c.args[0]) for c in gateway.send_status_request.await_args_list] == [
         "*#4*#0#1##",
         "*#4*1*0##",
@@ -1292,3 +1301,652 @@ async def test_four_zone_central_master_dim12_and_dim14_do_not_corrupt_manual_or
     assert "nominal_temperature" not in central4.extra_state_attributes
     await central4.async_set_hvac_mode(HVACMode.HEAT)
     assert _sent(gw4) == ["*4*3100*#0#1##"]
+
+
+# ── medium PR #1000 fixes (M-01, M-02, M-03) ──
+
+
+@pytest.mark.parametrize("central_first", [True, False], ids=["centrale-first", "zona1-first"])
+async def test_yaml_four_zone_central_and_explicit_master_zone_are_order_independent(
+    hass: HomeAssistant, central_first: bool
+) -> None:
+    """M-01: explicit YAML ``centrale (#0#1)`` + ``zona1 (zone: '1', standalone omitted)``
+    creates both entities regardless of YAML key order, keeps ``#0#1`` non-unified, and keeps
+    ``zona1``'s #981 companion sensors and 1#A actuators attached to ``zona1``.
+    """
+    from custom_components.myhome.sensor import (
+        MyHOMEClimateTemperatureSensor,
+    )
+    from custom_components.myhome.sensor import (
+        async_setup_entry as sensor_setup_entry,
+    )
+
+    centrale_cfg = {"zone": "#0#1", "name": "Centrale", "central": True}
+    zona1_cfg = {"zone": "1", "name": "Zona 1"}
+    yaml_cfg = (
+        {"centrale": centrale_cfg, "zona1": zona1_cfg}
+        if central_first
+        else {"zona1": zona1_cfg, "centrale": centrale_cfg}
+    )
+
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": MAC}, unique_id=MAC)
+    entry.add_to_hass(hass)
+    gateway = MagicMock(mac=MAC, is_connected=True, log_id="[m01]", has_central_unit=False)
+    gateway.send = AsyncMock()
+    gateway.send_status_request = AsyncMock()
+    runtime = attach_runtime(hass, entry, MAC, gateway)
+    configured: dict[str, dict] = {"climate": {}}
+    _apply_yaml_platforms({"climate": climate_schema(yaml_cfg)}, configured)
+    runtime.platforms["climate"] = configured["climate"]
+    runtime.platforms["sensor"] = {}
+
+    climates: list[MyHOMEClimate] = []
+    sensors: list = []
+    await async_setup_entry(hass, entry, climates.extend)
+    await sensor_setup_entry(hass, entry, sensors.extend)
+    await hass.async_block_till_done()
+
+    by_where = {c._where: c for c in climates}
+    assert set(by_where) == {"#0#1", "1"}
+    assert by_where["#0#1"]._central is True
+    assert by_where["#0#1"]._unified_master is False
+    assert by_where["1"]._central is False
+    assert by_where["1"]._device_name == "Zona 1"
+
+    # #981 companion temperature sensor stays on Zona 1 (never suppressed/hijacked by #0#1).
+    temp_sensors = [s for s in sensors if isinstance(s, MyHOMEClimateTemperatureSensor)]
+    assert len(temp_sensors) == 1
+    assert temp_sensors[0]._device_id == "1"
+    assert temp_sensors[0]._device_name == "Zona 1"
+
+    # 1#1 proportional 0-10V actuator attaches to Zona 1 (not Central Unit 01).
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*#4*1#1*20*150##"))
+    await hass.async_block_till_done()
+    out_sensors = [s for s in sensors if isinstance(s, MyHOMEActuatorOutputSensor)]
+    assert len(out_sensors) == 1
+    assert out_sensors[0]._device_id == "1"
+    assert out_sensors[0]._device_name == "Zona 1"
+
+
+async def test_yaml_padded_four_zone_central_without_central_flag_canonicalizes_and_clears_faults(
+    hass: HomeAssistant, tmp_path: Path
+) -> None:
+    """M-02: YAML ``zone: '#0#01'`` with ``central`` omitted canonicalizes to ``#0#1``,
+    avoids duplicate bus entities, writes canonical ``#0#1`` frames, and matches device_health.
+    """
+    from custom_components.myhome.device_health import DeviceHealth, FaultKind
+
+    prog_trace = tmp_path / "prog.json"
+    prog_trace.write_text(
+        json.dumps({"frames": [{"direction": "rx", "raw": "*4*1103*#0#1##"}]}),
+        encoding="utf-8",
+    )
+    yaml_cfg = {"c1": {"zone": "#0#01", "name": "C1"}}
+    gateway, found = await _plant(hass, yaml_cfg, prog_trace)
+
+    assert set(found) == {"#0#1"}
+    central = found["#0#1"]
+    assert central._central is True
+    assert central._where == "#0#1"
+    assert central._health_address == (4, "#0#1")
+
+    await central.async_set_hvac_mode(HVACMode.HEAT)
+    assert _sent(gateway) == ["*4*3100*#0#1##"]
+
+    # DeviceHealth files battery fault under canonical (4, "#0#1"), matching _health_address.
+    gateway.hass = hass
+    gateway.config_entry = None
+    tracker = DeviceHealth(gateway)
+    tracker.observe(OWNEvent.parse("*4*31*#0#1##"))
+    assert (4, "#0#1", FaultKind.CENTRAL_BATTERY_FAULT) in tracker._active
+    gateway.device_health = tracker
+    central._clear_fault(FaultKind.CENTRAL_BATTERY_FAULT)
+    assert (4, "#0#1", FaultKind.CENTRAL_BATTERY_FAULT) not in tracker._active
+
+
+async def test_rapid_reverse_discovery_prunes_inflight_master_zone_rehomes_output_sensor_and_clears_tracking(
+    hass: HomeAssistant,
+) -> None:
+    """M-03: pre-ER-commit reverse discovery silences & removes in-flight Climate Zone 1 cleanly
+    (no zombie HA state, no orphan registry/device entry), re-homes any pre-existing 1#1 0-10V
+    output sensor onto Central Unit 01, and clears sensor.py tracking sets on companion removal.
+    """
+    import logging
+    from datetime import timedelta
+
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers.entity_platform import EntityPlatform
+
+    from custom_components.myhome import climate as climate_mod
+    from custom_components.myhome.sensor import (
+        MyHOMEClimateHumiditySensor,
+        MyHOMEClimateTemperatureSensor,
+    )
+    from custom_components.myhome.sensor import (
+        async_setup_entry as sensor_setup_entry,
+    )
+
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": MAC}, unique_id=MAC)
+    entry.add_to_hass(hass)
+    dev_reg = dr.async_get(hass)
+    ent_reg = er.async_get(hass)
+
+    # Pre-existing 1#1 proportional 0-10V output sensor on Climate Zone 1's device before #0#1 arrives.
+    zone1_dev = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, f"{MAC}-4-1")},
+        name="Climate Zone 1",
+    )
+    out_ent = ent_reg.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        f"{MAC}-4-1#1-output-level",
+        config_entry=entry,
+        device_id=zone1_dev.id,
+    )
+
+    gateway = MagicMock(
+        mac=MAC,
+        is_connected=True,
+        log_id="[m03]",
+        has_central_unit=False,
+        device_registry_id=None,
+    )
+    gateway.send = AsyncMock()
+    gateway.send_status_request = AsyncMock()
+    runtime = attach_runtime(hass, entry, MAC, gateway)
+    runtime.platforms["climate"] = {}
+    runtime.platforms["sensor"] = {}
+
+    # Use a real HA EntityPlatform for climate so add_to_platform_finish + async_added_to_hass run for real.
+    platform = EntityPlatform(
+        hass=hass,
+        logger=logging.getLogger(__name__),
+        domain="climate",
+        platform_name=DOMAIN,
+        platform=climate_mod,
+        scan_interval=timedelta(seconds=30),
+        entity_namespace=None,
+    )
+    platform.config_entry = entry
+
+    scheduled: list[MyHOMEClimate] = []
+
+    def _defer_add(new_entities, update_before_add: bool = False) -> None:
+        scheduled.extend(new_entities)
+
+    await async_setup_entry(hass, entry, _defer_add)
+
+    # Same-burst pre-ER-commit race: Zone 1 confirms (2 distinct frames -> queued in _defer_add,
+    # NOT committed to er yet), then #0#1 arrives immediately in the same burst!
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*#4*1*0*0205##"))
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*#4*1*12*0190*3##"))
+    assert len(scheduled) == 1 and scheduled[0]._where == "1"
+    zone1_inflight = scheduled[0]
+    assert ent_reg.async_get_entity_id("climate", DOMAIN, f"{MAC}-4-1") is None
+
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*4*1103*#0#1##"))
+    assert len(scheduled) == 2 and scheduled[1]._where == "#0#1"
+    assert zone1_inflight._superseded_by_central is True
+    assert scheduled[1].current_temperature == 20.5  # live telemetry transferred before commit
+
+    # Superseded in-flight entity ignores further bus events immediately.
+    zone1_inflight.handle_event(OWNHeatingEvent("*#4*1*0*0299##"))
+    assert zone1_inflight.current_temperature == 20.5
+
+    # Pre-existing 1#1 output sensor was re-homed onto Central Unit 01 and empty Zone 1 device removed!
+    rehomed_out = ent_reg.async_get(out_ent.entity_id)
+    assert rehomed_out is not None and rehomed_out.device_id is not None
+    cu_dev = dev_reg.async_get(rehomed_out.device_id)
+    assert cu_dev is not None and (DOMAIN, f"{MAC}-4-#0#1") in cu_dev.identifiers
+    assert dev_reg.async_get(zone1_dev.id) is None
+
+    # Now HA finishes adding both queued entities through real EntityPlatform!
+    await platform.async_add_entities(scheduled)
+    await hass.async_block_till_done()
+
+    # In-flight Climate Zone 1 pruned cleanly: no registry entry, no platform entry, no zombie HA state!
+    assert ent_reg.async_get_entity_id("climate", DOMAIN, f"{MAC}-4-1") is None
+    assert zone1_inflight.entity_id not in platform.entities
+    assert hass.states.get(zone1_inflight.entity_id) is None
+    assert scheduled[1].entity_id is not None
+    assert list(platform.entities) == [scheduled[1].entity_id]
+    assert [s.entity_id for s in hass.states.async_all("climate")] == [scheduled[1].entity_id]
+
+    # Verify sensor.py removes pruned climate companions from known_climate_temp / known_climate_humidity.
+    from custom_components.myhome import sensor as sensor_mod
+
+    sensor_platform = EntityPlatform(
+        hass=hass,
+        logger=logging.getLogger(__name__),
+        domain="sensor",
+        platform_name=DOMAIN,
+        platform=sensor_mod,
+        scan_interval=timedelta(seconds=30),
+        entity_namespace=None,
+    )
+    sensor_platform.config_entry = entry
+
+    sensors: list = []
+
+    def _add_sensors(new_entities, update_before_add: bool = False) -> None:
+        sensors.extend(new_entities)
+        hass.async_create_task(sensor_platform.async_add_entities(new_entities))
+
+    await sensor_setup_entry(hass, entry, _add_sensors)
+    async_dispatcher_send(
+        hass,
+        f"myhome_new_climate_zone_{MAC}",
+        {
+            "zone": "3",
+            "interface": None,
+            "device_id": "3",
+            "name": "Climate Zone 3",
+            "manufacturer": "BTicino",
+            "model": "Heating Zone",
+            "humidity": True,
+            "temperature": 21.0,
+            "current_humidity": 50.0,
+        },
+    )
+    await hass.async_block_till_done()
+    temp3 = [s for s in sensors if isinstance(s, MyHOMEClimateTemperatureSensor) and s._zone == "3"]
+    hum3 = [s for s in sensors if isinstance(s, MyHOMEClimateHumiditySensor) and s._zone == "3"]
+    assert len(temp3) == 1 and len(hum3) == 1
+    # Removing the companions clears tracking sets so re-announcing zone 3 recreates them cleanly.
+    await temp3[0].async_remove(force_remove=True)
+    await hum3[0].async_remove(force_remove=True)
+    sensors.clear()
+    async_dispatcher_send(
+        hass,
+        f"myhome_new_climate_zone_{MAC}",
+        {
+            "zone": "3",
+            "interface": None,
+            "device_id": "3",
+            "name": "Climate Zone 3",
+            "manufacturer": "BTicino",
+            "model": "Heating Zone",
+            "humidity": True,
+            "temperature": 21.5,
+            "current_humidity": 52.0,
+        },
+    )
+    await hass.async_block_till_done()
+    assert any(isinstance(s, MyHOMEClimateTemperatureSensor) and s._zone == "3" for s in sensors)
+    assert any(isinstance(s, MyHOMEClimateHumiditySensor) and s._zone == "3" for s in sensors)
+
+
+async def test_four_zone_controlled_zone_frames_do_not_poison_has_central_unit(
+    hass: HomeAssistant,
+) -> None:
+    """H-1: 4695 controlled-zone reports (#Z#C, e.g. *4*110*#3#1## / *#4*#3#1*14*0180*1## /
+    *4*110*#3#1#4#01##) never set gateway.has_central_unit, never trigger *#4*#0##, and never
+    flip subordinate zones from direct writes to 99-zone #Z writes (plant-cu4695.tsv:27,35-36).
+    """
+    from custom_components.myhome.gateway_events import note_central_unit_report
+    from custom_components.myhome.sensor import MyHOMEActuatorOutputSensor
+    from custom_components.myhome.where_grammar import (
+        central_report_zone,
+        is_four_zone_controlled_zone_where,
+    )
+
+    for raw in ("*4*110*#3#1##", "*#4*#3#1*14*0180*1##", "*4*110*#3#1#4#01##"):
+        ev = OWNEvent.parse(raw)
+        assert is_four_zone_controlled_zone_where(ev) is True
+        assert central_report_zone(ev) is None
+    for raw in ("*4*110*#3##", "*4*110*#3#4#01##", "*4*110*#0#1##", "*4*1*3##", "*4*110*#0##"):
+        ev = OWNEvent.parse(raw)
+        assert is_four_zone_controlled_zone_where(ev) is False
+    assert central_report_zone(OWNEvent.parse("*4*110*#3##")) == "3"
+
+    gw = _gateway(has_central_unit=False)
+    gw.request_central_status = MagicMock()
+    assert note_central_unit_report(gw, OWNEvent.parse("*4*110*#3#1##")) == (False, False)
+    assert note_central_unit_report(gw, OWNEvent.parse("*#4*#3#1*14*0180*1##")) == (False, False)
+    assert gw.has_central_unit is False
+
+    # Actuator output sensor also ignores #Z#C for has_central_unit detection.
+    out_sensor = MyHOMEActuatorOutputSensor(
+        hass=hass,
+        name="Zone 3",
+        device_id="3",
+        where="3#1",
+        zone="3",
+        actuator="1",
+        interface=None,
+        standalone=None,
+        manufacturer="BTicino",
+        model="Heating Zone",
+        gateway=gw,
+    )
+    out_sensor.handle_event(OWNHeatingEvent("*4*110*#3#1##"))
+    assert gw.has_central_unit is False
+
+    # Live subordinate Zone 3 keeps direct writes after #3#1 reports arrive on the bus.
+    from tests.test_climate_mode_state_2026_11_08 import _climate
+
+    z3 = _climate(gw, "3", standalone=None, central=False)
+    z3.handle_event(OWNHeatingEvent("*#4*3*0*0195##"))
+    z3.handle_event(OWNHeatingEvent("*4*110*#3#1##"))
+    z3.handle_event(OWNHeatingEvent("*#4*#3#1*14*0180*1##"))
+    assert gw.has_central_unit is False
+    assert z3._central_zone_seen is False
+    gw.request_central_status.assert_not_called()
+    await z3.async_set_temperature(temperature=20.0)
+    assert [str(c.args[0]) for c in gw.send.await_args_list] == ["*#4*3*#14*0200*3##"]
+
+
+async def test_four_zone_central_ignores_dim7_zone_state_fan_speed_and_post_restart_plain_frames(
+    hass: HomeAssistant,
+) -> None:
+    """H-2, M-1, M-4, L-1: #0#N ignores Dim 7 zone_state (MHS1), Dim 11 fan_speed, and
+    post-restart plain Zone N mode/season frames before *#4*#0#N## arrives; Manual -> Antifreeze
+    applies a fresh stashed Dim 12 protection setpoint (7.0 C) while preserving nominal.
+    """
+    from homeassistant.core import State
+
+    from tests.test_climate_mode_state_2026_11_08 import _climate
+
+    gw = _gateway(has_central_unit=False)
+    cu = _climate(gw, "#0#1", standalone=None, central=True)
+
+    # Restore weekly program 3 after restart (_central_report_count == 0, hvac_mode == HEAT).
+    await cu.async_restore_last_state(
+        State(
+            "climate.central_unit_01",
+            "heat",
+            {
+                "temperature": 14.0,
+                "program": 3,
+                "season": "heating",
+                "current_temperature": 19.5,
+            },
+        )
+    )
+    assert cu._central_report_count == 0
+    assert cu.hvac_mode == HVACMode.HEAT
+    assert cu._program == 3
+
+    # M-1: Plain Zone 1 mode/season frames arriving before *#4*#0#1## must NOT overwrite restored state.
+    cu.handle_event(OWNHeatingEvent("*4*303*1##"))
+    cu.handle_event(OWNHeatingEvent("*4*102*1##"))
+    cu.handle_event(OWNHeatingEvent("*4*0*1##"))
+    assert cu.hvac_mode == HVACMode.HEAT
+    assert cu._program == 3
+    assert cu._central_operation is None
+
+    # H-2 & L-1: MHS1 Dim 7 zone_state and Dim 11 fan_speed are ignored on central units.
+    cu.handle_event(OWNHeatingEvent("*4*1103*#0#1##"))
+    cu.handle_event(OWNHeatingEvent("*#4*1*12*0140*3##"))
+    cu.handle_event(OWNHeatingEvent("*#4*1*7*1*1*0200##"))
+    cu.handle_event(OWNHeatingEvent("*#4*1*7*1*2##"))
+    cu.handle_event(OWNHeatingEvent("*#4*1*11*2##"))
+    assert cu.hvac_mode == HVACMode.HEAT
+    assert cu._program == 3
+    assert cu.target_temperature == 14.0
+    assert cu._nominal_from_dim12 is True
+    assert cu.fan_mode is None
+
+    # M-4: Manual 18.0 -> Antifreeze when *#4*1*12*0070*3## arrives right before *4*102*#0#1##.
+    cu.handle_event(OWNHeatingEvent("*4*110#0180*#0#1##"))
+    assert cu.target_temperature == 18.0
+    assert cu._has_four_zone_manual_nominal() is True
+    cu.handle_event(OWNHeatingEvent("*#4*1*12*0070*3##"))
+    cu.handle_event(OWNHeatingEvent("*4*102*#0#1##"))
+    assert cu.extra_state_attributes["central_operation"] == "antifreeze"
+    assert cu.target_temperature == 7.0
+    assert cu.extra_state_attributes["nominal_temperature"] == 18.0
+
+
+async def test_four_zone_central_base_zone_21_naming_and_actuator_watch_and_delegation(
+    hass: HomeAssistant,
+) -> None:
+    """H-3 & M-2: #0#21 builds as 'Central Unit 21' (not 'Central Unit 021'), unified #0#N
+    registers watch_zone_actuators for master zone N, and MyHOMEGatewayHandler.general_zone_request_refused
+    delegates to _who4_target().
+    """
+    from custom_components.myhome.gateway import MyHOMEGatewayHandler
+
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": MAC}, unique_id=MAC)
+    entry.add_to_hass(hass)
+    unsub = MagicMock()
+    gw = MagicMock(
+        mac=MAC,
+        is_connected=True,
+        log_id="[h3]",
+        has_central_unit=False,
+        device_registry_id=None,
+    )
+    gw.send = AsyncMock()
+    gw.send_status_request = AsyncMock()
+    gw.watch_zone_actuators = MagicMock(return_value=unsub)
+    runtime = attach_runtime(hass, entry, MAC, gw)
+    runtime.platforms["climate"] = {}
+    added: list[MyHOMEClimate] = []
+    await async_setup_entry(hass, entry, added.extend)
+
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*4*1103*#0#21##"))
+    await hass.async_block_till_done()
+    assert len(added) == 1
+    cu21 = added[0]
+    from custom_components.myhome.typing_compat import device_info_to_dict
+
+    assert cu21._where == "#0#21"
+    assert cu21._device_name == "Central Unit 21"
+    assert device_info_to_dict(cu21.device_info)["name"] == "Central Unit 21"
+
+    cu21.hass = hass
+    cu21.entity_id = "climate.central_unit_21"
+    await cu21.async_added_to_hass()
+    gw.watch_zone_actuators.assert_called_once_with("21")
+    # Non-20 dimensions remain blocked on central units; dimension 20 routes to master zone 21.
+    gw.request_zone_dimension = MagicMock()
+    assert cu21._request_zone_dimension(19) is False
+    assert cu21._request_zone_dimension(20) is True
+    gw.request_zone_dimension.assert_called_once_with("21", 20)
+
+    # M-2: general_zone_request_refused delegates to _who4_target() when WHO 4 is delegated.
+    primary = MyHOMEGatewayHandler.__new__(MyHOMEGatewayHandler)
+    secondary = MagicMock(general_zone_request_refused=True)
+    primary._who4_target = MagicMock(return_value=secondary)  # type: ignore[method-assign]
+    assert primary.general_zone_request_refused is True
+
+
+async def test_four_zone_central_season_write_guards_unknown_season_disabled_remote_and_timeout(
+    hass: HomeAssistant,
+) -> None:
+    """M-3: _write_four_zone_central_season does not optimistically flip mode when season is
+    unknown or remote_control is disabled; _write_central_setpoint cancels timed-out futures and
+    returns False without optimistic state mutation.
+    """
+    import asyncio
+
+    from tests.test_climate_mode_state_2026_11_08 import _climate
+
+    # 1. Unknown season: sends *4*3100*#0#1##, does NOT optimistically display COOL.
+    gw = _gateway(has_central_unit=False)
+    cu = _climate(gw, "#0#1", standalone=None, central=True)
+    assert cu._season is None and cu.hvac_mode is None
+    await cu.async_set_hvac_mode(HVACMode.COOL)
+    assert [str(c.args[0]) for c in gw.send.await_args_list] == ["*4*3100*#0#1##"]
+    assert cu.hvac_mode is None
+
+    # 2. Remote control disabled (*4*20*#0#1##): sends command, does NOT optimistically flip to HEAT.
+    gw2 = _gateway(has_central_unit=False)
+    cu2 = _climate(gw2, "#0#1", standalone=None, central=True)
+    cu2.handle_event(OWNHeatingEvent("*4*110#0180*#0#1##"))
+    cu2.handle_event(OWNHeatingEvent("*4*20*#0#1##"))
+    cu2.handle_event(OWNHeatingEvent("*4*103*#0#1##"))
+    assert cu2.hvac_mode == HVACMode.OFF
+    assert cu2.extra_state_attributes["remote_control"] == "disabled"
+    await cu2.async_set_hvac_mode(HVACMode.HEAT)
+    assert [str(c.args[0]) for c in gw2.send.await_args_list] == ["*#4*#0#1*#14*0180*3##"]
+    assert cu2.hvac_mode == HVACMode.OFF
+
+    # 3. Timed-out Future in _write_central_setpoint is cancelled cleanly and suppresses optimistic flip.
+    gw3 = _gateway(has_central_unit=False)
+    cu3 = _climate(gw3, "#0#1", standalone=None, central=True)
+    cu3.handle_event(OWNHeatingEvent("*4*110#0180*#0#1##"))
+    cu3.handle_event(OWNHeatingEvent("*4*103*#0#1##"))
+    pending_fut: asyncio.Future[float] = asyncio.get_running_loop().create_future()
+    gw3.send = AsyncMock(return_value=pending_fut)
+    from unittest.mock import patch
+
+    with patch("custom_components.myhome.climate.SETPOINT_DELIVERY_TIMEOUT", 0.01):
+        await cu3.async_set_hvac_mode(HVACMode.HEAT)
+    assert pending_fut.cancelled() is True
+    assert cu3.hvac_mode == HVACMode.OFF
+
+    # 4. Non-NACK cancelled Future returns False without raising.
+    cancelled_fut: asyncio.Future[float] = asyncio.get_running_loop().create_future()
+    cancelled_fut.cancel()
+    gw3.send = AsyncMock(return_value=cancelled_fut)
+    assert await cu3._write_central_setpoint(19.0) is False
+
+
+async def test_reverse_discovery_telemetry_transfer_restore_rehome_and_inline_routing_validation(
+    hass: HomeAssistant,
+) -> None:
+    """M-5, M-6, L-3, L-4:
+    - Reverse discovery (Zone 1 active schedule + idle actuator -> #0#1) carries live target & idle hvac_action.
+    - Startup restore() duplicate() pruning re-homes 1#1-output-level from Zone 1 onto #0#1 and removes empty device.
+    - validate.py + legacy_yaml.py avoid doubling #4#01 when zone carries inline #4#01 alongside interface: 01,
+      and canonicalise_imported_platforms normalizes #0#01 even when central: false.
+    - correct_saved_central_address zero-pads 1-digit interface suffixes (#4#1 -> #4#01).
+    - sensor.py _has_climate_zone_entity recognises unified #0#1 when a thermo switch sits on 1#2.
+    """
+    from homeassistant.helpers import device_registry as dr
+
+    from custom_components.myhome.legacy_yaml import canonicalise_imported_platforms
+    from custom_components.myhome.sensor import (
+        MyHOMEActuatorOutputSensor,
+    )
+    from custom_components.myhome.sensor import (
+        async_setup_entry as sensor_setup_entry,
+    )
+    from custom_components.myhome.validate import climate_schema
+
+    # M-6: inline #4#01 + interface: "01" must not double #4#01#4#01.
+    res = climate_schema({"cu1": {"zone": "#0#1#4#01", "interface": "01", "name": "CU1"}})
+    assert "#0#1#4#01" in res
+    assert "#0#1#4#01#4#01" not in res
+    assert "01#4#01" not in res
+    assert res["cu1"]["central"] is True
+    assert res["cu1"]["zone"] == "#0#1"
+    assert res["1#4#01"] is res["cu1"]
+
+    # M-6: canonicalise_imported_platforms canonicalizes #0#01 even when central: False.
+    canon, rewritten = canonicalise_imported_platforms(
+        {"climate": {"#0#01": {"who": "4", "zone": "#0#01", "central": False}}}
+    )
+    assert "#0#1" in canon["climate"]
+    assert canon["climate"]["#0#1"]["zone"] == "#0#1"
+    assert canon["climate"]["#0#1"]["central"] is True
+    assert rewritten == ["climate: #0#01 -> #0#1"]
+
+    # M-5 (reverse discovery idle hvac_action + active schedule setpoint) & L-4 (#4#1 -> #4#01).
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": MAC}, unique_id=MAC)
+    entry.add_to_hass(hass)
+    dev_reg = dr.async_get(hass)
+    ent_reg = er.async_get(hass)
+
+    # L-4: saved #0#01#4#1 unique_id is normalized to #0#1#4#01.
+    ent_reg.async_get_or_create(
+        "climate", DOMAIN, f"{MAC}-4-#0#01#4#1", config_entry=entry
+    )
+    # M-5 restore() duplicate() pruning: pre-existing Zone 1 climate + 1#1-output-level + #0#1 climate.
+    z1_dev = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, f"{MAC}-4-01")},
+        name="Climate Zone 01",
+    )
+    z1_ent = ent_reg.async_get_or_create(
+        "climate", DOMAIN, f"{MAC}-4-01", config_entry=entry, device_id=z1_dev.id
+    )
+    out_ent = ent_reg.async_get_or_create(
+        "sensor", DOMAIN, f"{MAC}-4-1#1-output-level", config_entry=entry, device_id=z1_dev.id
+    )
+    ent_reg.async_get_or_create("climate", DOMAIN, f"{MAC}-4-#0#1", config_entry=entry)
+
+    gw = MagicMock(
+        mac=MAC, is_connected=True, log_id="[m5]", has_central_unit=False, device_registry_id=None
+    )
+    gw.send = AsyncMock()
+    gw.send_status_request = AsyncMock()
+    runtime = attach_runtime(hass, entry, MAC, gw)
+    runtime.platforms["climate"] = {}
+    runtime.platforms["sensor"] = {}
+    added: list[MyHOMEClimate] = []
+    await async_setup_entry(hass, entry, added.extend)
+    await hass.async_block_till_done()
+
+    # L-4 verified: #0#01#4#1 migrated to #0#1#4#01.
+    assert ent_reg.async_get_entity_id("climate", DOMAIN, f"{MAC}-4-#0#1#4#01") is not None
+    # M-5 restore() verified: Zone 01 pruned, 1#1-output-level re-homed to #0#1, empty Zone 01 device removed.
+    assert ent_reg.async_get(z1_ent.entity_id) is None
+    rehomed = ent_reg.async_get(out_ent.entity_id)
+    assert rehomed is not None and rehomed.device_id is not None
+    cu_dev = dev_reg.async_get(rehomed.device_id)
+    assert cu_dev is not None and (DOMAIN, f"{MAC}-4-#0#1") in cu_dev.identifiers
+    assert dev_reg.async_get(z1_dev.id) is None
+
+    # L-3: sensor.py _has_climate_zone_entity recognises unified #0#1 beside a thermo switch on 1#2.
+    entry2 = MockConfigEntry(
+        domain=DOMAIN,
+        data={"mac": "00:03:50:aa:bb:cc"},
+        unique_id="00:03:50:aa:bb:cc",
+    )
+    entry2.add_to_hass(hass)
+    ent_reg.async_get_or_create("climate", DOMAIN, "00:03:50:aa:bb:cc-4-#0#1", config_entry=entry2)
+    gw2 = MagicMock(
+        mac="00:03:50:aa:bb:cc",
+        is_connected=True,
+        log_id="[l3]",
+        has_central_unit=False,
+        device_registry_id=None,
+    )
+    gw2.send = AsyncMock()
+    gw2.send_status_request = AsyncMock()
+    rt2 = attach_runtime(hass, entry2, "00:03:50:aa:bb:cc", gw2)
+    rt2.platforms["climate"] = {}
+    rt2.platforms["sensor"] = {}
+    rt2.platforms["switch"] = {"1#2": {"who": "4", "where": "1#2", "name": "Towel"}}
+    sensors2: list = []
+    await sensor_setup_entry(hass, entry2, sensors2.extend)
+    async_dispatcher_send(
+        hass, "myhome_message_00:03:50:aa:bb:cc", OWNEvent.parse("*#4*1#1*20*150##")
+    )
+    await hass.async_block_till_done()
+    assert any(
+        isinstance(s, MyHOMEActuatorOutputSensor) and s._zone == "1" and s._actuator == "1"
+        for s in sensors2
+    )
+
+    # M-5 live reverse discovery: Zone 5 active Dim 12 + idle actuator transfers onto #0#5.
+    entry3 = MockConfigEntry(
+        domain=DOMAIN, data={"mac": "00:03:50:dd:ee:ff"}, unique_id="00:03:50:dd:ee:ff"
+    )
+    entry3.add_to_hass(hass)
+    gw3 = MagicMock(
+        mac="00:03:50:dd:ee:ff",
+        is_connected=True,
+        log_id="[m5b]",
+        has_central_unit=False,
+        device_registry_id=None,
+    )
+    gw3.send = AsyncMock()
+    gw3.send_status_request = AsyncMock()
+    rt3 = attach_runtime(hass, entry3, "00:03:50:dd:ee:ff", gw3)
+    rt3.platforms["climate"] = {}
+    added3: list[MyHOMEClimate] = []
+    await async_setup_entry(hass, entry3, added3.extend)
+    for frame in ("*#4*5*0*0194##", "*#4*5*12*0140*3##", "*4*1*5##", "*#4*5#1*20*0##"):
+        async_dispatcher_send(hass, "myhome_message_00:03:50:dd:ee:ff", OWNEvent.parse(frame))
+    await hass.async_block_till_done()
+    async_dispatcher_send(hass, "myhome_message_00:03:50:dd:ee:ff", OWNEvent.parse("*4*1103*#0#5##"))
+    await hass.async_block_till_done()
+    cu5 = next(e for e in added3 if e._where == "#0#5")
+    assert cu5.target_temperature == 14.0
+    assert cu5.hvac_action == HVACAction.IDLE
+    assert cu5.extra_state_attributes["actuators"] == {"1": "off"}

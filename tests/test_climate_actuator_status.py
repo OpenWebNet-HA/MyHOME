@@ -1429,7 +1429,9 @@ async def test_a_zone_behind_an_interface_is_not_written_where_the_gateway_route
 
 @pytest.mark.parametrize("where", ["#0#1", "#0#2", "#0#3", "#0#4", "4-#0#4"])
 async def test_four_zone_central_channels_1_to_4_are_central_and_poll_own_status(hass, fast_bus_pacing, where):
-    """4-zone central unit channels (#0#1..#0#4) are central and poll *#4*#0#N## (never Dim 14 or actuators)."""
+    """4-zone central unit channels (#0#1..#0#4) are central and poll *#4*#0#N## plus unified
+    master-zone temperature/actuators (*#4*N*0## / *#4*N*20##), never *#4*#0#N*14## or *#4*#0#N*20##.
+    """
     clean = where.removeprefix("4-")
     master = clean.rsplit("#", 1)[1]
     for model in ("Generic", "F461", "F454", "MH202"):
@@ -1460,9 +1462,17 @@ async def test_four_zone_central_channels_1_to_4_are_central_and_poll_own_status
         await cu.async_added_to_hass()
         await _settle(hass)
         sent = [str(call.args[0]) for call in handler.send_status_request.await_args_list]
-        expected = [f"*#4*{clean}##", f"*#4*{master}*0##"] if handler.general_zone_request_refused else [f"*#4*{clean}##"]
-        assert sent == expected
-        assert handler._actuator_zones == {}
+        assert f"*#4*{clean}*14##" not in sent
+        assert f"*#4*{clean}*20##" not in sent
+        expected = [f"*#4*{clean}##"]
+        if handler.general_zone_request_refused:
+            expected.append(f"*#4*{master}*0##")
+        if model == "F461":
+            expected.append("*#4*0#0*20##")
+        elif not handler.actuator_request_refused and not handler.zone_actuator_request_refused:
+            expected.append(f"*#4*{master}*20##")
+        assert set(sent) == set(expected) and len(sent) == len(expected)
+        assert handler._actuator_zones == {master: 1}
 
 
 async def test_four_zone_central_configured_channels_use_4695_model_and_poll_status(hass, fast_bus_pacing):
