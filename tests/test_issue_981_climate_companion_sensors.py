@@ -80,6 +80,7 @@ from custom_components.myhome.const import (
     CONF_MANUFACTURER,
     CONF_PRIMARY_GATEWAY,
     CONF_STANDALONE,
+    CONF_STANDALONE_ZONES,
     CONF_WHERE,
     CONF_WHO,
     DOMAIN,
@@ -1710,6 +1711,8 @@ async def test_real_entity_platform_dormant_skip_rebind_and_exclusions(
             CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED,
             CONF_GATEWAY_ROLE: ROLE_PRIMARY,
             CONF_IGNORED_ADDRESSES: [{"who": 4, "where": "12"}],
+            # Zone 1 is explicitly standalone so it coexists beside #0#1 under #994 Option A unification.
+            CONF_STANDALONE_ZONES: "1",
         },
         subentries_data=[
             {
@@ -2212,7 +2215,7 @@ async def test_temperature_sensor_f422_bus_routing_passivity_guard(
 async def test_four_zone_central_4695_coexists_with_bus_and_restored_zone_companions(
     hass: HomeAssistant,
 ) -> None:
-    """4-zone central unit (4695, central: true, zone: '1' -> #0#1) never suppresses or prunes real Zone 1."""
+    """4-zone central unit (4695, central: true, zone: '1' -> #0#1) never suppresses or prunes standalone Zone 1."""
     from custom_components.myhome.legacy_yaml import _apply_yaml_platforms
     from custom_components.myhome.validate import climate_schema
 
@@ -2221,7 +2224,12 @@ async def test_four_zone_central_4695_coexists_with_bus_and_restored_zone_compan
     configured: dict[str, dict[str, Any]] = {"climate": {}}
     _apply_yaml_platforms({"climate": validated}, configured)
 
-    entry = _make_entry(hass, gw, platforms={"climate": configured["climate"]})
+    entry = _make_entry(
+        hass,
+        gw,
+        platforms={"climate": configured["climate"]},
+        options={CONF_STANDALONE_ZONES: "1"},
+    )
     climates: list[MyHOMEClimate] = []
     sensors: list[Any] = []
     add_c, add_s = _make_entity_adders(hass, climates, sensors)
@@ -2296,6 +2304,42 @@ async def test_four_zone_central_4695_coexists_with_bus_and_restored_zone_compan
         f"{gw.mac}-4-1-temperature",
         f"{gw.mac}-4-1-humidity",
     }
+
+
+async def test_four_zone_central_4695_unified_master_zone_creates_zero_companions(
+    hass: HomeAssistant,
+) -> None:
+    """Without standalone_zones, 4-zone central #0#1 unifies master Zone 1 (#994) and creates zero companions."""
+    from custom_components.myhome.legacy_yaml import _apply_yaml_platforms
+    from custom_components.myhome.validate import climate_schema
+
+    gw = _make_gateway()
+    validated = climate_schema({"central_1": {"zone": "1", "central": True, "name": "Central 4695"}})
+    configured: dict[str, dict[str, Any]] = {"climate": {}}
+    _apply_yaml_platforms({"climate": validated}, configured)
+
+    entry = _make_entry(hass, gw, platforms={"climate": configured["climate"]})
+    climates: list[MyHOMEClimate] = []
+    sensors: list[Any] = []
+    add_c, add_s = _make_entity_adders(hass, climates, sensors)
+
+    await climate_setup_entry(hass, entry, add_c)
+    await sensor_setup_entry(hass, entry, add_s)
+    await hass.async_block_till_done()
+
+    assert [c._where for c in climates] == ["#0#1"]
+    assert sensors == []
+
+    signal = f"myhome_message_{gw.mac}"
+    for raw in ("*#4*1*0*0216##", "*4*1*1##", "*#4*1*60*47##"):
+        evt = OWNEvent.parse(raw)
+        assert evt is not None
+        async_dispatcher_send(hass, signal, evt)
+    await hass.async_block_till_done()
+
+    assert [c._where for c in climates] == ["#0#1"]
+    assert climates[0].current_temperature == 21.6
+    assert sensors == []
 
 
 async def test_unrelated_who18_and_who1_yaml_sensors_do_not_block_pruning_or_probe_gating(
