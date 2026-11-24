@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from OWNd.connection import OWNCommandSession, OWNEventSession, OWNGateway
+from OWNd.exceptions import OWNAuthError
 from OWNd.message import OWNCommand, OWNGatewayEvent, OWNMessage
 
 from .const import LOGGER, area_of_where, is_apl_address
@@ -51,6 +52,38 @@ STATUS_TIMEOUT_BACKOFF: float = 2.0
 # leaving sessions open indefinitely. Installations desiring a generous hard ceiling
 # for "TCP up, bus dead" conditions can override this constant (e.g. 43200.0 / 12h).
 EVENT_INACTIVITY_TIMEOUT: float | None = None
+# connect() results that mean the gateway refused the stored password (OWNd
+# `_AUTH_NEGOTIATION_ERRORS`). Presenting it again cannot succeed, and an HMAC
+# gateway disables its authentication service after repeated failures
+# (OpenWebNet Encyclopedia `protocol/authentication.md`, HMAC Simple
+# Authentication Mode), so both sessions stop and Home Assistant asks for the
+# password again (reauth).
+AUTH_REFUSALS: frozenset[str] = frozenset({"password_error", "password_required"})
+
+class _PooledCommandSession(OWNCommandSession):
+    """``OWNCommandSession`` whose handshake serializes across a ``CommandWorkerPool``."""
+
+    def __init__(self, pool: CommandWorkerPool, **kwargs: Any) -> None:
+        """Bind this command session's handshake lock to ``pool``."""
+        super().__init__(**kwargs)
+        self._pool = pool
+
+    async def _negotiate(self) -> dict[str, Any]:
+        """Serialize session negotiation across the pool and abort once auth is refused."""
+        async with self._pool._connect_lock:
+            if self._pool._auth_refused or self._pool._terminate_sender:
+                reason = (
+                    self._pool._auth_refused_reason or "password_error"
+                    if self._pool._auth_refused
+                    else "connection_refused"
+                )
+                return {"Success": False, "Message": reason}
+            result: dict[str, Any] = await super()._negotiate()
+            msg = result.get("Message")
+            if not result.get("Success") and isinstance(msg, str) and msg in AUTH_REFUSALS:
+                self._pool._auth_refused_reason = msg
+                self._pool.handler._on_auth_refused(msg, "command")
+            return result
 
 
 def _resolve_written(task: dict[str, Any], when: float) -> None:
@@ -99,6 +132,7 @@ class EventSessionRunner:
         self._terminate_listener: bool = False
         self._event_session_ready: asyncio.Event = asyncio.Event()
         self._event_watchdog: asyncio.Timeout | None = None
+        self._closing_session: bool = False
         self.is_connected: bool = False
 
     @property
@@ -199,6 +233,10 @@ class EventSessionRunner:
             logger=LOGGER,
             inactivity_timeout=inactivity_timeout,
             on_state_change=self.handler._on_event_connection_state_change,
+            # OWNd calls this from inside connect(), also on a reconnect within
+            # get_next() (OpenWebNet-HA/OWNd#132): the one place a password that
+            # stops working while Home Assistant runs becomes visible.
+            on_auth_error=self._on_auth_error,
         )
         watchdog = asyncio.timeout(None)
         current_stall_timeout = float(getattr(gw_module, "EVENT_STALL_TIMEOUT", self.stall_timeout))
@@ -221,9 +259,17 @@ class EventSessionRunner:
                 LOGGER.exception("%s Event listener failed.", self.log_id)
         finally:
             self._event_watchdog = None
-            with contextlib.suppress(Exception):
-                await asyncio.shield(_event_session.close())
+            self._closing_session = True
+            try:
+                with contextlib.suppress(Exception):
+                    await asyncio.shield(_event_session.close())
+            finally:
+                self._closing_session = False
         return not self._terminate_listener
+
+    def _on_auth_error(self, error: Any) -> None:
+        """OWNd's ``on_auth_error`` hook: the gateway refused the password on the event session."""
+        self.handler._on_auth_refused(getattr(error, "reason", None), "event")
 
     async def _read_event_session(self, _event_session: OWNEventSession) -> None:
         """Connect ``_event_session`` and dispatch its frames.
@@ -256,6 +302,8 @@ class EventSessionRunner:
                     res.get("Message"),
                 )
                 self.handler._on_event_connection_state_change(False)
+                if res.get("Message") in AUTH_REFUSALS:
+                    self.handler._on_auth_refused(res.get("Message"), "event")
                 return
         else:
             LOGGER.warning(
@@ -269,6 +317,13 @@ class EventSessionRunner:
         while not self._terminate_listener:
             message = await _event_session.get_next()
             self._update_event_watchdog(progress=True)
+            last_error = getattr(_event_session, "last_error", None)
+            if message is None and isinstance(last_error, OWNAuthError):
+                # The reconnect inside get_next() was refused for the password. Calling
+                # get_next() again would present it again (once per RECONNECT_PAUSE_FATAL,
+                # for as long as Home Assistant runs), so the listener ends here.
+                self.handler._on_auth_refused(last_error.reason, "event")
+                return
             if message is None:
                 reachable = session_is_open(_event_session)
                 if reachable != was_reachable:
@@ -1372,6 +1427,13 @@ class CommandWorkerPool:
         self.sending_workers: list[asyncio.Task[None]] = []
         self._active_worker_loops: int = 0
         self._in_flight_messages: list[Any] = []
+        # Set once the gateway refused the password: nothing is queued any more.
+        self._auth_refused: bool = False
+        self._auth_refused_reason: str | None = None
+        # Serializes command-session handshakes across workers so a changed password
+        # is never presented by 2–4 workers concurrently (avoiding the 3-in-60s HMAC
+        # gateway lockout, OpenWebNet Encyclopedia `protocol/authentication.md`).
+        self._connect_lock: asyncio.Lock = asyncio.Lock()
 
         queue_max_size = (
             self.gateway.profile.max_queue_size
@@ -1483,22 +1545,67 @@ class CommandWorkerPool:
     ) -> asyncio.Future[float]:
         """Put a frame on the send queue and hand back its delivery future."""
         written: asyncio.Future[float] = asyncio.get_running_loop().create_future()
+        if self._auth_refused:
+            # No worker is left to take it (see stop_after_auth_refusal): the frame is
+            # reported as not written, like any frame that could not be sent, instead
+            # of waiting in the queue until the entry is reloaded.
+            LOGGER.debug(
+                "%s Message `%s` not sent: the gateway refused the password; "
+                "waiting for re-authentication.",
+                self.log_id,
+                message,
+            )
+            setattr(written, "_not_written", True)
+            written.cancel()
+            return written
         setattr(written, "_queued_in_pool", True)
         envelope: dict[str, Any] = {
             "message": message,
             "is_status_request": is_status_request,
-            "is_cancel": is_cancel,
             "written": written,
         }
         if is_fade_step:
             envelope["is_fade_step"] = True
-        await self.send_buffer.put(envelope)
+        if is_cancel:
+            envelope["is_cancel"] = True
+        try:
+            await self.send_buffer.put(envelope)
+        except Exception:
+            if self._refused_meanwhile():
+                LOGGER.debug(
+                    "%s Message `%s` not sent: the gateway refused the password; "
+                    "waiting for re-authentication.",
+                    self.log_id,
+                    message,
+                )
+                setattr(written, "_not_written", True)
+                written.cancel()
+                return written
+            raise
+        if self._refused_meanwhile():
+            # The refusal landed while put() was suspended: drain anything put during
+            # the race so no item leaks in the queue and no other producer stalls.
+            self._drain_queue()
+            LOGGER.debug(
+                "%s Message `%s` not sent: the gateway refused the password; "
+                "waiting for re-authentication.",
+                self.log_id,
+                message,
+            )
+            _cancel_written(envelope, not_written=True)
+            return written
         LOGGER.debug(
             "%s Message `%s` was successfully queued.",
             self.log_id,
             message,
         )
         return written
+
+    def _on_auth_error(self, error: Any) -> None:
+        """OWNd's ``on_auth_error`` hook: the gateway refused the password on a command session."""
+        reason = getattr(error, "reason", None)
+        self._auth_refused_reason = reason if isinstance(reason, str) else "password_error"
+        self.handler._on_auth_refused(reason, "command")
 
     def _connect_refused(self, result: Any, worker_id: int) -> bool:
         """A command-session ``connect()`` result the worker must not retry on."""
@@ -1511,6 +1618,8 @@ class CommandWorkerPool:
                     result.get("Message"),
                     worker_id,
                 )
+                if result.get("Message") in AUTH_REFUSALS:
+                    self.handler._on_auth_refused(result.get("Message"), "command")
                 return True
         return False
 
@@ -1560,7 +1669,19 @@ class CommandWorkerPool:
             worker_id,
         )
 
-        _command_session = command_session_cls(gateway=self.gateway, logger=LOGGER)
+        if command_session_cls is OWNCommandSession:
+            _command_session: Any = _PooledCommandSession(
+                self,
+                gateway=self.gateway,
+                logger=LOGGER,
+                on_auth_error=self._on_auth_error,
+            )
+        else:
+            _command_session = command_session_cls(
+                gateway=self.gateway,
+                logger=LOGGER,
+                on_auth_error=self._on_auth_error,
+            )
         self._active_worker_loops += 1
         try:
             try:
@@ -1576,7 +1697,7 @@ class CommandWorkerPool:
                 )
                 res = None
 
-            if self._connect_refused(res, worker_id):
+            if self._connect_refused(res, worker_id) or self._auth_refused or self._terminate_sender:
                 return
 
             while not self._terminate_sender:
@@ -1633,7 +1754,11 @@ class CommandWorkerPool:
                     # never replayed.
                     if not session_is_open(_command_session):
                         res = await _command_session.connect()
-                        if self._connect_refused(res, worker_id):
+                        if (
+                            self._connect_refused(res, worker_id)
+                            or self._auth_refused
+                            or self._terminate_sender
+                        ):
                             _cancel_written(task, not_written=True)
                             return
                         if not session_is_open(_command_session):
@@ -1685,6 +1810,20 @@ class CommandWorkerPool:
                         with contextlib.suppress(ValueError):
                             self._in_flight_messages.remove(task["message"])
                     last_error = getattr(_command_session, "last_error", None)
+                    if collected is None and isinstance(last_error, OWNAuthError):
+                        # OWNd reopened the socket inside send() and the gateway refused the
+                        # password: the frame was not written. The next frame would open the
+                        # session again with the same password.
+                        LOGGER.error(
+                            "%s Command session authentication refused (%s). "
+                            "Terminating sending worker %s to prevent gateway lockout.",
+                            self.log_id,
+                            last_error.reason,
+                            worker_id,
+                        )
+                        _cancel_written(task)
+                        self.handler._on_auth_refused(last_error.reason, "command")
+                        return
                     bleed_zones = (
                         _mismatched_who4_reply_zones(task["message"], collected)
                         if task["is_status_request"]
@@ -1846,11 +1985,31 @@ class CommandWorkerPool:
         if backoff > 0:
             self.send_buffer.pause_status(backoff)
 
-    def close(self) -> None:
-        """Cancel queued frames and unblock workers."""
-        self._terminate_sender = True
-        self._sender_stop.set()
+    def _refused_meanwhile(self) -> bool:
+        """The refusal flag, read again after an await (it can be set while ``put()`` is suspended)."""
+        return self._auth_refused
 
+    def stop_after_auth_refusal(self) -> None:
+        """Stop every worker and refuse new frames: the gateway refused the password."""
+        self._auth_refused = True
+        if self._auth_refused_reason is None:
+            self._auth_refused_reason = "password_error"
+        self.close()
+        # A worker in connect()'s retry delay, or holding a dequeued frame while its
+        # session reopens, would log in again or write that frame: cancel it (not
+        # awaited). A refusal reported from inside a worker returns by itself.
+        current = asyncio.current_task()
+        for worker in self.sending_workers:
+            if not worker.done() and worker is not current:
+                worker.cancel()
+        # Shut down the queue (waking every suspended producer in put() with
+        # QueueShutDown) and drain any remaining items so nothing leaks.
+        if isinstance(self.send_buffer, FrameScheduler):
+            self.send_buffer.shutdown(immediate=True)
+        self._drain_queue()
+
+    def _drain_queue(self) -> None:
+        """Take every queued item off the send queue, cancelling its delivery future."""
         while True:
             try:
                 task = self.send_buffer.get_nowait()
@@ -1859,6 +2018,13 @@ class CommandWorkerPool:
             if task is not None:
                 _cancel_written(task, not_written=True)
             self.send_buffer.task_done()
+
+    def close(self) -> None:
+        """Cancel queued frames and unblock workers."""
+        self._terminate_sender = True
+        self._sender_stop.set()
+
+        self._drain_queue()
 
         if isinstance(self.send_buffer, FrameScheduler):
             self.send_buffer._in_flight_targets.clear()
