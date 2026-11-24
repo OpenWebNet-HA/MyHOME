@@ -198,12 +198,15 @@ if not hasattr(OWNSoundEvent, "volume_step_delta"):  # pragma: no cover - PyPI O
 __all__ = [
     "area_of_where",
     "automation_dim10_info",
+    "bus_interface_from_message",
+    "canonical_contact_where",
     "canonical_point_address",
     "canonical_point_spelling",
     "canonical_thermo_zone",
     "central_report_zone",
     "central_unit_season",
     "central_unit_where",
+    "contact_where_aliases",
     "diagnose_apl_where",
     "encode_apl_where",
     "expose_message_where",
@@ -221,6 +224,7 @@ __all__ = [
     "is_valid_rgb_tuple",
     "normalize_expose_where",
     "normalize_where",
+    "padded_contact_where",
     "parse_apl_where",
     "parse_thermo_actuator_where",
     "thermo_dim19_status",
@@ -354,6 +358,31 @@ def is_probe(where: str) -> bool:
 def where_param(message: Any) -> list[str]:
     """The ``#``-separated tail of a frame's WHERE, however the OWNd version names it."""
     return getattr(message, "where_param", None) or getattr(message, "_where_param", None) or []
+
+
+def bus_interface_from_message(message: Any) -> tuple[bool, str | None]:
+    """Extract optional F422 ``#4#II`` interface (``00``..``15``) or reject foreign ``where_param``."""
+    iface_attr = getattr(message, "interface", None)
+    raw_iface = iface_attr if isinstance(iface_attr, str) and iface_attr else None
+    raw_params = where_param(message)
+    params = [str(p) for p in raw_params] if isinstance(raw_params, (list, tuple)) else []
+    if raw_iface is not None:
+        if params and not (len(params) == 2 and params[0] == "4"):
+            return False, None
+        if _is_ascii_uint(raw_iface) and 1 <= len(raw_iface) <= 2 and int(raw_iface) <= 15:
+            return True, raw_iface.zfill(2)
+        return False, None
+    if not params:
+        return True, None
+    if (
+        len(params) == 2
+        and params[0] == "4"
+        and _is_ascii_uint(params[1])
+        and 1 <= len(params[1]) <= 2
+        and int(params[1]) <= 15
+    ):
+        return True, params[1].zfill(2)
+    return False, None
 
 
 def is_external_probe(where: str) -> bool:
@@ -686,6 +715,64 @@ def diagnose_apl_where(raw_where: str) -> tuple[str, dict[str, str]] | None:
         return ("invalid_where_apl", {})
 
     return ("invalid_where_apl", {})
+
+
+# A WHO 25 dry contact is ``3`` + its number, [1-201] for the automation interface and Z N
+# ([1-9][1-9]) for the alarm / IR one (WHO 25 PDF, WHERE table), so no published WHERE has a
+# ``0`` right after the ``3``. An F455 1.0.76 writes contacts 1 and 2 as ``301`` / ``302`` where
+# an F461 2.0.11 on the same bus writes ``31`` / ``32`` for the same frame (live 2026-11-18:
+# ``*25*31#0*301##`` and ``*25*31#0*31##`` 13 ms apart, both in answer to ``*#25*301##``). Only
+# that one padding zero in front of a single digit was captured, so only that is rewritten.
+_PADDED_CONTACT_RE = re.compile(r"^30([1-9])((?:#4#(?:0?[0-9]|1[0-5]))?)$")
+_SHORT_CONTACT_RE = re.compile(r"^3([1-9])((?:#4#(?:0?[0-9]|1[0-5]))?)$")
+
+
+def canonical_contact_where(where: str) -> str:
+    """``301`` -> ``31`` (WHO 25 dry contact, before an optional ``#4#II`` suffix); anything else as given.
+
+    The spelling of the WHO 25 PDF examples (``*25*31#1*31##`` is contact 1) and of every other
+    gateway with a capture (F454, MH200N, MH202: ``31``, ``33``). Both gateways put either
+    spelling of the status request on the bus, but an F461 2.0.11 answered the padded request
+    ``*#25*301##`` on its command session with NACK (four reads of four, the contact's answer
+    ``*25*31#0*31##`` was on the bus) and acknowledged ``*#25*31##``; requests are therefore
+    written with this spelling, and an entity keeps the unique id it was created with.
+    """
+    match = _PADDED_CONTACT_RE.match(str(where))
+    return f"3{match[1]}{match[2]}" if match else str(where)
+
+
+def padded_contact_where(where: str) -> str:
+    """``31`` -> ``301`` (F455 padded WHO 25 dry contact, before an optional ``#4#II`` suffix); anything else as given."""
+    match = _SHORT_CONTACT_RE.match(str(where))
+    return f"30{match[1]}{match[2]}" if match else str(where)
+
+
+def contact_where_aliases(where: str) -> list[str]:
+    """Return both short and F455-padded spellings for a WHO 25 contact, normalizing leading zeros and ``#4#I``."""
+    text = str(where)
+    base, sep, iface = text.partition("#4#")
+    clean_base = base.lstrip("0") or "0" if _is_ascii_uint(base) else base
+    valid_iface = bool(sep and _is_ascii_uint(iface) and 1 <= len(iface) <= 2 and int(iface) <= 15)
+    clean_iface = iface.zfill(2) if valid_iface else iface
+    normalized = f"{clean_base}#4#{clean_iface}" if sep else clean_base
+    candidates = [
+        text,
+        normalized,
+        canonical_contact_where(text),
+        padded_contact_where(text),
+        canonical_contact_where(normalized),
+        padded_contact_where(normalized),
+    ]
+    if valid_iface:
+        short_routed = f"{clean_base}#4#{int(iface)}"
+        candidates.extend(
+            (
+                short_routed,
+                canonical_contact_where(short_routed),
+                padded_contact_where(short_routed),
+            )
+        )
+    return list(dict.fromkeys(candidates))
 
 
 def normalize_expose_where(who: int, where: str | int | None) -> str:

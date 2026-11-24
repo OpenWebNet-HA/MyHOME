@@ -77,9 +77,25 @@ def _apply_yaml_platforms(
                 aliases: list[str] = []
                 central_keys: set[str] = set()
                 if isinstance(runtime_cfg, dict):
-                    iface = runtime_cfg.get(CONF_BUS_INTERFACE) or runtime_cfg.get("bus_interface")
-                    # A routed device never claims the bare key: that is the local bus's (#408)
-                    routing = f"{BUS_ROUTING}{iface}" if iface is not None else ""
+                    raw_iface = next(
+                        (
+                            runtime_cfg[k]
+                            for k in (CONF_BUS_INTERFACE, "bus_interface")
+                            if k in runtime_cfg and runtime_cfg[k] is not None and runtime_cfg[k] != ""
+                        ),
+                        None,
+                    )
+                    if raw_iface is not None:
+                        iface_str = str(raw_iface)
+                        if (
+                            iface_str.isascii()
+                            and iface_str.isdigit()
+                            and 1 <= len(iface_str) <= 2
+                            and int(iface_str) <= 15
+                        ):
+                            iface_str = iface_str.zfill(2)
+                        # A routed device never claims the bare key: that is the local bus's (#408)
+                        routing = f"{BUS_ROUTING}{iface_str}"
                     if CONF_ZONE in runtime_cfg or "zone" in runtime_cfg:
                         z_val = str(runtime_cfg.get(CONF_ZONE) or runtime_cfg.get("zone"))
                         clean_z = z_val.split("#")[-1]
@@ -95,7 +111,7 @@ def _apply_yaml_platforms(
                     is_thermo_switch = (
                         plat == "switch" and str(runtime_cfg.get(CONF_WHO)) == "4"
                     )
-                    if dash and who.isdigit() and not is_thermo_switch:
+                    if dash and who.isascii() and who.isdigit() and not is_thermo_switch:
                         if clean_id in central_keys:
                             central_aliases.append((plat, clean_id, runtime_cfg))
                         else:
@@ -115,7 +131,8 @@ def _apply_yaml_platforms(
                         configured_platforms[plat].update(dict.fromkeys(aliases, runtime_cfg))
                         # ``1``, ``01`` and ``#1`` are zone 1; ``001`` is all the probes of zone 1, another address.
                         if (
-                            (digits := z_val.removeprefix("#")).isdigit()
+                            (digits := z_val.removeprefix("#")).isascii()
+                            and digits.isdigit()
                             and len(digits) <= 2
                             and (canon := canonical_thermo_zone(z_val)) is not None
                         ):

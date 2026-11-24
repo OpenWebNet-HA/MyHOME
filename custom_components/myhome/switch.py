@@ -41,6 +41,7 @@ from OWNd.message import (
 from .binary_sensor import (
     binary_sensor_canonical_where,
     classify_binary_sensor_registry_entry,
+    dry_contact_config_keys,
     resolve_binary_sensor_inverted,
 )
 from .const import (
@@ -382,21 +383,19 @@ async def async_setup_entry(
         bs_who, candidate = classified
         clean_cand = candidate.split("-")[-1]
         if bs_who == "25":
-            bs_cfg = _bs_first_cfg(
-                f"25-{candidate}",
-                candidate,
-                clean_cand,
-                normalize_where(candidate) or "",
-                normalize_where(clean_cand) or "",
-            )
-            bs_where = str(bs_cfg.get(CONF_WHERE, candidate))
+            candidate = Address.from_device_id(candidate).key
+            clean_cand = candidate.split("-")[-1]
+            bs_cfg = _bs_first_cfg(*dry_contact_config_keys(candidate))
+            bs_where = Address.from_config(candidate, bs_cfg).key if bs_cfg else candidate
             norm_w = normalize_where(bs_where) or normalize_where(bs_where.split("-")[-1])
             bs_dev_id = (
                 candidate
                 if candidate in configured_bs
                 else (norm_w or bs_where.split("-")[-1])
             )
-            default_name = f"Dry Contact {norm_w or bs_where.split('-')[-1]}"
+            bs_where_addr = Address.from_device_id(bs_where.split("-")[-1])
+            bs_norm_base = normalize_where(bs_where_addr.clean_where) or bs_where_addr.clean_where
+            default_name = f"Dry Contact {Address(bs_norm_base, bs_where_addr.interface).suffix}"
             default_model = "Dry Contact Interface"
         else:
             bs_cfg = _bs_first_cfg(
@@ -476,7 +475,7 @@ async def async_setup_entry(
         bs_addr = Address.from_config(str(dev_id), bs_cfg)
         default_model = "Dry Contact" if bs_who == "25" else "Auxiliary Channel"
         default_name = (
-            f"Dry Contact {bs_addr.where}"
+            f"Dry Contact {bs_addr.suffix}"
             if bs_who == "25"
             else f"Auxiliary Channel {bs_addr.where}"
         )
