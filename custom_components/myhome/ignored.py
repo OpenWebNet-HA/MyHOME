@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
 
 from .const import CONF_IGNORED_ADDRESSES, CONF_WHERE, CONF_WHO
+from .where_grammar import canonical_contact_where
 
 _PAIR_PATTERN = re.compile(
     r"^(?:who\s*[:=]?\s*)?(\d+)\s*(?:[/:\-,]|\s+(?:where\s*[:=]?\s*)?)\s*(?:where\s*[:=]?\s*)?(#?[0-9A-Za-z]+(?:#4#[0-9A-Za-z]+)?)$",
@@ -150,13 +151,16 @@ class IgnoredAddresses:
             who = int(who_str)
             self._entries.add((who, where))
             self._normalized.add((who, self._norm_where(where)))
+            if who == 25:
+                # A dry contact typed as an F455 spells it (301) is the 31 of the other gateways
+                self._normalized.add((who, canonical_contact_where(self._norm_where(where))))
 
     @staticmethod
     def _norm_where(where: str) -> str:
         """Normalize WHERE: strip leading zeros from device number if numeric."""
         base, sep, iface = where.partition("#4#")
-        clean_base = base.lstrip("0") or "0" if base.isdigit() else base
-        clean_iface = iface.zfill(2) if iface.isdigit() else iface
+        clean_base = base.lstrip("0") or "0" if base.isascii() and base.isdigit() else base
+        clean_iface = iface.zfill(2) if iface.isascii() and iface.isdigit() else iface
         return f"{clean_base}#4#{clean_iface}" if sep else clean_base
 
     def is_ignored(self, who: int | str, where: str, interface: str | None = None) -> bool:
@@ -178,7 +182,7 @@ class IgnoredAddresses:
 
         candidates = {where}
         if interface:
-            iface_str = interface.zfill(2) if interface.isdigit() else interface
+            iface_str = interface.zfill(2) if interface.isascii() and interface.isdigit() else interface
             candidates.add(f"{where}#4#{interface}")
             candidates.add(f"{where}#4#{iface_str}")
 
@@ -193,6 +197,8 @@ class IgnoredAddresses:
         for c in list(candidates):
             if c.startswith("#"):
                 candidates.add(c.removeprefix("#"))
+        if who_int == 25:
+            candidates.update([canonical_contact_where(self._norm_where(c)) for c in candidates])
 
         for c in candidates:
             if (who_int, c) in self._entries:

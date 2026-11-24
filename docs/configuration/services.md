@@ -44,6 +44,9 @@ Sends an arbitrary, valid OpenWebNet message through the gateway command session
 | `gateway` | string | No | The MAC address of the target gateway (defaults to the `is_primary` gateway, or the first loaded gateway if none is primary). Unknown keys such as `gw_mac` are rejected. | `"00:03:50:20:00:01"` |
 | `message` | string | **Yes** | Valid OpenWebNet frame ending with `##`. | `"*1*0*0##"` |
 
+> [!NOTE]
+> **Nothing sent means an error, not a log line.** An empty `message` is refused by the service schema. The action raises `ServiceValidationError` and queues nothing when `message` is not a frame (characters other than `0-9`, `*` and `#`, no leading `*` or trailing `##`, or not parsable: `send_message_invalid_frame`), when it is a refused destructive/crash frame (`WHO = 4` Dimension 22 crash forms, `WHO = 18` Dimension 52 crash forms, or bare `WHO = 22` power frames: `send_message_refused_frame`), when `gateway` matches no loaded gateway (`gateway_not_found`), or when no MyHOME gateway is set up (`no_gateway_loaded`). A frame that was queued and that the gateway later answers with `NACK` is still only logged.
+
 ### Example YAML Call
 ```yaml
 action: myhome.send_message
@@ -91,10 +94,11 @@ data:
 
 ## 3. `myhome.sync_time`
 
-Synchronizes the gateway's real-time clock (RTC) with Home Assistant's local time using `WHO = 13` dimension frames. This ensures scheduled events programmed directly inside physical gateways (e.g. MH200N/MH202 schedules) run in lockstep with real time.
+Asks the gateway to set its real-time clock (RTC) to Home Assistant's local time: it queues the `WHO = 13` dimension frames on the named gateway, or on every primary gateway when `gateway` is omitted. It does not wait for the gateway's answer and does not verify the clock afterwards. The clock matters for scheduled events programmed directly inside physical gateways (e.g. MH200N/MH202 schedules).
 
 > [!NOTE]
 > - **Shared-Bus Topology**: When `gateway` is omitted, follower (`secondary` / `standby`) gateways on a shared SCS bus are automatically skipped so only primary gateways broadcast clock updates.
+> - **Unknown or Missing Gateway**: A `gateway` MAC that matches no loaded gateway raises `ServiceValidationError` (`gateway_not_found`), and calling the action while no MyHOME gateway is set up raises `no_gateway_loaded`; no frame is queued in either case.
 > - **Whole-Hour UTC Offset Requirement**: Because the OpenWebNet `WHO = 13` timezone offset field (`0HH` / `1HH`) only encodes whole hours, calling `myhome.sync_time` when Home Assistant is configured in a fractional-hour timezone (such as `Asia/Kolkata` `+05:30`) raises `ServiceValidationError` (`sync_time_unsupported_offset`) rather than transmitting a truncated offset.
 
 ### Fields

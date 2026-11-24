@@ -38,7 +38,7 @@ from .const import (
     INTEGRATION_VERSION,
 )
 from .data import get_runtime_data
-from .services import is_refused_dimension_22
+from .services import destructive_frame_reason, is_refused_dimension_22
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -377,6 +377,15 @@ async def ws_bus_monitor_send(
             ERR_INVALID_FORMAT,
             "WHO 4 dimension 22 in this form crashes the gateway's thermostat daemon "
             "and is blocked for safety",
+        )
+        return
+
+    destructive_reason = destructive_frame_reason(frame_str)
+    if destructive_reason is not None:
+        connection.send_error(
+            msg["id"],
+            ERR_INVALID_FORMAT,
+            f"Refusing to send {frame_str}: {destructive_reason}",
         )
         return
 

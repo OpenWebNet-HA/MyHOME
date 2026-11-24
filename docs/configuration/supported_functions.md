@@ -118,7 +118,7 @@ Legend: ✅ supported · 👁️ read-only · ⚙️ via a service, not an entit
 
 | Function | Status | Notes |
 | :--- | :---: | :--- |
-| Lock / unlock actuator | ✅ | On every light, switch and cover device (`EntityCategory.CONFIG`). |
+| Lock / unlock actuator | ✅ | On every light, switch and cover device (`EntityCategory.CONFIG`). A press waits for the gateway's answer and raises an error when the gateway rejects the frame with NACK (`command_rejected`), when the frame could not be delivered (`command_not_delivered`) or was not confirmed within 15 s (`command_not_confirmed`). Whether the gateway acknowledges depends on the gateway and the target: a physical `F455` (firmware `1.0.76`) answered `*14*0*05##` and `*14*1*05##` with NACK, a physical `F461` (`2.0.11`) acknowledged both. Why that `F455` answered NACK is unknown; an `F461` also answers NACK for an address with no device (`*14*0*99##`, `tests/fixtures/traces/f461_who14_live_2026-10-18/README.md`). |
 | Calibrate travel time | ✅ | On every timed cover device, plus *Calibrate all covers* on the gateway device. |
 | FM tuner seek up / down | ✅ | Companion *Seek up* and *Seek down* buttons on every declared F500 / F500N `Audio Source` device (`WHO 16` `*16*5000/5100*10S##` or `WHO 22` `*22*5/6*2#S##`). |
 

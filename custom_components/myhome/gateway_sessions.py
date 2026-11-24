@@ -25,7 +25,12 @@ from .const import LOGGER, area_of_where, is_apl_address
 from .expose import is_exposed_on_bus
 from .gateway_confirm import echo_watchdog_of
 from .gateway_events import GatewayEventDispatcher
-from .where_grammar import expose_message_where, normalize_where, where_param
+from .where_grammar import (
+    canonical_point_spelling,
+    expose_message_where,
+    normalize_where,
+    where_param,
+)
 
 if TYPE_CHECKING:
     from .bus_monitor import BusMonitor
@@ -369,7 +374,21 @@ def _split_where(where: str) -> tuple[str, str | None]:
 
 
 def _same_cover_where(first: str, second: str) -> bool:
-    """Whether two WHO 2 WHEREs address the exact same physical cover actuator."""
+    """Whether two WHO 2 WHEREs may address the same cover, for the overlap check only.
+
+    Besides the same address on the same bus, two numbers with the same value count
+    as one (``02`` and ``2``, ``0011`` and ``11``). They are different addresses:
+    the WHO 2 WHERE table lists the areas (``2`` is area 2) and the four-digit point
+    spelling (A=00 with PL 01-15, ``0002``; Encyclopedia
+    ``who-2-automation/addressing.md``: leading zeroes are significant). The
+    two-character spelling of such a point (``02``) is not in that table: a
+    MyHomeServer1 local room keypad sends ``*2*2*02##`` at its actuator's point
+    address (``tests/fixtures/traces/issue_445/README.md:43``). An F453 capture has
+    ``*2*0*2##`` followed by the stops of ``21``..``25``
+    (``tests/fixtures/traces/discussion_856``). Treating them as
+    overlapping only costs a wait (``_wheres_overlap``); it must not decide which
+    queued frame a cancel drops (``_PriorityQueueStorage.drop_superseded``).
+    """
     if first == second:
         return True
     base_a, if_a = _split_where(first)
@@ -425,6 +444,14 @@ _FRAME_TARGET_RE = re.compile(
 )
 
 
+def _is_withdrawn(item: Any) -> bool:
+    """Return True when a queued envelope's delivery future has already been cancelled."""
+    if not isinstance(item, dict):
+        return False
+    written = item.get("written")
+    return isinstance(written, asyncio.Future) and written.cancelled()
+
+
 def _classify_tier(item: Any) -> int:
     """Classify item into priority tier: 0 (commands), 1 (fade steps), 2 (status), 3 (others/sentinels).
 
@@ -451,8 +478,9 @@ def _normalize_target_where(who: int, raw_where: str) -> str:
     """Canonicalize a target WHERE string across OpenWebNet subsystems.
 
     Normalizes leading zeros on non-APL numeric addresses via ``normalize_where``,
-    canonicalizes local bus interface suffixes (``#4#2`` -> ``#4#02``), and strips
-    leading zeros on group numbers (``#03`` -> ``#3``).
+    canonicalizes local bus interface suffixes (``#4#2`` -> ``#4#02``), strips
+    leading zeros on group numbers (``#03`` -> ``#3``), and for WHO 1 / 2 writes the
+    area-zero point spelling ``0009`` as ``09`` (``canonical_point_spelling``).
     """
     where_s = str(raw_where).strip()
     if not where_s:
@@ -466,6 +494,8 @@ def _normalize_target_where(who: int, raw_where: str) -> str:
         suffix = ""
 
     norm_base = normalize_where(base)
+    if who in (1, 2):
+        norm_base = canonical_point_spelling(norm_base)
     if norm_base.startswith("#") and norm_base[1:].isdigit():
         norm_base = "#" + (norm_base[1:].lstrip("0") or "0")
     elif who not in (1, 2) and norm_base.isdigit() and norm_base not in ("0", "00", "100"):
@@ -509,7 +539,11 @@ def _extract_target_key(item: Any) -> tuple[int, str] | None:
 
 
 def _same_target(first: tuple[int, str], second: tuple[int, str]) -> bool:
-    """Return True if two target keys represent the same physical target."""
+    """Return True if two target keys may be one target (lenient for WHO 2, see ``_same_cover_where``).
+
+    Used to release an in-flight lock. What a new frame supersedes is decided on
+    the exact key instead (``_PriorityQueueStorage.drop_superseded``).
+    """
     if first[0] != second[0]:
         return False
     if first[1] == second[1]:
@@ -754,6 +788,8 @@ class _PriorityQueueStorage:
             head_run_end += 1
         overlap_pos = 0
         for index, queued in enumerate(self._commands):
+            if _is_withdrawn(queued):
+                continue
             msg = queued.get("message") if isinstance(queued, dict) else None
             queued_where = _cover_where(msg)
             if queued_where is not None and _wheres_overlap(stop_where, queued_where):
@@ -794,6 +830,52 @@ class _PriorityQueueStorage:
             return self._others.popleft()
         raise IndexError("pop from an empty priority queue")
 
+    def _find_eligible(
+        self,
+        in_flight_targets: set[tuple[int, str]],
+        *,
+        allow_status: bool = True,
+    ) -> tuple[collections.deque[Any], int] | None:
+        """Locate the highest priority item a worker may take now, as ``(tier, index)``.
+
+        An item waits while its target overlaps one being written by another worker.
+        It also waits while it overlaps an item queued ahead of it that is itself
+        waiting, so frames that can reach the same actuator leave in queue order.
+        Overlap is not transitive for WHO 2 (point ``11`` overlaps area ``1``, area
+        ``1`` overlaps point ``12``, ``11`` and ``12`` do not overlap): with
+        ``*2*1*11##`` in flight and ``[*2*1*1##, *2*0*12##]`` queued, checking the
+        in-flight set alone handed the stop for 12 to the second worker ahead of the
+        area frame it was queued behind, and the bus got stop 12, then area 1 up.
+        That is the #645 rule ("a stop never overtakes an unwritten frame for a
+        cover it stops") across workers, as the #694 review asked ("wait only for
+        overlapping frames with an earlier ticket").
+        A frame its caller withdrew (cancelled ``written`` future) is handed out at
+        once, for the worker to discard, and holds nothing back.
+        """
+        tiers = (
+            (self._commands, self._fade_steps, self._status, self._others)
+            if allow_status
+            else (self._commands, self._fade_steps, self._others)
+        )
+        waiting: list[tuple[int, str]] = []
+        for q in tiers:
+            for idx, item in enumerate(q):
+                if not in_flight_targets:
+                    return q, idx
+                if _is_withdrawn(item):
+                    return q, idx
+                target = _extract_target_key(item)
+                if target is None:
+                    return q, idx
+                if any(
+                    _targets_overlap(target, held)
+                    for held in itertools.chain(in_flight_targets, waiting)
+                ):
+                    waiting.append(target)
+                    continue
+                return q, idx
+        return None
+
     def pop_eligible(
         self,
         in_flight_targets: set[tuple[int, str]],
@@ -803,23 +885,13 @@ class _PriorityQueueStorage:
         """Pop and return the highest priority item eligible under target and status gates."""
         if not in_flight_targets and allow_status:
             return self.popleft()
-        tiers = (
-            (self._commands, self._fade_steps, self._status, self._others)
-            if allow_status
-            else (self._commands, self._fade_steps, self._others)
-        )
-        for q in tiers:
-            for idx, item in enumerate(q):
-                if not in_flight_targets:
-                    del q[idx]
-                    return item
-                target = _extract_target_key(item)
-                if target is None or not any(
-                    _targets_overlap(target, active) for active in in_flight_targets
-                ):
-                    del q[idx]
-                    return item
-        raise IndexError("no eligible item in priority queue")
+        found = self._find_eligible(in_flight_targets, allow_status=allow_status)
+        if found is None:
+            raise IndexError("no eligible item in priority queue")
+        q, idx = found
+        item = q[idx]
+        del q[idx]
+        return item
 
     def has_eligible(
         self,
@@ -830,21 +902,7 @@ class _PriorityQueueStorage:
         """Return True if at least one queued item is eligible under target and status gates."""
         if not in_flight_targets and allow_status:
             return bool(self)
-        tiers = (
-            (self._commands, self._fade_steps, self._status, self._others)
-            if allow_status
-            else (self._commands, self._fade_steps, self._others)
-        )
-        for q in tiers:
-            if not in_flight_targets and q:
-                return True
-            for item in q:
-                target = _extract_target_key(item)
-                if target is None or not any(
-                    _targets_overlap(target, active) for active in in_flight_targets
-                ):
-                    return True
-        return False
+        return self._find_eligible(in_flight_targets, allow_status=allow_status) is not None
 
     def drop_superseded(self, new_item: Any) -> list[dict[str, Any]]:
         """Drop queued frames superseded by new_item for the same physical (who, where) target."""
@@ -853,13 +911,19 @@ class _PriorityQueueStorage:
             return []
         tier = _classify_tier(new_item)
         dropped: list[dict[str, Any]] = []
+        # The same target is the same canonical key (``_extract_target_key``: interface
+        # ``#4#2`` / ``#4#02`` and group ``#03`` / ``#3`` are already one spelling there).
+        # A WHERE that merely has the same number is another address: a cancel for point
+        # ``05`` used to drop a queued command for area ``5``, and one for ``0011`` a
+        # command for ``11``, and their callers got a cancelled write. The one alias is
+        # the area-zero point spelling (``0009`` is ``09``, ``_normalize_target_where``).
         if tier in (_TIER_COMMANDS, _TIER_FADE_STEPS) and self._fade_steps:
             kept_fades: collections.deque[Any] = collections.deque()
             for existing in self._fade_steps:
                 existing_target = _extract_target_key(existing)
                 if (
                     existing_target is not None
-                    and _same_target(existing_target, target)
+                    and existing_target == target
                     and isinstance(existing, dict)
                 ):
                     dropped.append(existing)
@@ -872,7 +936,7 @@ class _PriorityQueueStorage:
                 existing_target = _extract_target_key(existing)
                 if (
                     existing_target is not None
-                    and _same_target(existing_target, target)
+                    and existing_target == target
                     and isinstance(existing, dict)
                     and not _is_cancel_item(existing)
                 ):
@@ -893,7 +957,7 @@ class _PriorityQueueStorage:
                 existing_target = _extract_target_key(existing)
                 if (
                     existing_target is not None
-                    and _same_target(existing_target, target)
+                    and existing_target == target
                     and isinstance(existing, dict)
                     and _is_status_report_item(existing)
                     and (
@@ -1109,7 +1173,7 @@ class FrameScheduler:
             if not waiter.done():
                 waiter.set_result(None)
 
-    def _drop_superseded_and_cancel(self, item: Any) -> None:
+    def _drop_superseded_and_cancel(self, item: Any) -> bool:
         """Drop superseded queued frames for the same target and cancel their futures."""
         dropped = self._queue.drop_superseded(item)
         for old_item in dropped:
@@ -1118,6 +1182,9 @@ class FrameScheduler:
                 self._unfinished_tasks -= 1
                 if self._unfinished_tasks == 0:
                     self._finished.set()
+        if dropped and self._getters:
+            self._wakeup_all_getters()
+        return bool(dropped)
 
     def put_nowait(self, item: Any) -> None:
         """Put an item into the queue without blocking."""
@@ -1129,9 +1196,18 @@ class FrameScheduler:
         self._queue.append(item)
         self._unfinished_tasks += 1
         self._finished.clear()
+        if isinstance(item, dict):
+            written = item.get("written")
+            if isinstance(written, asyncio.Future) and not written.done():
+                written.add_done_callback(self._on_written_done)
         self._wakeup_next(self._getters)
         if not self.full():
             self._wakeup_next(self._putters)
+
+    def _on_written_done(self, written: asyncio.Future[Any]) -> None:
+        """Wake the waiting workers when a queued frame is withdrawn: it may have held others back."""
+        if written.cancelled() and self._getters:
+            self._wakeup_all_getters()
 
     async def put(self, item: Any) -> None:
         """Put an item into the queue, prioritizing command waiters when full."""
@@ -1186,6 +1262,8 @@ class FrameScheduler:
                 getter.cancel()
                 with contextlib.suppress(ValueError):
                     self._getters.remove(getter)
+                if not self.empty() and not getter.cancelled():
+                    self._wakeup_next(self._getters)
                 raise
         return self.get_nowait()
 
@@ -1195,11 +1273,16 @@ class FrameScheduler:
         if not self._queue.has_eligible(self._in_flight_targets, allow_status=allow_status):
             raise asyncio.QueueEmpty
         item = self._queue.pop_eligible(self._in_flight_targets, allow_status=allow_status)
-        target = _extract_target_key(item)
-        if target is not None:
-            self._in_flight_targets.add(target)
-        if _classify_tier(item) == _TIER_STATUS:
-            self._in_flight_status += 1
+        if _is_withdrawn(item):
+            # A withdrawn frame is handed out only to be discarded; it must neither
+            # take a target/status lock nor release another worker's active lock.
+            item["_unlocked"] = True
+        else:
+            target = _extract_target_key(item)
+            if target is not None:
+                self._in_flight_targets.add(target)
+            if _classify_tier(item) == _TIER_STATUS:
+                self._in_flight_status += 1
         self._wakeup_next(self._putters)
         return item
 
@@ -1218,6 +1301,10 @@ class FrameScheduler:
                 getter.cancel()
                 with contextlib.suppress(ValueError):
                     self._getters.remove(getter)
+                if not getter.cancelled() and self._queue.has_eligible(
+                    self._in_flight_targets, allow_status=self._allow_status
+                ):
+                    self._wakeup_next(self._getters)
                 raise
         return self.acquire_nowait()
 
@@ -1241,6 +1328,9 @@ class FrameScheduler:
 
     def complete_task(self, task: Any) -> None:
         """Release a task's target/status lock and mark the queue task done."""
+        if isinstance(task, dict) and task.pop("_unlocked", False):
+            self.task_done()
+            return
         was_status = _classify_tier(task) == _TIER_STATUS
         if was_status and self._in_flight_status > 0:
             self._in_flight_status -= 1
@@ -1694,6 +1784,13 @@ class CommandWorkerPool:
                                 setattr(written, "_command_timeout", True)
                             self._pause_status_after_desync()
                         elif (
+                            getattr(last_error, "reason", None) == "command_timeout"
+                            and isinstance(written, asyncio.Future)
+                            and not written.done()
+                        ):
+                            # A written command the gateway did not answer in time.
+                            setattr(written, "_no_answer", True)
+                        elif (
                             getattr(last_error, "reason", None) == "nack"
                             and isinstance(written, asyncio.Future)
                             and not written.done()
@@ -1701,8 +1798,9 @@ class CommandWorkerPool:
                             # The gateway answered the frame, a read or a command, with a NACK
                             # (OWNd's `OWNNackError` of a written frame; a refused negotiation
                             # has another reason). Every other cancellation here is a frame that
-                            # was not written or whose socket was lost: a probe's fallback read
-                            # and a setpoint write tell the two apart.
+                            # was not written or whose socket was lost: a probe's fallback read,
+                            # a setpoint write and an action that reports the failure
+                            # (command_delivery.py) tell the two apart.
                             setattr(written, "_gateway_nack", True)
                         _cancel_written(task)
                     else:

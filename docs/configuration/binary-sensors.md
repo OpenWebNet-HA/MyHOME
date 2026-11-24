@@ -12,6 +12,7 @@ The **MyHOME** integration provides monitoring for dry contact interfaces, PIR m
 * **Hardware**: BTicino `3477` / `F428` / `3480` contact interfaces, magnetic reed switches, mechanical window switches, technical alarm contacts.
 * **Addresses**: `WHERE = 31` through `3201` (or `3<A><PL>` alarm/IR contacts).
 * **Auto-Discovery**: Automatically discovered from SCS bus events and registered `3xxx` startup sweeps (`*#25*3xxx##`).
+* **Address spelling**: an F455 (firmware 1.0.76) writes contacts 1 and 2 as `301` / `302` where an F461 (firmware 2.0.11) on the same bus and the WHO 25 specification write `31` / `32`; captures of an F454, an MH200N and an MH202 carry the short form, and the other gateway models have no capture of these contacts. `30N` is read as `3N`: new contacts are created as `31`, and a contact an F455 registered earlier as `301` keeps its entity and follows both spellings. On a shared bus a standby F455 therefore updates the primary's contact during a failover, and a follower's `301` that duplicates the primary's `31` is pruned at startup like any other duplicate. The status request is always written with the short spelling (`*#25*31##`), because the F461 answered the padded one with NACK while the F455 relays the short one.
 
 ### 2. Motion / PIR Sensors (WHO = 1)
 * **Hardware**: Legrand `048822` / `067226`, BTicino `BMSE1001` / `K4659`, or standard SCS ceiling/wall motion sensors.

@@ -1889,4 +1889,72 @@ def test_stored_calibration_restores_min_motor_pulse(hass, gateway):
     assert cover3.extra_state_attributes["min_motor_pulse"] == 0.0
 
 
+@pytest.mark.asyncio
+async def test_yaml_cover_travel_time_and_source_consistent_across_first_and_second_start(
+    hass, gateway
+):
+    """Explicit-YAML covers report identical travel_time and calibration_source on 1st (yaml) and 2nd (registry) starts."""
+    from homeassistant.helpers import entity_registry as er
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.const import (
+        CONF_EXPLICIT_KINEMATICS,
+        CONF_EXPLICIT_TRAVEL_TIME,
+        CONF_PLATFORMS,
+        CONF_TRAVEL_TIME,
+        CONF_WHERE,
+        DOMAIN,
+    )
+    from custom_components.myhome.cover import async_setup_entry as setup_covers
+    from tests.conftest import attach_runtime
+
+    mac = gateway.mac
+    yaml_cover = {
+        CONF_WHERE: "06",
+        "name": "Shutter 06",
+        CONF_TRAVEL_TIME: 15,
+        CONF_EXPLICIT_KINEMATICS: True,
+        CONF_EXPLICIT_TRAVEL_TIME: True,
+    }
+
+    async def _run_start(options: dict, registered: bool):
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            data={"mac": mac},
+            options=options,
+            unique_id=f"{mac}-{registered}-{bool(options)}",
+        )
+        entry.add_to_hass(hass)
+        if registered:
+            er.async_get(hass).async_get_or_create(
+                domain="cover", platform=DOMAIN, unique_id=f"{mac}-2-06", config_entry=entry
+            )
+        hass.data[DOMAIN] = {
+            mac: {
+                "entity": gateway,
+                CONF_PLATFORMS: {"cover": {"06": dict(yaml_cover)}},
+            }
+        }
+        attach_runtime(hass, entry)
+        added = []
+        await setup_covers(hass, entry, added.extend)
+        assert len(added) == 1
+        c = added[0]
+        return (c._travel_time_down, c._travel_time_up, c._calibration_source)
+
+    # Without stored calibration: both starts use YAML travel_time with source="yaml"
+    assert await _run_start({}, registered=False) == (15.0, 15.0, "yaml")
+    assert await _run_start({}, registered=True) == (15.0, 15.0, "yaml")
+
+    # With stored measured calibration: both starts honor stored calibration consistently
+    cal_opts = {CONF_COVER_TRAVEL_TIMES: {"06": {"down": 15.06, "up": 15.12, "source": "measured"}}}
+    assert await _run_start(cal_opts, registered=False) == (15.06, 15.12, "measured")
+    assert await _run_start(cal_opts, registered=True) == (15.06, 15.12, "measured")
+
+    # With partial stored record (min_motor_pulse only): both starts keep YAML travel_time and source="yaml"
+    partial_opts = {CONF_COVER_TRAVEL_TIMES: {"06": {"min_motor_pulse": 0.25}}}
+    assert await _run_start(partial_opts, registered=False) == (15.0, 15.0, "yaml")
+    assert await _run_start(partial_opts, registered=True) == (15.0, 15.0, "yaml")
+
+
 
