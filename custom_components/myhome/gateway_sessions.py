@@ -1553,11 +1553,12 @@ class CommandWorkerPool:
         envelope: dict[str, Any] = {
             "message": message,
             "is_status_request": is_status_request,
-            "is_cancel": is_cancel,
             "written": written,
         }
         if is_fade_step:
             envelope["is_fade_step"] = True
+        if is_cancel:
+            envelope["is_cancel"] = True
         try:
             await self.send_buffer.put(envelope)
         except Exception:
