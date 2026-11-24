@@ -977,9 +977,11 @@ def _finite_float(v: typing.Any) -> float:
 
 
 def _non_bool_int(v: typing.Any) -> int:
-    """Coerce ``v`` to an int, rejecting booleans, non-finite floats, and fractional floats."""
-    if isinstance(v, bool) or (
-        isinstance(v, float) and (not math.isfinite(v) or not v.is_integer())
+    """Coerce ``v`` to an int, rejecting booleans, non-ASCII strings, non-finite floats, and fractional floats."""
+    if (
+        isinstance(v, bool)
+        or (isinstance(v, str) and not v.isascii())
+        or (isinstance(v, float) and (not math.isfinite(v) or not v.is_integer()))
     ):
         raise Invalid(f"expected an integer, got {v!r}")
     try:
@@ -1028,15 +1030,19 @@ def _validate_expose_action(val: typing.Any) -> list[dict[str, typing.Any]]:
 # N00 (N = 1..9), or individual probe PZZ (P = 1..8, ZZ = 01..99).
 # 0 and 001..099 address all probes and all probes of a zone, and #Z addresses
 # the central unit's zone object, so a virtual probe must not answer on them.
-_WHO4_EXPOSE_PROBE_RE = re.compile(r"(?:[1-9]\d?|[1-9]00|[1-8](?:0[1-9]|[1-9]\d))")
+_WHO4_EXPOSE_PROBE_RE = re.compile(
+    r"(?:[1-9]\d?|[1-9]00|[1-8](?:0[1-9]|[1-9]\d))",
+    re.ASCII,
+)
 _WHO18_EXPOSE_WHERE_RE = re.compile(
-    r"(?:5(?:[1-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])(?:#\d)?|7(?:[1-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])#0)"
+    r"(?:5(?:[1-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])(?:#\d)?|7(?:[1-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])#0)",
+    re.ASCII,
 )
 
 
 def _validate_expose_entry(item: dict[str, typing.Any]) -> dict[str, typing.Any]:
     """Validate cross-field constraints on a single expose entry."""
-    from .where_grammar import is_apl_address, normalize_expose_where
+    from .where_grammar import diagnose_apl_where, normalize_expose_where
 
     who = int(item[CONF_WHO])
     raw_where_val = item.get(CONF_WHERE)
@@ -1065,9 +1071,6 @@ def _validate_expose_entry(item: dict[str, typing.Any]) -> dict[str, typing.Any]
             f"expose entry for WHO={who} requires a non-empty 'where' address without '*'"
         )
 
-    where = normalize_expose_where(who, raw_where)
-    item[CONF_WHERE] = where
-
     has_entity = bool(item.get(CONF_ENTITY_ID))
     action_keys = (
         CONF_TURN_ON_ACTION,
@@ -1086,16 +1089,32 @@ def _validate_expose_entry(item: dict[str, typing.Any]) -> dict[str, typing.Any]
     if who in (1, 2):
         if dim is not None:
             raise Invalid(f"WHO={who} expose does not support 'dimension' (got {dim})")
-        base_where, sep, suffix = where.partition("#")
-        if (
-            where.startswith("#")
-            or not is_apl_address(base_where)
-            or (sep and not re.fullmatch(r"4#(0\d|1[0-5])", suffix))
-        ):
+        diag = diagnose_apl_where(raw_where)
+        if diag is not None:
+            hint = ""
+            err_key, placeholders = diag
+            if err_key in (
+                "invalid_where_use_2_digits",
+                "invalid_where_use_4_digits",
+            ):
+                hint = (
+                    f"; for A={placeholders['area']}, PL={placeholders['point']} "
+                    f"use '{placeholders['suggested']}'"
+                )
+            elif err_key == "invalid_where_pl_zero":
+                hint = "; PL=0 is invalid, PL must be 1..15"
+            elif err_key == "invalid_where_interface":
+                hint = "; local-bus suffix must be #4#01..#4#09 or #4#11..#4#15"
             raise Invalid(
-                f"WHO={who} expose 'where' must be a point-to-point actuator address (got {raw_where!r})"
+                f"WHO={who} expose 'where' must be a point-to-point actuator address (got {raw_where!r}){hint}"
             )
-    elif who == 4:
+        item[CONF_WHERE] = normalize_expose_where(who, raw_where)
+        return item
+
+    where = normalize_expose_where(who, raw_where)
+    item[CONF_WHERE] = where
+
+    if who == 4:
         if not _WHO4_EXPOSE_PROBE_RE.fullmatch(where):
             raise Invalid(
                 f"WHO=4 expose 'where' must be a probe address (zone master probe '1'..'99', external probe '100'..'900', or probe PZZ '101'..'899', got {raw_where!r})"
@@ -1121,7 +1140,7 @@ def _validate_expose_entry(item: dict[str, typing.Any]) -> dict[str, typing.Any]
             )
         if not _WHO18_EXPOSE_WHERE_RE.fullmatch(where):
             raise Invalid(
-                f"WHO=18 expose 'where' must be '5N' (e.g. '51'..'5255') or '7N#0' (got {raw_where!r})"
+                f"WHO=18 expose 'where' must be '5N' or '7N#0' with N=1..255 (e.g. '51', '512', '5255', '71#0'; got {raw_where!r})"
             )
         if default_val is not None:
             def_en = _finite_float(default_val)
