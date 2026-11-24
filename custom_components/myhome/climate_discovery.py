@@ -568,6 +568,30 @@ class ZoneDiscovery:
     ) -> None:
         """Move any 0-10 V actuator output sensors from a superseded Zone N device onto ``#0#N``."""
         routing = f"{BUS_ROUTING}{pair[1]}" if pair[1] else ""
+        cu_dev_id = f"#0#{pair[0]}{routing}"
+        default_name = (
+            f"Central Unit {pair[0].zfill(2)}I{pair[1]}"
+            if pair[1]
+            else f"Central Unit {pair[0].zfill(2)}"
+        )
+        cu_name = str(getattr(target, "_device_name", "") or default_name)
+        cu_mfg = str(getattr(target, "_manufacturer", "") or "BTicino")
+        cu_model = str(getattr(target, "_model", "") or "Central Unit (4695)")
+        live_sensors = getattr(self._runtime, "entities", {}).get(Platform.SENSOR)
+        if isinstance(live_sensors, dict):
+            for sensor in list(live_sensors.values()):
+                if (
+                    hasattr(sensor, "rehome_to_four_zone_central")
+                    and getattr(sensor, "_zone", None) == pair[0]
+                    and _two_digit_interface(getattr(sensor, "_interface", None)) == pair[1]
+                ):
+                    sensor.rehome_to_four_zone_central(
+                        device_id=cu_dev_id,
+                        name=cu_name,
+                        manufacturer=cu_mfg,
+                        model=cu_model,
+                        central_where=f"#0#{pair[0]}",
+                    )
         devices = dr.async_get(self._hass)
         zone_dev = devices.async_get(source_device_id) if source_device_id else None
         if zone_dev is None:
@@ -593,18 +617,13 @@ class ZoneDiscovery:
         ]
         if not output_entries:
             return
-        cu_uid = f"{self._gateway.mac}-4-#0#{pair[0]}{routing}"
-        default_name = (
-            f"Central Unit {pair[0].zfill(2)}I{pair[1]}"
-            if pair[1]
-            else f"Central Unit {pair[0].zfill(2)}"
-        )
+        cu_uid = f"{self._gateway.mac}-4-{cu_dev_id}"
         cu_device = devices.async_get_or_create(
             config_entry_id=self._config_entry.entry_id,
             identifiers={(DOMAIN, cu_uid)},
-            name=str(getattr(target, "_device_name", "") or default_name),
-            manufacturer=str(getattr(target, "_manufacturer", "") or "BTicino"),
-            model=str(getattr(target, "_model", "") or "Central Unit (4695)"),
+            name=cu_name,
+            manufacturer=cu_mfg,
+            model=cu_model,
         )
         for out_ent in output_entries:
             registry.async_update_entity(out_ent.entity_id, device_id=cu_device.id)
@@ -622,6 +641,12 @@ class ZoneDiscovery:
                 superseded._superseded_by_central = True
                 if target is not None:
                     self._seed_master_zone_telemetry(superseded, target)
+            live_sensors = getattr(self._runtime, "entities", {}).get(Platform.SENSOR)
+            if isinstance(live_sensors, dict):
+                for suffix in ("-temperature", "-humidity"):
+                    comp = live_sensors.pop(f"4-{zone_addr.key}{suffix}", None)
+                    if comp is not None and hasattr(comp, "supersede_by_central"):
+                        comp.supersede_by_central()
         try:
             registry = er.async_get(self._hass)
             entries = list(er.async_entries_for_config_entry(registry, self._config_entry.entry_id))

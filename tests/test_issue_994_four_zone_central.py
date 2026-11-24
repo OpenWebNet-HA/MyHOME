@@ -1950,3 +1950,502 @@ async def test_reverse_discovery_telemetry_transfer_restore_rehome_and_inline_ro
     assert cu5.target_temperature == 14.0
     assert cu5.hvac_action == HVACAction.IDLE
     assert cu5.extra_state_attributes["actuators"] == {"1": "off"}
+
+
+async def test_live_actuator_output_rehome_and_dual_central_isolation(
+    hass: HomeAssistant,
+) -> None:
+    """Bugs #2 and #3: live/in-flight actuator output re-homing and dual-central (#0 + #0#1) isolation."""
+    import logging
+    from datetime import timedelta
+
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers.entity_platform import EntityPlatform
+
+    from custom_components.myhome import climate as climate_mod
+    from custom_components.myhome import sensor as sensor_mod
+    from custom_components.myhome.const import central_mode_signal
+    from custom_components.myhome.sensor import (
+        async_setup_entry as sensor_setup_entry,
+    )
+    from custom_components.myhome.typing_compat import device_info_to_dict
+
+    mac = "00:03:50:77:88:99"
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": mac}, unique_id=mac)
+    entry.add_to_hass(hass)
+    dev_reg = dr.async_get(hass)
+    ent_reg = er.async_get(hass)
+    gw_dev = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, f"gateway-{mac}")},
+        name="Gateway",
+    )
+    gw = MagicMock(
+        mac=mac,
+        is_connected=True,
+        log_id="[rehome]",
+        has_central_unit=True,
+        device_registry_id=gw_dev.id,
+    )
+    gw.send = AsyncMock()
+    gw.send_status_request = AsyncMock()
+    runtime = attach_runtime(hass, entry, mac, gw)
+    runtime.platforms["climate"] = {}
+    runtime.platforms["sensor"] = {}
+
+    climate_platform = EntityPlatform(
+        hass=hass,
+        logger=logging.getLogger(__name__),
+        domain="climate",
+        platform_name=DOMAIN,
+        platform=climate_mod,
+        scan_interval=timedelta(seconds=30),
+        entity_namespace=None,
+    )
+    climate_platform.config_entry = entry
+    sensor_platform = EntityPlatform(
+        hass=hass,
+        logger=logging.getLogger(__name__),
+        domain="sensor",
+        platform_name=DOMAIN,
+        platform=sensor_mod,
+        scan_interval=timedelta(seconds=30),
+        entity_namespace=None,
+    )
+    sensor_platform.config_entry = entry
+
+    def _add_climates(new_entities, update_before_add: bool = False) -> None:
+        hass.async_create_task(
+            climate_platform.async_add_entities(list(new_entities), update_before_add),
+            eager_start=False,
+        )
+
+    def _add_sensors(new_entities, update_before_add: bool = False) -> None:
+        hass.async_create_task(
+            sensor_platform.async_add_entities(list(new_entities), update_before_add),
+            eager_start=False,
+        )
+
+    await async_setup_entry(hass, entry, _add_climates)
+    await sensor_setup_entry(hass, entry, _add_sensors)
+    await hass.async_block_till_done()
+
+    def _dev_by_ident(ident: str):
+        return next(
+            (
+                d
+                for d in dr.async_entries_for_config_entry(dev_reg, entry.entry_id)
+                if (DOMAIN, ident) in d.identifiers
+            ),
+            None,
+        )
+
+    # 1. Committed 1#1-output-level arrives BEFORE #0#1 on a dual-central plant (#0 + #0#1).
+    async_dispatcher_send(hass, f"myhome_message_{mac}", OWNEvent.parse("*#4*1#1*20*160##"))
+    await hass.async_block_till_done()
+    out1 = runtime.entities["sensor"]["4-1#1-output-level"]
+    assert isinstance(out1, MyHOMEActuatorOutputSensor)
+    assert out1.native_value == 60
+    assert out1._central_mode_unsub is not None
+    assert _dev_by_ident(f"{mac}-4-1") is not None
+
+    # Now #0#1 arrives: live sensor re-homes to #0#1, detaches from #0's central_mode_signal,
+    # updates device_info (including via_device_id), and removes empty Zone 1 device.
+    async_dispatcher_send(hass, f"myhome_message_{mac}", OWNEvent.parse("*4*110#0180*#0#1##"))
+    await hass.async_block_till_done()
+    assert _dev_by_ident(f"{mac}-4-1") is None
+    cu_dev = _dev_by_ident(f"{mac}-4-#0#1")
+    assert cu_dev is not None
+    out1_entry = ent_reg.async_get(out1.entity_id)
+    assert out1_entry is not None and out1_entry.device_id == cu_dev.id
+    out1_info = device_info_to_dict(out1.device_info)
+    assert out1_info["identifiers"] == {(DOMAIN, f"{mac}-4-#0#1")}
+    assert out1_info["via_device_id"] == gw_dev.id
+    assert out1._central_mode_unsub is None
+    assert out1._four_zone_central_where == "#0#1"
+
+    # Bug #3: 99-zone #0 OFF signal and *4*303*#1## must NOT zero #0#1's master actuator.
+    async_dispatcher_send(hass, central_mode_signal(mac, None), HVACMode.OFF)
+    async_dispatcher_send(hass, f"myhome_message_{mac}", OWNEvent.parse("*4*303*#1##"))
+    await hass.async_block_till_done()
+    assert out1.native_value == 60
+    # #0#1's own OFF resets its master actuator to 0%.
+    async_dispatcher_send(hass, f"myhome_message_{mac}", OWNEvent.parse("*4*303*#0#1##"))
+    await hass.async_block_till_done()
+    assert out1.native_value == 0
+
+    # 2. Sensor built AFTER #0#1 is live: directly bound to #0#1, never subscribes to #0.
+    async_dispatcher_send(hass, f"myhome_message_{mac}", OWNEvent.parse("*#4*1#2*20*155##"))
+    await hass.async_block_till_done()
+    out2 = runtime.entities["sensor"]["4-1#2-output-level"]
+    assert isinstance(out2, MyHOMEActuatorOutputSensor)
+    assert out2.native_value == 55
+    assert out2._central_mode_unsub is None
+    assert out2._four_zone_central_where == "#0#1"
+    async_dispatcher_send(hass, central_mode_signal(mac, None), HVACMode.OFF)
+    async_dispatcher_send(hass, f"myhome_message_{mac}", OWNEvent.parse("*4*303*#1##"))
+    await hass.async_block_till_done()
+    assert out2.native_value == 55
+    async_dispatcher_send(hass, f"myhome_message_{mac}", OWNEvent.parse("*4*303*#0#1##"))
+    await hass.async_block_till_done()
+    assert out2.native_value == 0
+
+    # 3. In-flight race: 5#1-output-level queued BEFORE #0#5 arrives in the SAME event-loop tick
+    # (also covers device_registry_id=None branch in rehome_to_four_zone_central).
+    gw.device_registry_id = None
+    async_dispatcher_send(hass, f"myhome_message_{mac}", OWNEvent.parse("*#4*5#1*20*170##"))
+    async_dispatcher_send(hass, f"myhome_message_{mac}", OWNEvent.parse("*4*110#0190*#0#5##"))
+    await hass.async_block_till_done()
+    assert _dev_by_ident(f"{mac}-4-5") is None
+    cu5_dev = _dev_by_ident(f"{mac}-4-#0#5")
+    assert cu5_dev is not None
+    out5 = runtime.entities["sensor"]["4-5#1-output-level"]
+    out5_entry = ent_reg.async_get(out5.entity_id)
+    assert out5_entry is not None and out5_entry.device_id == cu5_dev.id
+    assert out5._central_mode_unsub is None
+    assert "via_device_id" not in device_info_to_dict(out5.device_info)
+
+    # Removing sensors cleans up runtime.entities["sensor"] via _forget_actuator_output.
+    await out1.async_remove(force_remove=True)
+    assert "4-1#1-output-level" not in runtime.entities["sensor"]
+
+
+async def test_superseded_master_companion_sensors_pruned_inflight_and_live(
+    hass: HomeAssistant,
+) -> None:
+    """Bug #4: companion temp/humidity sensors on master Zone N are pruned both in-flight and live."""
+    import logging
+    from datetime import timedelta
+
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers.entity_platform import EntityPlatform
+
+    from custom_components.myhome import climate as climate_mod
+    from custom_components.myhome import sensor as sensor_mod
+    from custom_components.myhome.sensor import (
+        MyHOMEClimateTemperatureSensor,
+    )
+    from custom_components.myhome.sensor import (
+        async_setup_entry as sensor_setup_entry,
+    )
+
+    mac = "00:03:50:66:77:88"
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": mac}, unique_id=mac)
+    entry.add_to_hass(hass)
+    dev_reg = dr.async_get(hass)
+    ent_reg = er.async_get(hass)
+    gw = MagicMock(
+        mac=mac,
+        is_connected=True,
+        log_id="[comp]",
+        has_central_unit=False,
+        device_registry_id=None,
+    )
+    gw.send = AsyncMock()
+    gw.send_status_request = AsyncMock()
+    runtime = attach_runtime(hass, entry, mac, gw)
+    runtime.platforms["climate"] = {}
+    runtime.platforms["sensor"] = {}
+
+    climate_platform = EntityPlatform(
+        hass=hass,
+        logger=logging.getLogger(__name__),
+        domain="climate",
+        platform_name=DOMAIN,
+        platform=climate_mod,
+        scan_interval=timedelta(seconds=30),
+        entity_namespace=None,
+    )
+    climate_platform.config_entry = entry
+    sensor_platform = EntityPlatform(
+        hass=hass,
+        logger=logging.getLogger(__name__),
+        domain="sensor",
+        platform_name=DOMAIN,
+        platform=sensor_mod,
+        scan_interval=timedelta(seconds=30),
+        entity_namespace=None,
+    )
+    sensor_platform.config_entry = entry
+
+    def _add_climates(new_entities, update_before_add: bool = False) -> None:
+        hass.async_create_task(
+            climate_platform.async_add_entities(list(new_entities), update_before_add),
+            eager_start=False,
+        )
+
+    def _add_sensors(new_entities, update_before_add: bool = False) -> None:
+        hass.async_create_task(
+            sensor_platform.async_add_entities(list(new_entities), update_before_add),
+            eager_start=False,
+        )
+
+    await async_setup_entry(hass, entry, _add_climates)
+    await sensor_setup_entry(hass, entry, _add_sensors)
+    await hass.async_block_till_done()
+
+    def _dev_by_ident(ident: str):
+        return next(
+            (
+                d
+                for d in dr.async_entries_for_config_entry(dev_reg, entry.entry_id)
+                if (DOMAIN, ident) in d.identifiers
+            ),
+            None,
+        )
+
+    # Case A: In-flight race — Zone 1 climate + companion temp & humidity queued, then #0#1 arrives
+    # in the same tick before EntityPlatform finishes adding the Zone 1 entities.
+    for frame in ("*#4*1*0*0215##", "*#4*1*60*55##", "*4*1*1##", "*4*110#0180*#0#1##"):
+        async_dispatcher_send(hass, f"myhome_message_{mac}", OWNEvent.parse(frame))
+    await hass.async_block_till_done()
+
+    assert ent_reg.async_get_entity_id("climate", DOMAIN, f"{mac}-4-#0#1") is not None
+    assert ent_reg.async_get_entity_id("climate", DOMAIN, f"{mac}-4-1") is None
+    assert ent_reg.async_get_entity_id("sensor", DOMAIN, f"{mac}-4-1-temperature") is None
+    assert ent_reg.async_get_entity_id("sensor", DOMAIN, f"{mac}-4-1-humidity") is None
+    assert _dev_by_ident(f"{mac}-4-1") is None
+    assert hass.states.get("sensor.climate_zone_1_temperature") is None
+    assert hass.states.get("sensor.climate_zone_1_humidity") is None
+
+    # Case B: Already-committed — Zone 2 climate + companion temp & humidity finish adding first,
+    # then #0#2 arrives later and prunes all three plus the orphan Climate Zone 2 device.
+    for frame in ("*#4*2*0*0205##", "*#4*2*60*48##", "*4*1*2##"):
+        async_dispatcher_send(hass, f"myhome_message_{mac}", OWNEvent.parse(frame))
+    await hass.async_block_till_done()
+    assert ent_reg.async_get_entity_id("sensor", DOMAIN, f"{mac}-4-2-temperature") is not None
+    assert ent_reg.async_get_entity_id("sensor", DOMAIN, f"{mac}-4-2-humidity") is not None
+
+    comp_temp2 = runtime.entities["sensor"]["4-2-temperature"]
+    async_dispatcher_send(hass, f"myhome_message_{mac}", OWNEvent.parse("*4*110#0190*#0#2##"))
+    await hass.async_block_till_done()
+    assert ent_reg.async_get_entity_id("climate", DOMAIN, f"{mac}-4-#0#2") is not None
+    assert ent_reg.async_get_entity_id("climate", DOMAIN, f"{mac}-4-2") is None
+    assert ent_reg.async_get_entity_id("sensor", DOMAIN, f"{mac}-4-2-temperature") is None
+    assert ent_reg.async_get_entity_id("sensor", DOMAIN, f"{mac}-4-2-humidity") is None
+    assert _dev_by_ident(f"{mac}-4-2") is None
+    # Superseded companion ignores subsequent readings.
+    comp_temp2.handle_event(OWNHeatingEvent("*#4*2*0*0240##"))
+    assert comp_temp2.native_value != 24.0
+
+    # Case C: Direct is_superseded callback check when sensor is added via EntityPlatform.
+    late_temp = MyHOMEClimateTemperatureSensor(
+        hass=hass,
+        name="Climate Zone 9",
+        device_id="9",
+        zone="9",
+        interface=None,
+        manufacturer="BTicino",
+        model="Heating Zone",
+        gateway=gw,
+        is_superseded=lambda: True,
+    )
+    await sensor_platform.async_add_entities([late_temp])
+    await hass.async_block_till_done()
+    assert ent_reg.async_get_entity_id("sensor", DOMAIN, f"{mac}-4-9-temperature") is None
+    assert _dev_by_ident(f"{mac}-4-9") is None
+
+    # Normal subordinate Zone 3 stays alive and cleans up runtime.entities on removal.
+    for frame in ("*#4*3*0*0220##", "*#4*3*60*50##", "*4*1*3##"):
+        async_dispatcher_send(hass, f"myhome_message_{mac}", OWNEvent.parse(frame))
+    await hass.async_block_till_done()
+    z3_temp = runtime.entities["sensor"]["4-3-temperature"]
+    z3_hum = runtime.entities["sensor"]["4-3-humidity"]
+    await z3_temp.async_remove(force_remove=True)
+    await z3_hum.async_remove(force_remove=True)
+    assert "4-3-temperature" not in runtime.entities["sensor"]
+    assert "4-3-humidity" not in runtime.entities["sensor"]
+
+
+async def test_four_zone_auto_schedule_delivery_knob_and_burst_window(
+    hass: HomeAssistant,
+) -> None:
+    """Bugs #5a, #5b, #5c, #5d, and #7 on 4-zone central units (#0#N)."""
+    import asyncio
+    from unittest.mock import patch
+
+    from tests.test_climate_mode_state_2026_11_08 import _climate
+
+    # #5a: AUTO from OFF / active Manual / Holiday clears stale manual/holiday setpoint.
+    gw = _gateway(has_central_unit=False)
+    cu = _climate(gw, "#0#1", standalone=None, central=True)
+    cu.handle_event(OWNHeatingEvent("*4*110#0180*#0#1##"))
+    cu.handle_event(OWNHeatingEvent("*4*103*#0#1##"))
+    cu.handle_event(OWNHeatingEvent("*#4*1*12*0070*1##"))
+    assert cu.target_temperature == 7.0
+    await cu.async_set_hvac_mode(HVACMode.AUTO)
+    assert cu.hvac_mode == HVACMode.AUTO
+    assert cu.target_temperature is None
+
+    cu.handle_event(OWNHeatingEvent("*4*110#0185*#0#1##"))
+    assert cu.target_temperature == 18.5
+    await cu.async_set_hvac_mode(HVACMode.AUTO)
+    assert cu.hvac_mode == HVACMode.AUTO
+    assert cu.target_temperature is None
+
+    cu.handle_event(OWNHeatingEvent("*4*33003*#0#1##"))
+    cu.handle_event(OWNHeatingEvent("*#4*1*12*0070*1##"))
+    assert cu.extra_state_attributes["holiday_days"] == 3
+    await cu.async_set_hvac_mode(HVACMode.AUTO)
+    assert cu.target_temperature is None
+    assert "holiday_days" not in cu.extra_state_attributes
+
+    # #5b: Schedule-to-schedule transitions clear stale setpoints, preserve fresh bursts and repeats.
+    cu2 = _climate(_gateway(has_central_unit=False), "#0#1", standalone=None, central=True)
+    cu2.handle_event(OWNHeatingEvent("*4*1*#0#1##"))
+    cu2.handle_event(OWNHeatingEvent("*4*33003*#0#1##"))
+    cu2.handle_event(OWNHeatingEvent("*#4*1*12*0070*1##"))
+    assert cu2.target_temperature == 7.0
+    # Holiday (7.0) -> Program 3 without fresh active burst: clears 7.0.
+    cu2.handle_event(OWNHeatingEvent("*4*1103*#0#1##"))
+    assert cu2.target_temperature is None
+    assert cu2.extra_state_attributes["program"] == 3
+    # Program 3 receives 21.0; periodic repeat keeps 21.0.
+    cu2.handle_event(OWNHeatingEvent("*#4*1*12*0210*1##"))
+    cu2.handle_event(OWNHeatingEvent("*4*1103*#0#1##"))
+    assert cu2.target_temperature == 21.0
+    # Program 3 (21.0) -> Holiday clears 21.0 even right after a *4*1*1## + Dim 12 burst.
+    cu2.handle_event(OWNHeatingEvent("*4*1*1##"))
+    cu2.handle_event(OWNHeatingEvent("*#4*1*12*0210*1##"))
+    cu2.handle_event(OWNHeatingEvent("*4*33003*#0#1##"))
+    assert cu2.target_temperature is None
+    assert cu2.extra_state_attributes["holiday_days"] == 3
+    # Holiday (7.0) -> fresh active burst (*#4*1*12*0215*1## + *4*1*1##) + Program 3 keeps 21.5.
+    cu2.handle_event(OWNHeatingEvent("*#4*1*12*0070*1##"))
+    cu2.handle_event(OWNHeatingEvent("*#4*1*12*0215*1##"))
+    cu2.handle_event(OWNHeatingEvent("*4*1*1##"))
+    cu2.handle_event(OWNHeatingEvent("*4*1103*#0#1##"))
+    assert cu2.target_temperature == 21.5
+    # Scenario (19.5) -> Program 3 without fresh burst clears 19.5.
+    cu2.handle_event(OWNHeatingEvent("*4*1201*#0#1##"))
+    cu2.handle_event(OWNHeatingEvent("*#4*1*12*0195*1##"))
+    assert cu2.target_temperature == 19.5
+    cu2.handle_event(OWNHeatingEvent("*4*1103*#0#1##"))
+    assert cu2.target_temperature is None
+    # Holiday (7.0) -> HA HEAT (same season): sends *4*3100*#0#1##, clears holiday_days & 7.0.
+    cu2.handle_event(OWNHeatingEvent("*4*33003*#0#1##"))
+    cu2.handle_event(OWNHeatingEvent("*#4*1*12*0070*1##"))
+    assert cu2.target_temperature == 7.0
+    await cu2.async_set_hvac_mode(HVACMode.HEAT)
+    assert cu2.hvac_mode == HVACMode.HEAT
+    assert cu2.target_temperature is None
+    assert "holiday_days" not in cu2.extra_state_attributes
+
+    # #5c: Undelivered (cancelled) future and remote_control=="disabled" suppress optimistic flips.
+    gw3 = _gateway(has_central_unit=False)
+    cu3 = _climate(gw3, "#0#1", standalone=None, central=True)
+    cu3.handle_event(OWNHeatingEvent("*4*1103*#0#1##"))
+    cu3.handle_event(OWNHeatingEvent("*4*103*#0#1##"))
+    cancelled_restore: asyncio.Future[float] = asyncio.get_running_loop().create_future()
+    cancelled_restore.cancel()
+    gw3.send = AsyncMock(return_value=cancelled_restore)
+    await cu3.async_set_hvac_mode(HVACMode.HEAT)
+    assert cu3.hvac_mode == HVACMode.OFF
+
+    cu3.handle_event(OWNHeatingEvent("*4*1103*#0#1##"))
+    assert cu3.hvac_mode == HVACMode.HEAT
+    cancelled_off: asyncio.Future[float] = asyncio.get_running_loop().create_future()
+    cancelled_off.cancel()
+    gw3.send = AsyncMock(return_value=cancelled_off)
+    await cu3.async_set_hvac_mode(HVACMode.OFF)
+    assert cu3.hvac_mode == HVACMode.HEAT
+
+    # Telegestione disabled suppresses optimistic OFF/AUTO on both #0#1 and #0.
+    gw3.send = AsyncMock(return_value=None)
+    cu3.handle_event(OWNHeatingEvent("*4*20*#0#1##"))
+    await cu3.async_set_hvac_mode(HVACMode.OFF)
+    assert cu3.hvac_mode == HVACMode.HEAT
+    await cu3.async_set_hvac_mode(HVACMode.AUTO)
+    assert cu3.hvac_mode == HVACMode.HEAT
+
+    cu99 = _climate(_gateway(has_central_unit=True), "#0", standalone=None, central=True)
+    cu99.handle_event(OWNHeatingEvent("*4*1101*#0##"))
+    cu99.handle_event(OWNHeatingEvent("*4*20*#0##"))
+    await cu99.async_set_hvac_mode(HVACMode.OFF)
+    assert cu99.hvac_mode == HVACMode.HEAT
+
+    # #5d: Delayed master Dim 12 matching manual + local_offset must NOT be stashed in pending.
+    cu4 = _climate(_gateway(has_central_unit=False), "#0#1", standalone=None, central=True)
+    cu4.handle_event(OWNHeatingEvent("*4*110#0180*#0#1##"))
+    cu4.handle_event(OWNHeatingEvent("*#4*1*13*02##"))  # knob +2
+    assert cu4.extra_state_attributes["local_offset"] == 2
+    cu4.handle_event(OWNHeatingEvent("*#4*1*12*0200*1##"))  # 18.0 + 2 = 20.0 (delayed manual echo)
+    assert cu4._pending_master_dim12 is None
+    cu4.handle_event(OWNHeatingEvent("*4*103*#0#1##"))
+    assert cu4.target_temperature != 20.0
+    # Re-enter manual 18.0 with +2 knob, delayed 20.0 -> Program 3 must NOT adopt 20.0.
+    cu4.handle_event(OWNHeatingEvent("*4*110#0180*#0#1##"))
+    cu4.handle_event(OWNHeatingEvent("*#4*1*12*0200*1##"))
+    cu4.handle_event(OWNHeatingEvent("*4*1*1##"))
+    cu4.handle_event(OWNHeatingEvent("*4*1103*#0#1##"))
+    assert cu4.target_temperature is None
+    # Genuine new schedule Dim 12 (21.5 != 20.0) IS stashed and adopted on Program 3.
+    cu4.handle_event(OWNHeatingEvent("*4*110#0180*#0#1##"))
+    cu4.handle_event(OWNHeatingEvent("*#4*1*12*0215*1##"))
+    assert cu4._pending_master_dim12 is not None
+    cu4.handle_event(OWNHeatingEvent("*4*1*1##"))
+    cu4.handle_event(OWNHeatingEvent("*4*1103*#0#1##"))
+    assert cu4.target_temperature == 21.5
+
+    # #7: 3.0 s gap (> 2.0 s _PROTECTION_FRAME_WINDOW, <= 5.0 s _FOUR_ZONE_BURST_WINDOW) pairs both ways.
+    cu5 = _climate(_gateway(has_central_unit=False), "#0#1", standalone=None, central=True)
+    cu5.handle_event(OWNHeatingEvent("*4*103*#0#1##"))
+    clock = [100.0]
+    with patch("custom_components.myhome.climate.time.monotonic", side_effect=lambda: clock[0]):
+        cu5.handle_event(OWNHeatingEvent("*#4*1*12*0210*1##"))
+        clock[0] = 103.0
+        cu5.handle_event(OWNHeatingEvent("*4*1*1##"))
+        clock[0] = 103.5
+        cu5.handle_event(OWNHeatingEvent("*4*1103*#0#1##"))
+    assert cu5.target_temperature == 21.0
+
+    cu5.handle_event(OWNHeatingEvent("*4*103*#0#1##"))
+    clock[0] = 200.0
+    with patch("custom_components.myhome.climate.time.monotonic", side_effect=lambda: clock[0]):
+        cu5.handle_event(OWNHeatingEvent("*4*1*1##"))
+        clock[0] = 203.0
+        cu5.handle_event(OWNHeatingEvent("*#4*1*12*0215*1##"))
+        clock[0] = 203.5
+        cu5.handle_event(OWNHeatingEvent("*4*1103*#0#1##"))
+    assert cu5.target_temperature == 21.5
+
+
+def test_legacy_yaml_duplicate_central_drop_and_central_false_persisted(
+    hass: HomeAssistant,
+) -> None:
+    """Bug #6: dropping a duplicate #0#01 or normalizing central: False persists cleaned options."""
+    from custom_components.myhome.legacy_yaml import (
+        CONF_MIGRATED_YAML_PLATFORMS,
+        _apply_imported_copy,
+        canonicalise_imported_platforms,
+    )
+
+    dup_snapshot = {
+        "climate": {
+            "#0#1": {"who": "4", "zone": "#0#1", "central": True, "name": "Keep"},
+            "#0#01": {"who": "4", "zone": "#0#01", "central": True, "name": "Dup"},
+        }
+    }
+    canon_dup, rewritten_dup = canonicalise_imported_platforms(dup_snapshot)
+    assert list(canon_dup["climate"]) == ["#0#1"]
+    assert canon_dup["climate"]["#0#1"]["name"] == "Keep"
+    assert rewritten_dup == []
+
+    # _apply_imported_copy persists the cleaned snapshot even when rewritten_dup == []!
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"mac": MAC},
+        options={CONF_MIGRATED_YAML_PLATFORMS: dup_snapshot},
+        unique_id=MAC,
+    )
+    entry.add_to_hass(hass)
+    configured: dict[str, dict] = {"climate": {}}
+    _apply_imported_copy(hass, entry, configured)
+    assert list(entry.options[CONF_MIGRATED_YAML_PLATFORMS]["climate"]) == ["#0#1"]
+
+    canon_flag, rewritten_flag = canonicalise_imported_platforms(
+        {"climate": {"#0#1": {"who": "4", "zone": "#0#1", "central": False, "name": "CU1"}}}
+    )
+    assert canon_flag["climate"]["#0#1"]["central"] is True
+    assert rewritten_flag == ["climate: #0#1 central -> True"]
+

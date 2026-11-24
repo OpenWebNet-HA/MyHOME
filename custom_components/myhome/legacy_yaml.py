@@ -241,6 +241,11 @@ def canonicalise_imported_platforms(
                 if new_id != d_id:
                     central_moved.append(f"{plat}: {d_id} -> {new_id}")
                 continue
+            if is_central_cfg and not cfg.get(CONF_CENTRAL):
+                new_devices[d_id] = {**cfg, CONF_CENTRAL: True}
+                central_fixed = True
+                central_moved.append(f"{plat}: {d_id} central -> True")
+                continue
             if who not in ("1", "2") or not isinstance(cfg.get(CONF_WHERE), str):
                 new_devices[d_id] = cfg
                 continue
@@ -318,19 +323,20 @@ def _apply_imported_copy(
     is applied, and the moved copy is stored, so the registry migration that follows
     and the platforms see one and the same address (#147).
     """
-    imported = entry.options.get(CONF_MIGRATED_YAML_PLATFORMS)
-    if not isinstance(imported, dict) or not any(imported.values()):
+    raw_imported = entry.options.get(CONF_MIGRATED_YAML_PLATFORMS)
+    if not isinstance(raw_imported, dict) or not any(raw_imported.values()):
         return
-    imported, rewritten = canonicalise_imported_platforms(imported)
-    if rewritten:
+    imported, rewritten = canonicalise_imported_platforms(raw_imported)
+    if rewritten or imported != raw_imported:
         hass.config_entries.async_update_entry(
             entry, options={**entry.options, CONF_MIGRATED_YAML_PLATFORMS: imported}
         )
-        LOGGER.info(
-            "Imported copy of myhome.yaml for gateway %s: %d point address(es) moved to the "
-            "canonical spelling (%s)",
-            entry.data.get(CONF_MAC), len(rewritten), "; ".join(rewritten),
-        )
+        if rewritten:
+            LOGGER.info(
+                "Imported copy of myhome.yaml for gateway %s: %d point address(es) moved to the "
+                "canonical spelling (%s)",
+                entry.data.get(CONF_MAC), len(rewritten), "; ".join(rewritten),
+            )
     _apply_yaml_platforms(_restore_shared_devices(imported), configured_platforms)
     LOGGER.info(
         "Using the imported copy of myhome.yaml for gateway %s: the file is missing, "

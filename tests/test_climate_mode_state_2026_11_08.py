@@ -526,8 +526,8 @@ async def test_failed_send_disarms_the_echo() -> None:
     assert central._central_echo is None
 
 
-# PR #880 review: a 4-zone central unit (#0#1..#0#4) is not polled, it keeps HEAT / COOL.
-# Since #994 the frame is its setpoint written in that season, as 0.9.3 wrote it, not the season frame.
+# A 4-zone central unit (#0#1..#0#96) keeps same-season HEAT/COOL once acknowledged,
+# while cross-season HEAT/COOL send the season frame + *4*3100*#0#N## and wait for the report (#994).
 
 
 @pytest.mark.parametrize("hvac_mode", [HVACMode.HEAT, HVACMode.COOL])

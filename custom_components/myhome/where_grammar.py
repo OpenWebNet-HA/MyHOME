@@ -296,8 +296,9 @@ def canonical_central_zone(zone: str) -> str:
     """The WHERE of a ``central: true`` entry of ``myhome.yaml``, from its ``zone`` as typed or as stored.
 
     ``0``, ``00``, ``#0`` and ``#0#0`` are the 99-zone central unit ``#0``; ``N``, ``0N``, ``#N``,
-    ``#0#N`` and ``#0#0N`` are a 4-zone central unit at ``#0#N`` (WHO 4 WHERE table: ``#0``
-    Central Unit, ``#0#1`` to ``#0#96`` on 4695 hardware / ``#0#1`` to ``#0#99`` in OpenWebNet). An interface written inside the zone (``0#4#01``) is kept
+    ``#0#N`` and ``#0#0N`` are a 4-zone central unit at ``#0#N`` (``#0`` 99-zone Central Unit in
+    WHO 4; ``#0#1`` to ``#0#96`` on BTicino 4695 hardware per Technical Guide ``U1809C`` pp. 54-55
+    and ``LH4695_AM5875_010103.fwz`` ROM, ``#0#1`` to ``#0#99`` in OpenWebNet gateways). An interface written inside the zone (``0#4#01``) is kept
     behind the address (zero-padded to two digits). 2.0.0 put ``#0#`` in front of whatever was typed but ``#0``; what it stored
     for an address typed with the prefix (``#0##0#1``, ``#0##1``, ``#0#01``, ``#0#0``) is read back
     to the same address.

@@ -3145,7 +3145,11 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._clear_master_dim12_pairing()
 
     def _apply_four_zone_schedule_setpoint(
-        self, *, leaving_idle: bool, had_manual: bool
+        self,
+        *,
+        leaving_idle: bool,
+        had_manual: bool,
+        schedule_changed: bool = False,
     ) -> None:
         """Reconcile or clear the setpoint when a 4-zone central unit enters a schedule."""
         now = time.monotonic()
@@ -3154,7 +3158,16 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._master_season_active_at is not None
             and now - self._master_season_active_at <= _FOUR_ZONE_BURST_WINDOW
         )
-        if self._local_target_reported and self._local_target_from_active_master:
+        if self._local_target_reported and (
+            self._local_target_from_active_master
+            or (
+                schedule_changed
+                and self._holiday_days is None
+                and active_season_fresh
+                and self._dim12_at is not None
+                and now - self._dim12_at <= _FOUR_ZONE_BURST_WINDOW
+            )
+        ):
             self._reconcile_local_target()
             self._clear_master_dim12_pairing()
         elif (
@@ -3167,7 +3180,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._local_target_reported = True
             self._reconcile_local_target()
             self._clear_master_dim12_pairing()
-        elif leaving_idle or had_manual:
+        elif leaving_idle or had_manual or schedule_changed:
             self._target_temperature = None
             self._nominal_from_dim12 = False
             self._restored_nominal = None
@@ -3555,8 +3568,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             delivered = await self._write_central_setpoint(nominal)
         else:
             restore = OWNHeatingCommand.set_central_mode(where=self._bus_where, mode="auto")
-            await self._send_central_command(restore, "_central_echo", refusal_raises=True)
-            delivered = True
+            delivered = await self._send_central_command(
+                restore, "_central_echo", refusal_raises=True
+            )
         if (
             self._central_report_count != reports_before
             or not delivered
@@ -3564,13 +3578,24 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             or self._remote_control == "disabled"
         ):
             return
-        was_idle = self._attr_hvac_mode == HVACMode.OFF or self._central_operation is not None
+        was_idle = (
+            self._attr_hvac_mode == HVACMode.OFF
+            or self._central_operation is not None
+            or self._holiday_days is not None
+        )
         self._central_operation = None
         if use_manual:
             self._show_nominal()
-        elif was_idle and not self._local_target_from_active_master:
-            self._local_target_temperature = None
-            self._local_target_reported = False
+        elif was_idle:
+            self._holiday_days = None
+            self._target_temperature = None
+            self._nominal_from_dim12 = False
+            self._restored_nominal = None
+            self._target_temperature_restored = False
+            if not self._local_target_from_active_master:
+                self._local_target_temperature = None
+                self._local_target_reported = False
+                self._local_target_base = None
         if self._attr_hvac_action == HVACAction.OFF:
             self._attr_hvac_action = HVACAction.IDLE
         self._attr_hvac_mode = hvac_mode
@@ -3846,23 +3871,32 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         # nothing is shown. A report of the central unit that came
         # while the delivery was awaited is newer than the command: it stays what is shown.
         reports_before = self._central_report_count
-        await self._send_central_command(command, "_central_echo", refusal_raises=True)
-        if self._central_report_count != reports_before:
+        delivered = await self._send_central_command(command, "_central_echo", refusal_raises=True)
+        if (
+            self._central_report_count != reports_before
+            or self._remote_control == "disabled"
+            or (self._is_four_zone_central and not delivered)
+        ):
             return
         was_idle = self._attr_hvac_mode == HVACMode.OFF or self._central_operation is not None
+        was_holiday = self._holiday_days is not None
+        had_manual = self._has_four_zone_manual_nominal()
         self._central_operation = None
         if hvac_mode == HVACMode.OFF:
             self._attr_hvac_action = HVACAction.OFF
             if self._is_four_zone_central:
                 self._clear_master_dim12_pairing()
         else:
-            if (
-                self._is_four_zone_central
-                and was_idle
-                and not self._local_target_from_active_master
-            ):
-                self._local_target_temperature = None
-                self._local_target_reported = False
+            if self._is_four_zone_central and (was_idle or was_holiday or had_manual):
+                self._holiday_days = None
+                self._target_temperature = None
+                self._nominal_from_dim12 = False
+                self._restored_nominal = None
+                self._target_temperature_restored = False
+                if not self._local_target_from_active_master:
+                    self._local_target_temperature = None
+                    self._local_target_reported = False
+                    self._local_target_base = None
             if self._attr_hvac_action == HVACAction.OFF:
                 self._attr_hvac_action = HVACAction.IDLE
         self._attr_hvac_mode = hvac_mode
@@ -3929,14 +3963,14 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
 
     async def _send_central_command(
         self, command: Any, slot: str, *, written_required: bool = False, refusal_raises: bool = False
-    ) -> None:
+    ) -> bool:
         """Send a central unit command with the echo filter armed for it in ``slot``.
 
         With ``refusal_raises`` (the central unit's ``off`` and program) the delivery is waited for,
         at most ``SETPOINT_DELIVERY_TIMEOUT``: a refusal (NACK) raises ``central_command_refused``;
-        a frame that is confirmed, one that is cancelled without a NACK and one nothing answered
-        in that time return, as without it. The future is not cancelled and the echo stays armed
-        (the done callback anchors or clears it).
+        a frame that is confirmed returns ``True``, while one that is cancelled without a NACK,
+        failed, or unanswered in time returns ``False``. The future is not cancelled and the echo
+        stays armed (the done callback anchors or clears it).
 
         With ``written_required`` (the season frame and its restore) the delivery future the
         gateway hands back is awaited: a frame that is not written (cancelled, refused by a
@@ -3958,7 +3992,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if not isinstance(written, asyncio.Future):
             self._central_echo_writes.pop(slot, None)
             self._anchor_central_echo(armed_at, None, slot)
-            return
+            return True
 
         def _on_written(future: "asyncio.Future[float]", armed_at: float = armed_at) -> None:
             if self._central_echo_writes.get(slot) is future:
@@ -3982,7 +4016,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     translation_key="central_command_refused",
                     translation_placeholders={"name": self._display_name, "frame": frame},
                 )
-            return
+            return not (
+                refusal_raises
+                and (not written.done() or written.cancelled() or written.exception() is not None)
+            )
         # Not ``await written``: a cancelled future would raise CancelledError, and a cancelled
         # service call must not cancel the frame (its echo stays recognised when it is written).
         await asyncio.wait((written,), timeout=SETPOINT_DELIVERY_TIMEOUT)
@@ -4025,6 +4062,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 translation_key="central_command_unconfirmed",
                 translation_placeholders={"name": self._display_name, "frame": frame},
             ) from cause
+        return True
 
     @callback
     def _disarm_central_echo(self, slot: str, armed_at: float) -> None:
@@ -4429,7 +4467,12 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 # setpoint nor flip _nominal_from_dim12 to True. Stash it briefly in case the
                 # 4695 is transitioning directly from manual into a weekly program whose
                 # *4*110x*#0#N## report follows this Dim 12.
-                if message.local_set_temperature is not None:
+                if (
+                    message.local_set_temperature is not None
+                    and self._target_temperature is not None
+                    and message.local_set_temperature
+                    != round(self._target_temperature + self._local_offset, 1)
+                ):
                     self._pending_master_dim12 = (message.local_set_temperature, now)
                 return
             self._local_target_temperature = message.local_set_temperature
@@ -4439,7 +4482,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 if is_protection_or_off and self._local_target_reported:
                     if (
                         self._master_season_active_at is not None
-                        and now - self._master_season_active_at <= _PROTECTION_FRAME_WINDOW
+                        and now - self._master_season_active_at <= _FOUR_ZONE_BURST_WINDOW
                     ):
                         self._local_target_from_active_master = True
                         self._idle_dim12_at = None
@@ -4507,7 +4550,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._master_season_active_at = now
                 if (
                     self._idle_dim12_at is not None
-                    and now - self._idle_dim12_at <= _PROTECTION_FRAME_WINDOW
+                    and now - self._idle_dim12_at <= _FOUR_ZONE_BURST_WINDOW
                 ):
                     self._local_target_from_active_master = True
                     self._idle_dim12_at = None
@@ -4626,6 +4669,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._hvac_mode_restored = False  # the zone itself says what it runs in
             prev_mode = self._attr_hvac_mode
             prev_central_op = self._central_operation
+            prev_schedule = (self._program, self._scenario, self._holiday_days)
             had_manual_before = self._has_four_zone_manual_nominal()
             previous_season = self._season
             self._remember_season(message)
@@ -4722,7 +4766,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 leaving_idle = prev_mode == HVACMode.OFF or prev_central_op is not None
                 if self._is_four_zone_central and self._has_central_schedule:
                     self._apply_four_zone_schedule_setpoint(
-                        leaving_idle=leaving_idle, had_manual=had_manual_before
+                        leaving_idle=leaving_idle,
+                        had_manual=had_manual_before,
+                        schedule_changed=prev_schedule
+                        != (self._program, self._scenario, self._holiday_days),
                     )
                 elif leaving_idle and self._target_temperature is not None:
                     self._show_nominal()

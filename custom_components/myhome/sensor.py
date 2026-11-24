@@ -8,6 +8,7 @@ import time
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+from functools import partial
 from typing import Any, cast
 
 from homeassistant.components.climate.const import HVACMode
@@ -35,10 +36,11 @@ from homeassistant.const import (
     UnitOfPower,
     UnitOfTemperature,
 )
-from homeassistant.core import HomeAssistant, State, callback
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant, State, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_platform
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -825,7 +827,7 @@ async def async_setup_entry(
             model = str(cfg.get(CONF_DEVICE_MODEL) or "Heating Zone")
             return (cfg_addr.key, dev_name, manufacturer, model, standalone_cfg)
         if (cu_meta := _unified_four_zone_central_meta(zone, iface)) is not None:
-            return (*cu_meta, False)
+            return (*cu_meta, None)
         reg = er.async_get(hass)
         dev_reg = dr.async_get(hass)
         for ent in er.async_entries_for_config_entry(reg, config_entry.entry_id):
@@ -911,7 +913,10 @@ async def async_setup_entry(
         )
         if not norm_if and canonical_thermo_zone(zone) in standalone_zones:
             standalone_cfg = True  # "Standalone thermostats" in the gateway options
-        return MyHOMEActuatorOutputSensor(
+        cu_where = (
+            f"#0#{zone}" if four_zone_central_zone(zone_dev_id) is not None else None
+        )
+        sensor = MyHOMEActuatorOutputSensor(
             hass=hass,
             name=dev_name,
             device_id=zone_dev_id,
@@ -923,7 +928,23 @@ async def async_setup_entry(
             manufacturer=manufacturer,
             model=model,
             gateway=gateway,
+            four_zone_central_where=cu_where,
         )
+        full_act = f"{norm_where}{BUS_ROUTING}{norm_if}" if norm_if else norm_where
+        ent_key = f"4-{full_act}-output-level"
+        sensor_entities = runtime.entities.setdefault(PLATFORM, {})
+        sensor_entities[ent_key] = sensor
+
+        @callback
+        def _forget_actuator_output(
+            key: str = ent_key,
+            s: MyHOMEActuatorOutputSensor = sensor,
+        ) -> None:
+            if sensor_entities.get(key) is s:
+                sensor_entities.pop(key, None)
+
+        sensor.async_on_remove(_forget_actuator_output)
+        return sensor
 
     def actuator_output_known_keys(ctx: DeviceContext) -> list[str]:
         norm_where, zone, _act, norm_if = parse_thermo_actuator_where(
@@ -1049,17 +1070,24 @@ async def async_setup_entry(
             model=model or meta_model,
             gateway=gateway,
             initial_value=initial_value,
+            is_superseded=partial(_has_central_climate_config, zone, iface),
         )
         _apply_legacy_compat_name(sensor, reg)
         known_climate_temp[pair] = sensor
+        temp_key = f"4-{_zone_key(zone, iface)}-temperature"
+        sensor_entities = runtime.entities.setdefault(PLATFORM, {})
+        sensor_entities[temp_key] = sensor
 
         @callback
         def _forget_climate_temp(
             p: tuple[str, str | None] = pair,
+            k: str = temp_key,
             s: MyHOMEClimateTemperatureSensor = sensor,
         ) -> None:
             if known_climate_temp.get(p) is s:
                 known_climate_temp.pop(p, None)
+            if sensor_entities.get(k) is s:
+                sensor_entities.pop(k, None)
 
         sensor.async_on_remove(_forget_climate_temp)
         sensor.async_on_remove(
@@ -1100,16 +1128,23 @@ async def async_setup_entry(
             model=model or meta_model,
             gateway=gateway,
             initial_value=initial_value,
+            is_superseded=partial(_has_central_climate_config, zone, iface),
         )
         known_climate_humidity[pair] = sensor
+        hum_key = f"4-{_zone_key(zone, iface)}-humidity"
+        sensor_entities = runtime.entities.setdefault(PLATFORM, {})
+        sensor_entities[hum_key] = sensor
 
         @callback
         def _forget_climate_humidity(
             p: tuple[str, str | None] = pair,
+            k: str = hum_key,
             s: MyHOMEClimateHumiditySensor = sensor,
         ) -> None:
             if known_climate_humidity.get(p) is s:
                 known_climate_humidity.pop(p, None)
+            if sensor_entities.get(k) is s:
+                sensor_entities.pop(k, None)
 
         sensor.async_on_remove(_forget_climate_humidity)
         sensor.async_on_remove(
@@ -2403,6 +2438,7 @@ class MyHOMEActuatorOutputSensor(MyHOMEEntity, SensorEntity):
         manufacturer: str | None,
         model: str | None,
         gateway: MyHOMEGatewayHandler,
+        four_zone_central_where: str | None = None,
     ) -> None:
         super().__init__(
             hass=hass,
@@ -2420,6 +2456,8 @@ class MyHOMEActuatorOutputSensor(MyHOMEEntity, SensorEntity):
         self._actuator = actuator
         self._interface = interface
         self._standalone_config = standalone
+        self._four_zone_central_where = four_zone_central_where
+        self._central_mode_unsub: CALLBACK_TYPE | None = None
         self._full_where = (
             f"{self._where}{BUS_ROUTING}{self._interface}"
             if self._interface is not None
@@ -2462,6 +2500,50 @@ class MyHOMEActuatorOutputSensor(MyHOMEEntity, SensorEntity):
         return isinstance(detected, set) and (self._zone, self._interface) in detected
 
     @callback
+    def _unsub_central_mode(self) -> None:
+        """Detach any 99-zone central-mode OFF dispatcher listener."""
+        if self._central_mode_unsub is not None:
+            unsub = self._central_mode_unsub
+            self._central_mode_unsub = None
+            unsub()
+
+    def rehome_to_four_zone_central(
+        self,
+        *,
+        device_id: str,
+        name: str,
+        manufacturer: str,
+        model: str,
+        central_where: str,
+    ) -> None:
+        """Attach this actuator output sensor to its unified 4-zone central unit ``#0#N``."""
+        self._device_id = device_id
+        self._device_name = name
+        self._manufacturer = manufacturer
+        self._model = model
+        self._four_zone_central_where = central_where
+        self._unsub_central_mode()
+        clean_dev_id = str(device_id).removeprefix("4-")
+        identifiers = {(DOMAIN, f"{self._gateway_handler.mac}-4-{clean_dev_id}")}
+        via_id = self._gateway_handler.device_registry_id
+        self._attr_device_info = (
+            DeviceInfo(
+                identifiers=identifiers,
+                name=name,
+                manufacturer=manufacturer,
+                model=model,
+                via_device_id=via_id,
+            )
+            if via_id
+            else DeviceInfo(
+                identifiers=identifiers,
+                name=name,
+                manufacturer=manufacturer,
+                model=model,
+            )
+        )
+
+    @callback
     def _handle_central_mode_update(self, master_mode: HVACMode) -> None:
         """Reset output level to 0 % when the central unit turns subordinate zones OFF."""
         if master_mode != HVACMode.OFF or self._standalone:
@@ -2473,14 +2555,17 @@ class MyHOMEActuatorOutputSensor(MyHOMEEntity, SensorEntity):
     async def async_added_to_hass(self) -> None:
         """Subscribe to central mode OFF updates and Dimension 20 actuator watches."""
         target_hass = self.hass or self._hass
-        if target_hass is not None and self._standalone_config is not True:
-            self.async_on_remove(
-                async_dispatcher_connect(
-                    target_hass,
-                    central_mode_signal(self._gateway_handler.mac, self._interface),
-                    self._handle_central_mode_update,
-                )
+        if (
+            target_hass is not None
+            and self._standalone_config is not True
+            and self._four_zone_central_where is None
+        ):
+            self._central_mode_unsub = async_dispatcher_connect(
+                target_hass,
+                central_mode_signal(self._gateway_handler.mac, self._interface),
+                self._handle_central_mode_update,
             )
+            self.async_on_remove(self._unsub_central_mode)
         await super().async_added_to_hass()
         who4_target = getattr(
             self._gateway_handler, "_who4_target", lambda: self._gateway_handler
@@ -2547,8 +2632,12 @@ class MyHOMEActuatorOutputSensor(MyHOMEEntity, SensorEntity):
             if dim19 is not None and not dim19[2]:
                 new_val = 0
         elif message.message_type in (MESSAGE_TYPE_MODE, MESSAGE_TYPE_MODE_TARGET):
-            if self._standalone and is_central_thermo_where(message):
-                return
+            if is_central_thermo_where(message):
+                if self._four_zone_central_where is not None:
+                    if four_zone_central_where(message) != self._four_zone_central_where:
+                        return
+                elif self._standalone:
+                    return
             if getattr(message, "mode", None) == CLIMATE_MODE_OFF:
                 new_val = 0
         elif message.message_type == MESSAGE_TYPE_ZONE_STATE:
@@ -2589,6 +2678,7 @@ class _MyHOMEClimateZoneSensor(MyHOMESensorEntity):
         device_class: SensorDeviceClass,
         native_unit: str,
         initial_value: float | None = None,
+        is_superseded: Callable[[], bool] | None = None,
     ) -> None:
         super().__init__(
             hass=hass,
@@ -2603,6 +2693,8 @@ class _MyHOMEClimateZoneSensor(MyHOMESensorEntity):
         )
         self._zone = zone
         self._interface = interface
+        self._superseded_by_central = False
+        self._is_superseded = is_superseded
         self._zone_key = (
             f"{self._zone}{BUS_ROUTING}{self._interface}"
             if self._interface is not None
@@ -2622,6 +2714,41 @@ class _MyHOMEClimateZoneSensor(MyHOMESensorEntity):
             attrs["Int"] = self._interface
         self._attr_extra_state_attributes = attrs
 
+    async def _async_prune_superseded(
+        self, target_hass: HomeAssistant, entity_id: str
+    ) -> None:
+        """Remove a companion zone sensor superseded by unified ``#0#N``."""
+        if self.platform is not None and entity_id in self.platform.entities:
+            await self.async_remove(force_remove=True)
+        registry = er.async_get(target_hass)
+        if (entry := registry.async_get(entity_id)) is not None:
+            prune_entity(target_hass, registry, entry, entry.config_entry_id or "")
+
+    def supersede_by_central(self) -> None:
+        """Mark this companion zone sensor superseded by unified ``#0#N`` and prune if already added."""
+        self._superseded_by_central = True
+        target_hass = self.hass or self._hass
+        if target_hass is not None and self.entity_id:
+            target_hass.async_create_task(
+                self._async_prune_superseded(target_hass, self.entity_id),
+                eager_start=False,
+            )
+
+    async def async_added_to_hass(self) -> None:
+        """Abort registration and prune if master Zone N was unified into ``#0#N`` while queued."""
+        target_hass = self.hass or self._hass
+        if self._superseded_by_central or (
+            self._is_superseded is not None and self._is_superseded()
+        ):
+            self._superseded_by_central = True
+            if target_hass is not None and self.entity_id:
+                target_hass.async_create_task(
+                    self._async_prune_superseded(target_hass, self.entity_id),
+                    eager_start=False,
+                )
+            return
+        await super().async_added_to_hass()
+
     async def async_update(self) -> None:
         """Strictly passive: readings arrive via climate zone bus frames."""
         return
@@ -2632,7 +2759,7 @@ class _MyHOMEClimateZoneSensor(MyHOMESensorEntity):
 
     def _apply_reading(self, message: OWNHeatingEvent, value: float | None) -> None:
         """Publish a finite reading when it changes."""
-        if value is None or not math.isfinite(value):
+        if self._superseded_by_central or value is None or not math.isfinite(value):
             return
         if hasattr(message, "human_readable_log") and message.human_readable_log:
             LOGGER.debug(
@@ -2662,6 +2789,7 @@ class MyHOMEClimateTemperatureSensor(_MyHOMEClimateZoneSensor):
         model: str | None,
         gateway: MyHOMEGatewayHandler,
         initial_value: float | None = None,
+        is_superseded: Callable[[], bool] | None = None,
     ) -> None:
         super().__init__(
             hass=hass,
@@ -2675,6 +2803,7 @@ class MyHOMEClimateTemperatureSensor(_MyHOMEClimateZoneSensor):
             device_class=SensorDeviceClass.TEMPERATURE,
             native_unit=UnitOfTemperature.CELSIUS,
             initial_value=initial_value,
+            is_superseded=is_superseded,
         )
 
     @callback
@@ -2709,6 +2838,7 @@ class MyHOMEClimateHumiditySensor(_MyHOMEClimateZoneSensor):
         model: str | None,
         gateway: MyHOMEGatewayHandler,
         initial_value: float | None = None,
+        is_superseded: Callable[[], bool] | None = None,
     ) -> None:
         super().__init__(
             hass=hass,
@@ -2722,6 +2852,7 @@ class MyHOMEClimateHumiditySensor(_MyHOMEClimateZoneSensor):
             device_class=SensorDeviceClass.HUMIDITY,
             native_unit=PERCENTAGE,
             initial_value=initial_value,
+            is_superseded=is_superseded,
         )
 
     @callback
