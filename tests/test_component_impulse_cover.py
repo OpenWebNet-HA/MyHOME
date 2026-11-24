@@ -39,6 +39,7 @@ from custom_components.myhome.const import (
     CONF_ACCESS,
     CONF_ALLOWED_USERS,
     CONF_APPROVERS,
+    CONF_BUS_INTERFACE,
     CONF_DEVICE_CLASS,
     CONF_MIN_CYCLE_TIME,
     CONF_PIN_CODE,
@@ -1020,21 +1021,48 @@ async def test_stale_impulse_cover_registry_entry_is_pruned_and_does_not_block_y
     hass: HomeAssistant, mock_gateway, light_first: bool
 ):
     """Removing a WHO=1 impulse cover from myhome.yaml prunes its registry row and lets light reuse the address."""
+    from homeassistant.helpers import device_registry as dr
     from homeassistant.helpers import entity_registry as er
     from pytest_homeassistant_custom_component.common import MockConfigEntry
 
     from custom_components.myhome.light import async_setup_entry as add_lights
 
     mac = mock_gateway.mac
-    entry = MockConfigEntry(domain=DOMAIN, data={CONF_MAC: mac}, unique_id=mac)
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_MAC: mac},
+        options={"ignored_addresses": ["1/32"]},
+        unique_id=mac,
+    )
     entry.add_to_hass(hass)
 
+    dev_reg = dr.async_get(hass)
+    dev_05 = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, f"{mac}-1-05")},
+        name="Test Impulse 05",
+    )
     reg = er.async_get(hass)
     stale_cov = reg.async_get_or_create(
         domain="cover",
         platform=DOMAIN,
         unique_id=f"{mac}-1-05",
         config_entry=entry,
+        device_id=dev_05.id,
+    )
+    btn_dis = reg.async_get_or_create(
+        domain="button",
+        platform=DOMAIN,
+        unique_id=f"{mac}-1-05-disable",
+        config_entry=entry,
+        device_id=dev_05.id,
+    )
+    btn_ena = reg.async_get_or_create(
+        domain="button",
+        platform=DOMAIN,
+        unique_id=f"{mac}-1-05-enable",
+        config_entry=entry,
+        device_id=dev_05.id,
     )
 
     hass.data[DOMAIN] = {
@@ -1062,6 +1090,252 @@ async def test_stale_impulse_cover_registry_entry_is_pruned_and_does_not_block_y
     assert [e._where for e in lights] == ["05"]
     assert covers == []
     assert reg.async_get(stale_cov.entity_id) is None
+    # Replacement YAML light at 05 keeps the WHO=1 companion buttons and device intact
+    assert reg.async_get(btn_dis.entity_id) is not None
+    assert reg.async_get(btn_ena.entity_id) is not None
+    assert dev_reg.async_get(dev_05.id) is not None
+
+
+@pytest.mark.parametrize("button_first", [True, False])
+async def test_unreplaced_stale_impulse_cover_prunes_companion_buttons_and_empty_device(
+    hass: HomeAssistant, mock_gateway, button_first: bool
+):
+    """Removing a WHO=1 impulse cover with no replacement WHO=1 actuator prunes its companion buttons and empty device."""
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.button import async_setup_entry as add_buttons
+
+    mac = mock_gateway.mac
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_MAC: mac},
+        options={"ignored_addresses": ["1/32"]},
+        unique_id=mac,
+    )
+    entry.add_to_hass(hass)
+
+    dev_reg = dr.async_get(hass)
+    reg = er.async_get(hass)
+
+    # 1. WHERE=29: completely removed WHO=1 impulse cover -> cover, buttons, and empty device pruned
+    dev_29 = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, f"{mac}-1-29")},
+        name="Test Gate 29",
+    )
+    cov_29 = reg.async_get_or_create(
+        domain="cover", platform=DOMAIN, unique_id=f"{mac}-1-29", config_entry=entry, device_id=dev_29.id
+    )
+    btn_29_dis = reg.async_get_or_create(
+        domain="button", platform=DOMAIN, unique_id=f"{mac}-1-29-disable", config_entry=entry, device_id=dev_29.id
+    )
+    btn_29_ena = reg.async_get_or_create(
+        domain="button", platform=DOMAIN, unique_id=f"{mac}-1-29-enable", config_entry=entry, device_id=dev_29.id
+    )
+
+    # 2. WHERE=30: removed WHO=1 impulse cover sharing its device with a WHO=1 motion binary_sensor ->
+    # cover and lock/unlock buttons pruned, motion sensor and shared device kept
+    dev_30 = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, f"{mac}-1-30")},
+        name="Driveway 30",
+    )
+    cov_30 = reg.async_get_or_create(
+        domain="cover", platform=DOMAIN, unique_id=f"{mac}-1-30", config_entry=entry, device_id=dev_30.id
+    )
+    btn_30_dis = reg.async_get_or_create(
+        domain="button", platform=DOMAIN, unique_id=f"{mac}-1-30-disable", config_entry=entry, device_id=dev_30.id
+    )
+    motion_30 = reg.async_get_or_create(
+        domain="binary_sensor",
+        platform=DOMAIN,
+        unique_id=f"{mac}-1-30-motion",
+        config_entry=entry,
+        device_id=dev_30.id,
+    )
+
+    # 3. WHERE=31: removed WHO=1 impulse cover where a discovered light is already registered ->
+    # cover pruned, companion buttons and device kept
+    dev_31 = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, f"{mac}-1-31")},
+        name="Porch 31",
+    )
+    cov_31 = reg.async_get_or_create(
+        domain="cover", platform=DOMAIN, unique_id=f"{mac}-1-31", config_entry=entry, device_id=dev_31.id
+    )
+    light_31 = reg.async_get_or_create(
+        domain="light", platform=DOMAIN, unique_id=f"{mac}-1-31", config_entry=entry, device_id=dev_31.id
+    )
+    btn_31_dis = reg.async_get_or_create(
+        domain="button", platform=DOMAIN, unique_id=f"{mac}-1-31-disable", config_entry=entry, device_id=dev_31.id
+    )
+
+    # 4. WHERE=32: ignored WHO=1 address -> even if YAML still lists light 32, ignored cover & button are pruned
+    dev_32 = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, f"{mac}-1-32")},
+        name="Ignored 32",
+    )
+    cov_32 = reg.async_get_or_create(
+        domain="cover", platform=DOMAIN, unique_id=f"{mac}-1-32", config_entry=entry, device_id=dev_32.id
+    )
+    btn_32_dis = reg.async_get_or_create(
+        domain="button", platform=DOMAIN, unique_id=f"{mac}-1-32-disable", config_entry=entry, device_id=dev_32.id
+    )
+
+    hass.data[DOMAIN] = {
+        mac: {
+            "entity": mock_gateway,
+            CONF_PLATFORMS: {
+                "light": {
+                    "hall": {CONF_WHERE: "11", CONF_NAME: "Hall Light", CONF_WHO: "1"},
+                    "grp_1": {CONF_WHERE: "#1", CONF_NAME: "Group 1", CONF_WHO: "1"},
+                    "ignored_32": {CONF_WHERE: "32", CONF_NAME: "Ignored Light 32", CONF_WHO: "1"},
+                },
+                "switch": {
+                    "4-2#1": {CONF_WHERE: "2#1", CONF_NAME: "Towel Rail", CONF_WHO: "4"},
+                },
+                "cover": {},
+                "button": {
+                    "1-11": {CONF_WHERE: "11", CONF_NAME: "Hall Light", CONF_WHO: "1"},
+                },
+            },
+        }
+    }
+    attach_runtime(hass, entry)
+
+    buttons: list = []
+    covers: list = []
+    if button_first:
+        await add_buttons(hass, entry, buttons.extend)
+        await async_setup_entry(hass, entry, covers.extend)
+    else:
+        await async_setup_entry(hass, entry, covers.extend)
+        await add_buttons(hass, entry, buttons.extend)
+
+    assert covers == []
+    # WHERE=29 completely cleaned up
+    assert reg.async_get(cov_29.entity_id) is None
+    assert reg.async_get(btn_29_dis.entity_id) is None
+    assert reg.async_get(btn_29_ena.entity_id) is None
+    assert dev_reg.async_get(dev_29.id) is None
+    # WHERE=30 cover & button pruned, motion sensor & shared device preserved
+    assert reg.async_get(cov_30.entity_id) is None
+    assert reg.async_get(btn_30_dis.entity_id) is None
+    assert reg.async_get(motion_30.entity_id) is not None
+    assert dev_reg.async_get(dev_30.id) is not None
+    # WHERE=31 cover pruned, registered light & companion button preserved
+    assert reg.async_get(cov_31.entity_id) is None
+    assert reg.async_get(light_31.entity_id) is not None
+    assert reg.async_get(btn_31_dis.entity_id) is not None
+    assert dev_reg.async_get(dev_31.id) is not None
+    # WHERE=32 ignored address prunes cover, companion button, and empty device despite YAML light
+    assert reg.async_get(cov_32.entity_id) is None
+    assert reg.async_get(btn_32_dis.entity_id) is None
+    assert dev_reg.async_get(dev_32.id) is None
+
+
+@pytest.mark.parametrize("light_first", [True, False])
+async def test_f422_routed_stale_impulse_cover_pruned_with_bus_isolation(
+    hass: HomeAssistant, mock_gateway, light_first: bool
+):
+    """F422 #4#II stale impulse covers preserve bus isolation (#408) when pruning companions and unblocking lights."""
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.light import async_setup_entry as add_lights
+
+    mac = mock_gateway.mac
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_MAC: mac},
+        options={"ignored_addresses": ["1/32"]},
+        unique_id=mac,
+    )
+    entry.add_to_hass(hass)
+
+    dev_reg = dr.async_get(hass)
+    reg = er.async_get(hass)
+
+    # Routed 05#4#01 replaced by routed light 05#4#01 -> cover pruned, buttons & device kept
+    dev_05_i01 = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, f"{mac}-1-05#4#01")},
+        name="Sub Gate 05",
+    )
+    cov_05_i01 = reg.async_get_or_create(
+        domain="cover", platform=DOMAIN, unique_id=f"{mac}-1-05#4#01", config_entry=entry, device_id=dev_05_i01.id
+    )
+    btn_05_i01 = reg.async_get_or_create(
+        domain="button",
+        platform=DOMAIN,
+        unique_id=f"{mac}-1-05#4#01-disable",
+        config_entry=entry,
+        device_id=dev_05_i01.id,
+    )
+
+    # Routed 08#4#02 NOT replaced on interface 02 (only a local light at 08 exists) ->
+    # 08#4#02 cover, button, and device are all pruned, and local light 08 is created
+    dev_08_i02 = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, f"{mac}-1-08#4#02")},
+        name="Sub Gate 08",
+    )
+    cov_08_i02 = reg.async_get_or_create(
+        domain="cover", platform=DOMAIN, unique_id=f"{mac}-1-08#4#02", config_entry=entry, device_id=dev_08_i02.id
+    )
+    btn_08_i02 = reg.async_get_or_create(
+        domain="button",
+        platform=DOMAIN,
+        unique_id=f"{mac}-1-08#4#02-disable",
+        config_entry=entry,
+        device_id=dev_08_i02.id,
+    )
+
+    hass.data[DOMAIN] = {
+        mac: {
+            "entity": mock_gateway,
+            CONF_PLATFORMS: {
+                "light": {
+                    "1-05#4#01": {
+                        CONF_WHERE: "05",
+                        CONF_BUS_INTERFACE: "01",
+                        CONF_NAME: "Routed Light 05",
+                        CONF_WHO: "1",
+                    },
+                    "1-08": {
+                        CONF_WHERE: "08",
+                        CONF_NAME: "Local Light 08",
+                        CONF_WHO: "1",
+                    },
+                },
+                "cover": {},
+            },
+        }
+    }
+    attach_runtime(hass, entry)
+
+    lights: list = []
+    covers: list = []
+    if light_first:
+        await add_lights(hass, entry, lights.extend)
+        await async_setup_entry(hass, entry, covers.extend)
+    else:
+        await async_setup_entry(hass, entry, covers.extend)
+        await add_lights(hass, entry, lights.extend)
+
+    assert sorted(e._full_where for e in lights) == ["05#4#01", "08"]
+    assert covers == []
+    assert reg.async_get(cov_05_i01.entity_id) is None
+    assert reg.async_get(btn_05_i01.entity_id) is not None
+    assert dev_reg.async_get(dev_05_i01.id) is not None
+    assert reg.async_get(cov_08_i02.entity_id) is None
+    assert reg.async_get(btn_08_i02.entity_id) is None
+    assert dev_reg.async_get(dev_08_i02.id) is None
 
 
 async def test_configured_impulse_cover_still_blocks_light_at_same_address(
@@ -1074,7 +1348,12 @@ async def test_configured_impulse_cover_still_blocks_light_at_same_address(
     from custom_components.myhome.light import async_setup_entry as add_lights
 
     mac = mock_gateway.mac
-    entry = MockConfigEntry(domain=DOMAIN, data={CONF_MAC: mac}, unique_id=mac)
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={CONF_MAC: mac},
+        options={"ignored_addresses": ["1/32"]},
+        unique_id=mac,
+    )
     entry.add_to_hass(hass)
 
     reg = er.async_get(hass)
