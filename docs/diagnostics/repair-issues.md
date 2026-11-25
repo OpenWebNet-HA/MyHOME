@@ -124,14 +124,14 @@ If the zone no longer exists (for example a leftover entity), remove its device 
 **Fixable via UI**: No
 
 ### What it means
-A 99-zone thermoregulation central unit (`WHERE = #0`, such as a BTicino `3550`, `MyHOME_Screen 10`, or `MyHOME_Screen 3.5`) reported OpenWebNet status `*4*20*#0##` (`Remote control disabled` / *Telegestione disabilitata*).
+A thermoregulation central unit (99-zone `WHERE = #0` such as a BTicino `3550`, `MyHOME_Screen 10`, or `MyHOME_Screen 3.5`, or 4-zone `WHERE = #0#N` such as a BTicino `4695`) reported OpenWebNet status `*4*20*<where>##` (`Remote control disabled` / *Telegestione disabilitata*).
 
-When *Telegestione* (Remote Control) is disabled in the physical central unit's settings menu, the OpenWebNet gateway still acknowledges central-unit commands (`*4*1*#0##`, `*4*311*#0##`, `*#4*#0*#14*...##`) with `*#*1##` at the TCP command session layer, **but the central unit itself ignores remote mode and setpoint writes from Home Assistant**.
+When *Telegestione* (Remote Control) is disabled in the physical central unit's settings menu, the OpenWebNet gateway still acknowledges central-unit commands (`*4*1*<where>##`, `*4*3100*<where>##`, `*#4*<where>*#14*...##`) with `*#*1##` at the TCP command session layer, **but the central unit itself ignores remote mode and setpoint writes from Home Assistant**.
 
 ### How to resolve
-1. On the physical BTicino `3550` (or central unit display panel), open the **Settings / Impostazioni** menu.
+1. On the physical BTicino `3550` / `4695` (or central unit display panel), open the **Settings / Impostazioni** menu.
 2. Set **Remote Control / Telegestione** to **Enabled / Abilitata**.
-3. The central unit will emit `*4*21*#0##` (`Remote control enabled`) on the next status query or mode broadcast, and this repair issue will clear automatically.
+3. The central unit will emit `*4*21*<where>##` (`Remote control enabled`) on the next status query or mode broadcast, and this repair issue will clear automatically.
 
 ---
 
@@ -143,14 +143,14 @@ When *Telegestione* (Remote Control) is disabled in the physical central unit's 
 **Fixable via UI**: No
 
 ### What it means
-A 99-zone thermoregulation central unit (`WHERE = #0`, such as a BTicino `3550`) reported OpenWebNet status `*4*31*#0##` (`Central unit battery KO`) during its status report burst (`*#4*#0##`).
+A thermoregulation central unit (99-zone `WHERE = #0` such as a BTicino `3550`, or 4-zone `WHERE = #0#N` such as a BTicino `4695`) reported OpenWebNet status `*4*31*<where>##` (`Central unit battery KO`) during its status report burst (`*#4*<where>##`).
 
 ### How to resolve
-1. Check or replace the backup battery inside the physical central unit (`3550`) so weekly programs and internal clock settings are preserved across mains power interruptions.
-2. Once the battery fault is resolved on the hardware, the central unit omits `*4*31*#0##` from its next status burst (`*#4*#0##`), and this repair issue clears automatically, one second after the burst's remote-control frame (`*4*20*#0##` / `*4*21*#0##`).
+1. Check or replace the backup battery inside the physical central unit (`3550` / `4695`) so weekly programs and internal clock settings are preserved across mains power interruptions.
+2. Once the battery fault is resolved on the hardware, the central unit omits `*4*31*<where>##` from its next status burst (`*#4*<where>##`), and this repair issue clears automatically, one second after the burst's remote-control frame (`*4*20*<where>##` / `*4*21*<where>##`).
 
 ### If the central unit has no backup battery
-A central unit fitted without a battery repeats `*4*31*#0##` in every status burst. Use **Ignore** on the repair: the issue is left untouched while the flag keeps coming, so the Ignore holds through every burst and every reload until Home Assistant restarts: the first burst after a restart shows the repair again, as a reminder, and it can be ignored again. The repair itself ends only when a burst arrives without the flag.
+A central unit fitted without a battery repeats `*4*31*<where>##` in every status burst. Use **Ignore** on the repair: the issue is left untouched while the flag keeps coming, so the Ignore holds through every burst and every reload until Home Assistant restarts: the first burst after a restart shows the repair again, as a reminder, and it can be ignored again. The repair itself ends only when a burst arrives without the flag.
 
 ---
 

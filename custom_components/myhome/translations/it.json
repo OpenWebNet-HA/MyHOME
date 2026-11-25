@@ -582,11 +582,11 @@
     },
     "central_remote_control_disabled": {
       "title": "Telegestione disabilitata sulla centrale di termoregolazione {device} ({gateway})",
-      "description": "La centrale a 99 zone {device} (WHO {who}, indirizzo `{where}`) su {gateway} ha segnalato lo stato OpenWebNet `*4*20*#0##` (`Remote control disabled` / *Telegestione disabilitata*).\n\nFinché la telegestione è disabilitata sulla centrale fisica (es. BTicino 3550), il gateway conferma i comandi OpenWebNet con `*#*1##`, ma la centrale ignora le modifiche di modalità e setpoint inviate da Home Assistant.\n\nAbilita la **Telegestione** (*Controllo remoto*) nel menu impostazioni della centrale fisica. Questo avviso si risolve automaticamente appena la centrale segnala `*4*21*#0##` (`Remote control enabled`)."
+      "description": "La centrale {device} (WHO {who}, indirizzo `{where}`) su {gateway} ha segnalato lo stato OpenWebNet `*4*20*{where}##` (`Remote control disabled` / *Telegestione disabilitata*).\n\nFinché la telegestione è disabilitata sulla centrale fisica (es. BTicino 3550 / 4695), il gateway conferma i comandi OpenWebNet con `*#*1##`, ma la centrale ignora le modifiche di modalità e setpoint inviate da Home Assistant.\n\nAbilita la **Telegestione** (*Controllo remoto*) nel menu impostazioni della centrale fisica. Questo avviso si risolve automaticamente appena la centrale segnala `*4*21*{where}##` (`Remote control enabled`)."
     },
     "central_battery_fault": {
       "title": "Guasto batteria tampone sulla centrale di termoregolazione {device} ({gateway})",
-      "description": "La centrale a 99 zone {device} (WHO {who}, indirizzo `{where}`) su {gateway} ha segnalato lo stato OpenWebNet `*4*31*#0##` (`Central unit battery KO`).\n\nControlla o sostituisci la batteria tampone nella centrale fisica (es. BTicino 3550) per preservare i programmi settimanali e l'orologio durante le interruzioni di corrente. Questo avviso si risolve automaticamente al successivo rapporto di stato (`*#4*#0##`) quando `*4*31*#0##` non è più presente."
+      "description": "La centrale {device} (WHO {who}, indirizzo `{where}`) su {gateway} ha segnalato lo stato OpenWebNet `*4*31*{where}##` (`Central unit battery KO`).\n\nControlla o sostituisci la batteria tampone nella centrale fisica (es. BTicino 3550 / 4695) per preservare i programmi settimanali e l'orologio durante le interruzioni di corrente. Questo avviso si risolve automaticamente al successivo rapporto di stato (`*#4*{where}##`) quando `*4*31*{where}##` non è più presente."
     },
     "unmapped_device_status": {
       "title": "{device} segnala uno stato non documentato",
@@ -638,6 +638,15 @@
   "exceptions": {
     "alarm_read_only": {
       "message": "{name} è di sola lettura: inserisci e disinserisci l'allarme con i comandi AUX programmati sulla centrale"
+    },
+    "central_command_not_written": {
+      "message": "{name}: il gateway non ha scritto {frame} entro 15 secondi; il comando è stato annullato"
+    },
+    "central_command_refused": {
+      "message": "{name}: il gateway ha rifiutato {frame}"
+    },
+    "central_command_unconfirmed": {
+      "message": "{name}: il gateway non ha confermato {frame}; potrebbe comunque aver raggiunto la centrale"
     },
     "fan_speed_zone_only": {
       "message": "{name} non ha una velocità del ventilatore propria: solo una zona (1-99) può averne una"

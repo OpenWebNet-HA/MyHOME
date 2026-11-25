@@ -214,8 +214,9 @@ async def test_failed_season_send_does_not_attempt_restore() -> None:
 async def test_four_zone_central_is_still_immediate_with_one_send() -> None:
     gateway = _gateway()
     central = _climate(gateway, "#0#1", standalone=None, central=True)
+    _replay(central, ["*4*110#0175*#0#1##"])  # its setpoint (tests/fixtures/traces/issue_994, second file, frame 20)
     await central.async_set_hvac_mode(HVACMode.HEAT)
-    assert len(_sent(gateway)) == 1
+    assert _sent(gateway) == ["*#4*#0#1*#14*0175*3##"]  # same-season generic manual M=3 (#994), no season frame
     assert central.hvac_mode == HVACMode.HEAT
 
 

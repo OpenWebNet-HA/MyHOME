@@ -207,11 +207,12 @@ async def test_central_unit_cu99_unanswered_polls_never_raise_a_repair(hass):
     assert _issue(hass, central) is None
 
 
-async def test_central_unit_cu4_exempt_from_status_poll(hass):
-    """4-zone central units (#0#1) remain exempt from polling to avoid gateway timeouts (#629)."""
+async def test_central_unit_cu4_polls_status_without_poll_health(hass):
+    """4-zone central units (#0#1) poll *#4*#0#1## without PollHealth tracking (never raises unresponsive repair)."""
     central, gateway = _zone(hass, where="#0#1", central=True, name="Centrale 4 zone")
-    await central.async_update()
-    gateway.send_status_request.assert_not_called()
+    for _ in range(5):
+        await central.async_update()
+    assert [str(call.args[0]) for call in gateway.send_status_request.await_args_list] == ["*#4*#0#1##", "*#4*1*0##"] * 5
     assert "failed_polls" not in central.extra_state_attributes
     assert "unresponsive_since" not in central.extra_state_attributes
     assert _issue(hass, central) is None
@@ -243,10 +244,10 @@ async def test_central_unit_restores_cleanly_and_clears_stale_repair(hass):
 
 
 async def test_four_zone_central_unit_exempt_from_poll_health(hass):
-    """Four-zone central units (#0#1) are also exempt from status polling and PollHealth (#582)."""
+    """Four-zone central units (#0#1) poll *#4*#0#1## cleanly while staying exempt from PollHealth (#582, #994)."""
     cu4, gateway = _zone(hass, where="#0#1", central=True, name="Central Unit 4-Zone")
     await cu4.async_update()
-    gateway.send_status_request.assert_not_called()
+    assert [str(call.args[0]) for call in gateway.send_status_request.await_args_list] == ["*#4*#0#1##", "*#4*1*0##"]
     assert "failed_polls" not in cu4.extra_state_attributes
     assert _issue(hass, cu4) is None
 

@@ -589,3 +589,95 @@ async def test_a_setpoint_in_force_long_after_the_write_is_not_its_echo(hass: Ho
     _feed(zone, "*#4*2*12*0220*3##")
     assert zone.hvac_mode == HVACMode.OFF
     assert zone.extra_state_attributes["nominal_temperature"] == 21.0  # the saved one, until the zone runs or reports it
+
+
+# ── PR 983 follow-up: remaining BUG-2 restore edges and stale central echo write cleanup ──
+
+
+async def test_dim12_before_restore_keeps_saved_nominal_through_protection(hass: HomeAssistant) -> None:
+    """Only Dim 12 replayed before a running saved state keeps the saved nominal_temperature."""
+    live = _zone(hass)
+    _feed(live, *F461_POLL_REPLY)
+    saved = _saved(live)  # heat, 23.5 in force, 21.0 commanded
+
+    restored = _zone(hass)
+    _feed(restored, "*#4*2*12*0235*3##")  # only dimension 12 replayed before restore
+    await restored.async_restore_last_state(saved)
+    assert restored.hvac_mode == HVACMode.HEAT
+    assert restored.target_temperature == 23.5
+    assert restored.extra_state_attributes["nominal_temperature"] == 21.0
+    assert "*#4*2*14##" in restored._silent_zone_reads()
+
+    _feed(restored, "*4*102*2##", "*#4*2*12*0070*3##")  # enters protection
+    assert restored.hvac_mode == HVACMode.OFF and restored.target_temperature == 7.0
+    assert restored.extra_state_attributes["nominal_temperature"] == 21.0
+    await restored.async_set_hvac_mode(HVACMode.HEAT)
+    assert "0210" in _sent(restored)[0]
+
+
+async def test_live_season_and_central_state_are_not_overwritten_by_restore(hass: HomeAssistant) -> None:
+    """Live season, program/scenario, and central unit mode/setpoint/flags outrank saved state."""
+    zone = _zone(hass)
+    _feed(zone, "*4*1*2##")
+    await zone.async_restore_last_state(
+        State(
+            zone.entity_id,
+            "cool",
+            {"temperature": 26.0, "season": "cooling", "program": 2, "holiday_days": 5, "scenario": 3},
+        )
+    )
+    assert zone.hvac_mode == HVACMode.HEAT
+    assert zone.extra_state_attributes["season"] == "heating"
+    assert "program" not in zone.extra_state_attributes
+    assert "holiday_days" not in zone.extra_state_attributes
+    assert "scenario" not in zone.extra_state_attributes
+
+    gateway = _central_plant_gateway()
+    central = _zone(hass, where="#0", gateway=gateway, standalone=None)
+    central.entity_id = "climate.central_unit_0"
+    central._central = True
+    central._attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT, HVACMode.COOL, HVACMode.AUTO]
+    _feed(central, "*4*110#0240*#0##", "*4*21*#0##")
+    await central.async_restore_last_state(
+        State(
+            central.entity_id,
+            "off",
+            {
+                "temperature": 16.0,
+                "season": "cooling",
+                "program": 2,
+                "central_operation": "antifreeze",
+                "remote_control": "disabled",
+                "battery_fault": True,
+            },
+        )
+    )
+    assert central.hvac_mode == HVACMode.HEAT
+    assert central.target_temperature == 24.0
+    assert central.extra_state_attributes["season"] == "heating"
+    assert central.extra_state_attributes["remote_control"] == "enabled"
+    assert central.extra_state_attributes["battery_fault"] is False
+    assert "central_operation" not in central.extra_state_attributes
+    assert "program" not in central.extra_state_attributes
+
+
+async def test_off_after_unconfirmed_season_clears_stale_central_echo_write(hass: HomeAssistant) -> None:
+    """A later non-required or non-Future central command drops any stale pending future in the slot."""
+    gateway = _central_plant_gateway()
+    central = _zone(hass, where="#0", gateway=gateway, standalone=None)
+    central.entity_id = "climate.central_unit_0"
+    central._central = True
+    central._attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT, HVACMode.COOL, HVACMode.AUTO]
+    stale = asyncio.get_running_loop().create_future()
+    central._central_echo_writes["_central_echo"] = stale
+    gateway.send = AsyncMock(return_value=None)
+    await central._send_central_command(OWNMessage.parse("*4*303*#0##"), "_central_echo")
+    assert "_central_echo" not in central._central_echo_writes
+
+    central._central_echo_writes["_central_echo"] = stale
+    off_future = asyncio.get_running_loop().create_future()
+    gateway.send = AsyncMock(return_value=off_future)
+    await central._send_central_command(OWNMessage.parse("*4*303*#0##"), "_central_echo")
+    assert "_central_echo" not in central._central_echo_writes
+    stale.cancel()
+    off_future.cancel()

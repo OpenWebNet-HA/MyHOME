@@ -48,7 +48,11 @@ from homeassistant.helpers.issue_registry import (
 
 from .const import DOMAIN, LOGGER
 from .ignored import IgnoredAddresses
-from .where_grammar import central_unit_where
+from .where_grammar import (
+    central_unit_where,
+    four_zone_central_where,
+    thermo_event_interface,
+)
 
 if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
@@ -346,11 +350,14 @@ class DeviceHealth:
     def _observe_heating(self, message: Any) -> None:
         if getattr(message, "is_translation", False) is True or getattr(message, "dimension", None) is not None:
             return
-        # The flags are the 99-zone central unit's (``*4*[20-21]*#0##``, ``*4*whatn*#0##``, WHO 4
-        # p. 23-24). ``#0#N``, zone N of a 4-zone central unit, is not that address: read
-        # through ``message_where`` (OWNd: WHERE ``#0``, parameter ``N``) its frames opened and
-        # cleared the 3550's issues, and ``#0#4#4#01`` became a central unit "#0#4#4".
+        # Central-unit status flags (*4*20/21/31*#0## for a 99-zone central unit, *4*20/21/31*#0#N##
+        # for a 4-zone central unit such as BTicino 4695; WHO 4 p. 23-24, #994). Tracked under each
+        # central unit's own address (#0, #0#N, or with #4#II) so a 4-zone unit never opens or
+        # clears the 99-zone unit's issues, and #0#4#4#01 stays #0#4#4#01 rather than #0#4#4.
         where = central_unit_where(message)
+        if where is None and (four_zone := four_zone_central_where(message)) is not None:
+            iface = thermo_event_interface(message)
+            where = f"{four_zone}#4#{iface}" if iface is not None else four_zone
         if where is None or self.is_ignored(4, where):
             return
         what = getattr(message, "what", None)

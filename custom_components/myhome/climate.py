@@ -21,6 +21,7 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -66,8 +67,6 @@ from .const import (
     CONF_MANUFACTURER,
     CONF_STANDALONE,
     CONF_STANDALONE_ZONES,
-    CONF_WHERE,
-    CONF_ZONE,
     DOMAIN,
     LOGGER,
     SIGNAL_CLIMATE_HUMIDITY,
@@ -76,7 +75,8 @@ from .const import (
 )
 from .data import get_runtime_data
 from .device_health import FaultKind
-from .discovery import DeviceContext, PlatformDiscovery
+from .discovery import DeviceContext, PlatformDiscovery, prune_entity
+from .expose import is_exposed_on_bus
 from .gateway import (
     _ZONE_WHERE,
     KNOB_READ_IN_SILENT_ZONE_POLL,
@@ -91,10 +91,14 @@ from .where_grammar import (
     canonical_thermo_zone,
     central_report_zone,
     central_unit_where,
+    four_zone_central_where,
+    four_zone_central_zone,
+    four_zone_controlled_zone,
     is_actuator_where,
     is_central_thermo_where,
     is_central_unit_actuator_status,
     is_central_unit_report,
+    is_four_zone_central_where,
     is_probe,
     thermo_dim19_status,
     thermo_dim20_actuator_target,
@@ -137,7 +141,6 @@ PACED_READ_TIMEOUT = 60.0
 # (two starts, tests/fixtures/traces/issue_932/README.md).
 EMPTY_REPLY_SETTLE = 1.0
 
-_FOUR_ZONE_CENTRAL = ("#0#1", "#0#2", "#0#3", "#0#4")
 # BTicino 3550 central unit (#0) diagnostic WHAT codes (WHO 4 PDF, "1.1 WHAT table", p. 5):
 # 20 = remote control disabled, 21 = remote control enabled, 22 = at least one probe OFF,
 # 23 = at least one probe in antifreeze/protection, 24 = at least one probe in manual,
@@ -156,6 +159,10 @@ def _central_diagnostic_what(message: Any) -> int | None:
 
 # A dimension 12 frame and the frame that turns the zone OFF follow within ~0.1 s (#454, #383)
 _PROTECTION_FRAME_WINDOW = 2.0
+# On a 4-zone central unit (#0#N, BTicino 4695), master zone N emits Dim 12 + *4*1*N## before
+# subordinate zones N+1..N+3 and the trailing *4*110x*#0#N## report (~1.56 s on 3 zones in
+# #994 trace 2 frames 56-65, ~2.1 s on 4 zones).
+_FOUR_ZONE_BURST_WINDOW = 5.0
 _ZONE_CONTEXT_MODES = {"heating": HVACMode.HEAT, "cooling": HVACMode.COOL, "automatic": HVACMode.AUTO}
 _ZONE_STATES_ON = ("setpoint", "comfort", "eco")
 _ZONE_STATES_OFF = ("protection", "off")
@@ -277,19 +284,10 @@ async def async_setup_entry(
         """The entity of one zone or central unit, from its ``myhome.yaml`` entry where it has one."""
         where, interface = ctx.address.where, ctx.address.interface
         clean_where = where.removeprefix("4-")
-        cfg_where = str(cfg.get(CONF_WHERE, cfg.get(CONF_ZONE, ""))).removeprefix("4-")
-        if (
-            bool(cfg.get(CONF_CENTRAL, False))
-            and cfg_where.startswith("#0")
-            and not clean_where.startswith("#0")
-            and clean_where != "0"
-        ):
-            # Bare alias (``1`` / ``4-1`` / ``zone_1``) of a ``#0#N`` 4-zone central unit:
-            # real Thermostat Zone ``N`` (restored or bus-discovered) is not that central unit.
-            cfg = {}
-        zone = zone_number(where)
+        master_zone = four_zone_central_zone(clean_where)
+        zone = master_zone.zfill(2) if master_zone is not None else zone_number(where)
         suffix = f"{zone}I{interface}" if interface else zone
-        is_central = clean_where in ("0", "#0", *_FOUR_ZONE_CENTRAL) or (
+        is_central = clean_where in ("0", "#0") or is_four_zone_central_where(clean_where) or (
             ctx.source != "bus" and bool(cfg.get(CONF_CENTRAL, False))
         )
         # One default name whatever the source: a central unit found on the bus was "Climate
@@ -302,7 +300,7 @@ async def async_setup_entry(
             "Central Unit (3550)"
             if clean_where == "#0"
             else "Central Unit (4695)"
-            if clean_where in _FOUR_ZONE_CENTRAL
+            if is_four_zone_central_where(clean_where)
             else "Heating Zone"
         )
         entity = MyHOMEClimate(
@@ -328,6 +326,10 @@ async def async_setup_entry(
                 else cfg.get(CONF_STANDALONE)
             ),
             central=is_central,
+            unified_master=bool(
+                (master := four_zone_central_zone(clean_where)) is not None
+                and not zones._has_separate_master_zone(master, interface)
+            ),
             manufacturer=cfg.get(CONF_MANUFACTURER, "BTicino"),
             model=cfg.get(CONF_DEVICE_MODEL, default_model),
             gateway=gateway,
@@ -339,13 +341,14 @@ async def async_setup_entry(
     ) -> None:
         entity_list = list(entities)
         for ent in entity_list:
-            if (
-                isinstance(ent, MyHOMEClimate)
-                and not ent._central
-                and not is_actuator_where(ent._where)
-                and (c_zone := canonical_thermo_zone(ent._where)) is not None
-            ):
+            if not isinstance(ent, MyHOMEClimate) or is_actuator_where(ent._where):
+                continue
+            zkey: str | None = None
+            if not ent._central and (c_zone := canonical_thermo_zone(ent._where)) is not None:
                 zkey = f"{c_zone}{BUS_ROUTING}{ent._interface}" if ent._interface else c_zone
+            elif ent._central and (master := four_zone_central_zone(ent._where)) is not None:
+                zkey = f"#0#{master}{BUS_ROUTING}{ent._interface}" if ent._interface else f"#0#{master}"
+            if zkey is not None:
                 runtime.entities.setdefault(PLATFORM, {})[zkey] = ent
 
                 @callback
@@ -403,10 +406,17 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         gateway: MyHOMEGatewayHandler,
         interface: str | None = None,
         humidity: bool = False,
+        unified_master: bool = True,
     ) -> None:
         if interface is None and BUS_ROUTING in where:
             base_where, _, inline_interface = where.rpartition(BUS_ROUTING)
-            if base_where and inline_interface.isdigit() and 1 <= len(inline_interface) <= 2:
+            if (
+                base_where
+                and inline_interface.isascii()
+                and inline_interface.isdigit()
+                and 1 <= len(inline_interface) <= 2
+                and int(inline_interface) <= 15
+            ):
                 where = base_where
                 interface = inline_interface
         super().__init__(
@@ -429,7 +439,12 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         )
         self._interface_poll_skip_logged = False
 
-        self._central = True if self._where.removeprefix("4-") in ("0", "#0", *_FOUR_ZONE_CENTRAL) else central
+        self._central = (
+            True
+            if self._where.removeprefix("4-") in ("0", "#0") or is_four_zone_central_where(self._where)
+            else central
+        )
+        self._unified_master = unified_master and is_four_zone_central_where(self._where)
         # None: not configured. A zone then follows the plant, see the standalone property.
         self._standalone_config = False if self._central else standalone
         # A zone nobody configured, on a plant with a central unit: how it is written comes from
@@ -467,14 +482,22 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._actuators_assumed_off: set[str] = set()
         self._setpoint_check_by_central = False
         self._setpoint_check_central_reports = 0
-        if self._central:
+        # A 4-zone central unit does not put the plant's zones under a central unit: they are
+        # written directly (#994). A central unit behind an F422 interface belongs to that bus,
+        # never the local one.
+        if (
+            self._central
+            and self._interface is None
+            and self._where.removeprefix("4-") in ("0", "#0")
+        ):
             gateway.has_central_unit = True
 
         self._attr_native_temperature_unit = UnitOfTemperature.CELSIUS
         self._attr_precision = 0.1
         self._attr_target_temperature_step = 0.5
         self._attr_min_temp = 5
-        self._attr_max_temp = 40
+        # BTicino 4695 ROM 0x0EA350..0x0EA3AB enforces B6 in 0x0A..0x46 (5.0..35.0 °C) on C1 02/12/22.
+        self._attr_max_temp = 35 if self._is_four_zone_central else 40
 
         # HVACMode.OFF is always available, so climate.turn_off / turn_on must be
         # advertised explicitly (mandatory since core 2025.1).
@@ -569,6 +592,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._central_command_lock = asyncio.Lock()
         self._program: int | None = None
         self._holiday_days: int | None = None
+        self._daily_holiday = False
         self._scenario: int | None = None
         self._attr_current_humidity: float | None = None
         self._target_temperature: float | None = None
@@ -584,6 +608,17 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._local_target_reported = False
         self._local_target_base: float | None = None
         self._nominal_from_dim12 = False
+        # 4-zone central unit (#0#N): master-zone Dim 12 arrives both while idle/protected
+        # (7.0 / 35.0 °C) and ahead of a weekly-program wake (*4*1*N## + *#4*N*12*TTTT*3##
+        # before *4*110x*#0#N##). Track active-master pairing so waking into a schedule
+        # reconciles fresh schedule setpoints without promoting stale protection Dim 12.
+        self._local_target_from_active_master = False
+        self._master_season_active_at: float | None = None
+        self._master_dim12_at: float | None = None
+        self._idle_dim12_at: float | None = None
+        self._pending_master_dim12: tuple[float, float] | None = None
+        self._superseded_by_central = False
+        self._restored_mode_unknown = False
         self._dim12_at: float | None = None
         self._dim13_at: float | None = None
         self._unpaired_dim12_at: float | None = None
@@ -602,7 +637,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._temp_announced: bool = False
         self._humidity_announced: bool = False
         self._fan_mode_reported = False
-        self._nominal_before_dim12: tuple[float | None, float] | None = None
+        self._nominal_before_dim12: tuple[float | None, bool, float] | None = None
         self._poll_health = PollHealth()
         # BTicino 3550 central unit (#0) diagnostic status flags (WHAT 20..24, 30, 31)
         self._remote_control: str | None = None
@@ -634,8 +669,6 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 and not self._asks_local_offset
             )
         ):
-            self._poll_on_add = False
-        elif self._central and self._where.removeprefix("4-") not in ("#0", "0"):
             self._poll_on_add = False
 
     @property
@@ -709,6 +742,11 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             and not self._interface_poll_refused
             and not is_actuator_where(self._where)
         )
+
+    @property
+    def _applied_local_offset(self) -> float:
+        """Local knob offset applied to setpoint math (0 on central units, whose setpoints are plant-wide)."""
+        return 0 if self._central else self._local_offset
 
     @property
     def _local_offset_read_pending(self) -> bool:
@@ -872,11 +910,15 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             "local_target_temperature": self._local_target_temperature,
             "knob_pos": self._knob_pos,
         }
-        if not self._central and self._target_temperature is not None:
-            # The commanded setpoint (dimension 14), without the knob offset. ``temperature`` is
-            # the setpoint in force (dimension 12) and, while the zone is off or in antifreeze /
-            # thermal protection, the protection setpoint (#383): this is what the zone goes
-            # back to, and what a restart must not lose (see ``async_restore_last_state``).
+        if (
+            not self._central or self._has_four_zone_manual_nominal()
+        ) and self._target_temperature is not None:
+            # The commanded setpoint (dimension 14 for a zone, or manual *4*110#TTTT*#0#N##
+            # / *4*210#TTTT*#0#N## on a 4-zone central unit), without the knob offset.
+            # ``temperature`` is the setpoint in force (dimension 12) and, while off or in
+            # antifreeze / thermal protection, the protection setpoint (#383): this is what
+            # the entity goes back to, and what a restart must not lose (see
+            # ``async_restore_last_state``).
             restored_nominal = self._saved_nominal_in_force()
             attrs["nominal_temperature"] = (
                 restored_nominal if restored_nominal is not None else self._target_temperature
@@ -887,6 +929,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             attrs["program"] = self._program
         if self._holiday_days is not None:
             attrs["holiday_days"] = self._holiday_days
+        if self._daily_holiday:
+            attrs["daily_holiday"] = True
         if self._scenario is not None:
             attrs["scenario"] = self._scenario
         if self._fan:
@@ -932,12 +976,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
 
     async def async_restore_last_state(self, last_state: State | None) -> None:
         """Restore climate state from HA storage."""
-        # What the zone reported before it was added (the frames ``ZoneDiscovery.build`` replays)
-        # is live and stays over the saved state.
-        mode_live = not self._central and self._attr_hvac_mode is not None
-        setpoint_live = not self._central and (
-            self._local_target_reported or self._target_temperature is not None
-        )
+        # What the zone or central unit reported before it was added (the frames
+        # ``ZoneDiscovery.build`` replays) is live and stays over the saved state.
+        mode_live = self._attr_hvac_mode is not None
+        setpoint_live = self._local_target_reported or self._target_temperature is not None
         if last_state is not None:
             if not self._central:
                 self._poll_health.restore(last_state.attributes)
@@ -946,23 +988,29 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._zone_operation = str(restored_zone_operation)
             else:
                 self._clear_unresponsive_issue()
+                rc_live = self._remote_control is not None
                 restored_rc = last_state.attributes.get("remote_control")
-                if restored_rc in ("enabled", "disabled"):
+                if not rc_live and restored_rc in ("enabled", "disabled"):
                     self._remote_control = str(restored_rc)
                 restored_operation = last_state.attributes.get("central_operation")
-                if restored_operation in ("antifreeze", "thermal_protection"):
+                if not mode_live and restored_operation in ("antifreeze", "thermal_protection"):
                     self._central_operation = str(restored_operation)
-                self._at_least_one_probe_off = bool(
-                    last_state.attributes.get("at_least_one_probe_off", False)
-                )
-                self._at_least_one_probe_antifreeze = bool(
-                    last_state.attributes.get("at_least_one_probe_antifreeze", False)
-                )
-                self._at_least_one_probe_manual = bool(
-                    last_state.attributes.get("at_least_one_probe_manual", False)
-                )
-                self._failure_detected = bool(last_state.attributes.get("failure_detected", False))
-                self._battery_fault = bool(last_state.attributes.get("battery_fault", False))
+                if not mode_live and not rc_live:
+                    self._at_least_one_probe_off = self._at_least_one_probe_off or bool(
+                        last_state.attributes.get("at_least_one_probe_off", False)
+                    )
+                    self._at_least_one_probe_antifreeze = self._at_least_one_probe_antifreeze or bool(
+                        last_state.attributes.get("at_least_one_probe_antifreeze", False)
+                    )
+                    self._at_least_one_probe_manual = self._at_least_one_probe_manual or bool(
+                        last_state.attributes.get("at_least_one_probe_manual", False)
+                    )
+                    self._failure_detected = self._failure_detected or bool(
+                        last_state.attributes.get("failure_detected", False)
+                    )
+                    self._battery_fault = self._battery_fault or bool(
+                        last_state.attributes.get("battery_fault", False)
+                    )
         if last_state is not None and last_state.state is not None:
             self._restore_cooling_seen(last_state)  # first: `cool` is then a mode the zone can be restored in
             if not mode_live:
@@ -976,95 +1024,163 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                         self._attr_hvac_mode = HVACMode.OFF
                 except (ValueError, TypeError):
                     self._attr_hvac_mode = HVACMode.OFF
+                    self._restored_mode_unknown = True
             # Also for a state that is no mode (``unavailable``, ``unknown``): the cooling the
             # saved attributes showed is offered either way.
             self._refresh_hvac_modes()
             if not mode_live:
                 self._hvac_mode_restored = True
+            saved_season = last_state.attributes.get("season")
+            four_zone_season_mismatch = (
+                self._is_four_zone_central
+                and isinstance(saved_season, str)
+                and self._season is not None
+                and self._season_side(saved_season) != self._season_side(self._season)
+            )
             target_temp = last_state.attributes.get("temperature")
             try:
                 saved_running = HVACMode(last_state.state) != HVACMode.OFF
             except (ValueError, TypeError):
                 saved_running = False  # ``unknown`` / ``unavailable``: the zone had said no mode
-            if target_temp is not None:
+            if target_temp is not None and not four_zone_season_mismatch:
                 try:
                     shown = float(target_temp)
                 except (ValueError, TypeError):
                     shown = None
-                if shown is not None and setpoint_live and not self._central:
-                    self._restore_knob_beside_live_setpoint(last_state)
+                saved_nominal: float | None = None
+                if shown is not None and (not self._central or self._is_four_zone_central):
+                    try:
+                        raw_nominal = last_state.attributes.get("nominal_temperature")
+                        saved_nominal = float(raw_nominal) if raw_nominal is not None else None
+                    except (ValueError, TypeError):
+                        saved_nominal = None
+                if shown is not None and setpoint_live:
+                    if not self._central:
+                        self._restore_knob_beside_live_setpoint(last_state)
+                    if (
+                        (
+                            not self._central
+                            or (self._is_four_zone_central and not self._has_central_schedule)
+                        )
+                        and self._target_temperature is None
+                        and self._local_target_reported
+                        and saved_nominal is not None
+                    ):
+                        # Only dimension 12 replayed before the saved state (mode was unknown or
+                        # idle/protection): keep the saved commanded setpoint alongside the live
+                        # setpoint in force so entering/leaving protection does not lose it, and
+                        # on a zone the silent poll still asks dimension 14 until reported.
+                        self._target_temperature = round(saved_nominal, 1)
+                        self._restored_nominal = (self._target_temperature, self._target_temperature)
+                        self._nominal_from_dim12 = False
                 if shown is not None and not setpoint_live:
-                    # The saved ``nominal_temperature`` is the commanded setpoint (dimension 14);
-                    # the value shown can be the setpoint in force or a protection setpoint
-                    # (#383). A state saved before the attribute existed keeps the old rules.
-                    # A knob position the zone reported before the restore is live.
+                    # The saved ``nominal_temperature`` is the commanded setpoint (dimension 14,
+                    # or central manual setpoint on #0#N); the value shown can be the setpoint
+                    # in force or a protection setpoint (#383). A state saved before the
+                    # attribute existed keeps the old rules. A knob position the zone reported
+                    # before the restore is live.
                     try:
                         saved_offset = int(float(last_state.attributes.get("local_offset") or 0))
                     except (ValueError, TypeError):
                         saved_offset = 0
                     if not self._local_offset_reported:
                         self._local_offset = saved_offset
-                    saved_nominal: float | None = None
-                    if not self._central:
-                        try:
-                            raw_nominal = last_state.attributes.get("nominal_temperature")
-                            saved_nominal = float(raw_nominal) if raw_nominal is not None else None
-                        except (ValueError, TypeError):
-                            saved_nominal = None
                     self._restored_nominal = None
-                    # Saved off, or with no mode and no commanded setpoint at all (``unknown``:
-                    # a setpoint in force that came before the zone's mode): the value shown can
-                    # be a protection setpoint, so only a saved commanded setpoint is taken.
-                    maybe_protection = not self._central and (
-                        last_state.state == HVACMode.OFF.value or (not saved_running and saved_nominal is None)
+                    saved_central_protection = self._is_four_zone_central and (
+                        last_state.attributes.get("central_operation")
+                        in ("antifreeze", "thermal_protection")
                     )
-                    if maybe_protection:
-                        self._target_temperature = (
-                            round(saved_nominal, 1) if saved_nominal is not None else None
+                    saved_central_schedule = self._is_four_zone_central and (
+                        last_state.state == HVACMode.AUTO.value
+                        or bool(last_state.attributes.get("daily_holiday"))
+                        or any(
+                            last_state.attributes.get(attr) is not None
+                            for attr in ("program", "scenario", "holiday_days")
                         )
-                        if self._target_temperature is not None:
-                            self._restored_nominal = (self._target_temperature, self._target_temperature)
-                    else:
-                        # Shown: the setpoint in force less the offset (#820). The commanded
-                        # setpoint saved next to it is what `heat` / `cool` write until the zone
-                        # reports again (``_effective_nominal_temperature``). A state saved
-                        # before the attribute existed has only the value shown: it stands in
-                        # for the commanded setpoint, and stays "the saved one" (asked for)
-                        # until the zone reports its own.
-                        self._target_temperature = round(shown - saved_offset, 1)
-                        if not self._central:
-                            self._restored_nominal = (
-                                self._target_temperature,
-                                round(saved_nominal, 1) if saved_nominal is not None else self._target_temperature,
+                    )
+                    # Saved off, in 4-zone central protection, or with no mode and no commanded
+                    # setpoint at all (``unknown``: a setpoint in force that came before the
+                    # mode): the value shown can be a protection or schedule setpoint, so only
+                    # a saved commanded setpoint is taken.
+                    maybe_protection = (not self._central or self._is_four_zone_central) and (
+                        last_state.state == HVACMode.OFF.value
+                        or saved_central_protection
+                        or (not saved_running and saved_nominal is None)
+                    )
+                    if not (self._is_four_zone_central and mode_live and self._has_central_schedule):
+                        if maybe_protection:
+                            self._target_temperature = (
+                                round(saved_nominal, 1) if saved_nominal is not None else None
                             )
-                        if not (mode_live and self._attr_hvac_mode == HVACMode.OFF):
-                            # The value shown was saved with the knob where it was then. A zone
-                            # that said it is off shows no knob offset (as in the knob branch).
-                            shown = round(self._target_temperature + self._local_offset, 1)
-                    self._local_target_base = None
-                    self._nominal_from_dim12 = False
-                    self._local_target_temperature = shown
-                    self._target_temperature_restored = True
-                    if maybe_protection and mode_live and self._attr_hvac_mode != HVACMode.OFF:
-                        # The zone said it is running before the saved state was read: what was
-                        # saved while off is its protection setpoint (#383), not what it runs at.
-                        self._local_target_temperature = None
-                        self._show_nominal()
-            if "program" in last_state.attributes:
-                try:
-                    self._program = int(last_state.attributes["program"])
-                except (ValueError, TypeError):
-                    pass
-            if "holiday_days" in last_state.attributes:
-                try:
-                    self._holiday_days = int(last_state.attributes["holiday_days"])
-                except (ValueError, TypeError):
-                    pass
-            if "scenario" in last_state.attributes:
-                try:
-                    self._scenario = int(last_state.attributes["scenario"])
-                except (ValueError, TypeError):
-                    pass
+                            if self._target_temperature is not None:
+                                self._restored_nominal = (
+                                    self._target_temperature,
+                                    self._target_temperature,
+                                )
+                            self._nominal_from_dim12 = False
+                        else:
+                            # Shown: the setpoint in force less the offset (#820). The commanded
+                            # setpoint saved next to it is what `heat` / `cool` write until the zone
+                            # reports again (``_effective_nominal_temperature``). A state saved
+                            # before the attribute existed has only the value shown: it stands in
+                            # for the commanded setpoint, and stays "the saved one" (asked for)
+                            # until the zone reports its own.
+                            if self._is_four_zone_central and saved_nominal is not None:
+                                self._target_temperature = round(saved_nominal, 1)
+                                self._restored_nominal = (
+                                    self._target_temperature,
+                                    self._target_temperature,
+                                )
+                            else:
+                                self._target_temperature = round(
+                                    shown - (0 if self._central else saved_offset), 1
+                                )
+                                if not self._central:
+                                    self._restored_nominal = (
+                                        self._target_temperature,
+                                        round(saved_nominal, 1)
+                                        if saved_nominal is not None
+                                        else self._target_temperature,
+                                    )
+                            if not (mode_live and self._attr_hvac_mode == HVACMode.OFF):
+                                # The value shown was saved with the knob where it was then. A zone
+                                # that said it is off shows no knob offset (as in the knob branch).
+                                shown = round(self._target_temperature + self._applied_local_offset, 1)
+                            self._nominal_from_dim12 = bool(
+                                saved_central_schedule and saved_nominal is None
+                            )
+                        self._local_target_base = None
+                        self._local_target_temperature = shown
+                        self._target_temperature_restored = True
+                        if (
+                            maybe_protection
+                            and mode_live
+                            and self._attr_hvac_mode != HVACMode.OFF
+                            and self._central_operation is None
+                        ):
+                            # The zone or central unit said it is actively running before the
+                            # saved state was read: what was saved while off or in protection is
+                            # its protection setpoint (#383), not what it runs at.
+                            self._local_target_temperature = None
+                            self._show_nominal()
+            if not mode_live:
+                if "program" in last_state.attributes:
+                    try:
+                        self._program = int(last_state.attributes["program"])
+                    except (ValueError, TypeError):
+                        pass
+                if "holiday_days" in last_state.attributes:
+                    try:
+                        self._holiday_days = int(last_state.attributes["holiday_days"])
+                    except (ValueError, TypeError):
+                        pass
+                if last_state.attributes.get("daily_holiday") is True:
+                    self._daily_holiday = True
+                if "scenario" in last_state.attributes:
+                    try:
+                        self._scenario = int(last_state.attributes["scenario"])
+                    except (ValueError, TypeError):
+                        pass
             restored_current = last_state.attributes.get("current_temperature")
             if restored_current is not None and self._attr_native_current_temperature is None:
                 # Shown until the zone reports again, flagged so it is not taken for a reading:
@@ -1087,7 +1203,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     )
                 )
             restored_season = last_state.attributes.get("season")
-            if restored_season in (SEASON_HEATING, "cooling", "conditioning"):
+            if not self._season_reported and restored_season in (SEASON_HEATING, "cooling", "conditioning"):
                 self._season = str(restored_season)
             if (
                 last_state.attributes.get("standalone_detected") is True
@@ -1165,11 +1281,6 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
 
     async def async_update(self) -> None:
         """Request status update from gateway, unless the zone has stopped answering."""
-        if self._central and self._where.removeprefix("4-") not in ("#0", "0"):
-            # 4-zone central units (#0#1..#0#4) do not participate in point-to-point status polling;
-            # bus captures confirm querying #0#1 times out on plants without a physical 4-zone unit (#629).
-            # They receive setpoints via commands (*#4*#0#1*#14*T*M##), broadcast events, or restored state.
-            return
         # Humidity is asked only where the gateway forwards the request: the emulated firmware
         # of F450, F453, F453AV, F454, H4684, MH200, MH200N and MH202 did not (own-firmware-oracle
         # thermo-zone-requests finding, emulated firmware). Whether those gateways put the probe's
@@ -1223,7 +1334,24 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # zone of any gateway has still not reported SILENT_ZONE_GRACE seconds after the sweep, it
             # asks for once, read by read (_poll_if_silent, #466 / #932).
             return
-        await self._async_send_zone_polls()
+        await self._async_send_zone_polls(pace=self._is_four_zone_central)
+
+    def _master_zone_polling_blocked(self, master_zone: str) -> bool:
+        """Whether polling unified master Zone ``N`` is blocked by ignored_addresses or expose."""
+        ignored = getattr(self._gateway_handler, "ignored_addresses", None)
+        if ignored is not None and ignored.is_ignored(4, master_zone, self._interface) is True:
+            return True
+        target_hass = self.hass or self._hass
+        cfg_entry = getattr(self._gateway_handler, "config_entry", None)
+        if target_hass is not None and cfg_entry is not None:
+            master_where = (
+                f"{master_zone}{BUS_ROUTING}{self._interface}"
+                if self._interface
+                else master_zone
+            )
+            if is_exposed_on_bus(target_hass, cfg_entry, 4, master_where):
+                return True
+        return False
 
     async def _send_zone_poll_frame(
         self,
@@ -1239,7 +1367,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             written.add_done_callback(lambda future: self._poll_answered(future, frames_before))
         if pace:
             pace_write = getattr(self._gateway_handler, "pace_startup_status_write", None)
-            if callable(pace_write):
+            if inspect.iscoroutinefunction(pace_write):
                 await pace_write(written, request)
 
     async def _async_send_zone_polls(
@@ -1254,13 +1382,25 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._humidity
             and getattr(self._gateway_handler, "humidity_request_refused", False) is not True
         )
-        # The sweep has just asked the central unit's status, and this entity was created from
-        # the answer: the same request is not sent again (``central_status_just_asked``).
-        central_asked = self._central and getattr(self._gateway_handler, "central_status_just_asked", False) is True
+        # The sweep has just asked the 99-zone central unit's status (*#4*#0##), and this entity
+        # was created from the answer: the same request is not sent again (``central_status_just_asked``).
+        # A 4-zone central unit (#0#N) has its own status address (*#4*#0#N##) and is not covered by *#4*#0##.
+        master_zone = four_zone_central_zone(self._where) if self._central else None
+        central_asked = (
+            self._central
+            and master_zone is None
+            and getattr(self._gateway_handler, "central_status_just_asked", False) is True
+        )
         ask_status = (
             not central_asked
             if self._central
             else self._gateway_supports_zone_status and (not skip_reported or not self._core_zone_state_reported())
+        )
+        ask_master_temp = (
+            master_zone is not None
+            and self._unified_master
+            and not self._master_zone_polling_blocked(master_zone)
+            and (not skip_reported or not self._temperature_reported())
         )
         ask_temp = (
             not self._central
@@ -1279,14 +1419,14 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             and (not skip_reported or not self._humidity_reported)
         )
         ask_offset = self._asks_local_offset and not ask_status
-        if skip_reported and not (ask_status or ask_temp or ask_fan or ask_humidity or ask_offset):
+        if skip_reported and not (ask_status or ask_master_temp or ask_temp or ask_fan or ask_humidity or ask_offset):
             self._bus_state_complete = True
             LOGGER.debug(
                 "%s: state already reported on the bus, skipping post-discovery poll",
                 self.entity_id,
             )
             return
-        if (ask_status or ask_temp or ask_fan or ask_humidity) and self._poll_health.should_skip(time.time()):
+        if (ask_status or ask_master_temp or ask_temp or ask_fan or ask_humidity) and self._poll_health.should_skip(time.time()):
             LOGGER.debug(
                 "%s %s did not answer its last polls; not asking again yet",
                 self._gateway_handler.log_id,
@@ -1296,12 +1436,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             return
         if ask_status:
             self._zone_status_request_sent = not self._central
-            # A 99-zone central unit (#0) answers the plain status request (*#4*#0##) within ~0.17 s,
-            # reporting its mode via *4*202*#0## (thermal protection, WHO 4 p. 5; 203 is "OFF –
-            # Conditioning Mode") and operational flags (#629). Dimension 14 (*#4*#0*14##) is NACKed.
-            # Captured on an F454 (#629) and an F455 1.0.76 (issue_466/F455_direct_requests_2026-11-06.jsonl
-            # line 65: ACK after 1.082 s with *4*202*#0##, *4*21*#0##, *4*31*#0##, *4*24*#0##); an F461
-            # on a plant without a central unit NACKs it (f461_live_2026-11-04). The poll is
+            # A 99-zone central unit (#0) answers *#4*#0## within ~0.17 s (F454 #629) / ~1.08 s (F455)
+            # and a 4-zone central unit (#0#N) answers *#4*#0#N## within ~0.14 s (F454 2.0.51 #994
+            # second trace frames 1..4: *4*110#0160*#0#1##, *4*21*#0#1##, *4*31*#0#1##; oracle
+            # plant-cu4695 / Gen B/C/D). Dimension 14 (*#4*#0*14##) is NACKed. The poll is
             # informational: an unanswered one never counts towards the "unresponsive zone" repair.
             await self._send_zone_poll_frame(
                 OWNHeatingCommand.status(self._request_where),
@@ -1324,6 +1462,14 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # left uncounted rather than risk marking a healthy zone unresponsive on a NACK.
             await self._send_zone_poll_frame(
                 OWNHeatingCommand.get_temperature(self._request_where),
+                pace=pace,
+            )
+        if ask_master_temp and master_zone is not None:
+            # On gateways that drop *#4*0##, a unified #0#N suppresses Climate Zone N; ask
+            # master zone N's ambient temperature (*#4*N*0##) when not yet reported.
+            master_where = f"{master_zone}{BUS_ROUTING}{self._interface}" if self._interface else master_zone
+            await self._send_zone_poll_frame(
+                OWNHeatingCommand.get_temperature(master_where),
                 pace=pace,
             )
         if ask_fan:
@@ -1411,17 +1557,20 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._bus_state_complete = bool(core_ok and fan_ok and hum_ok)
 
     def _poll_on_add_waits(self) -> bool:
-        """Also while the zones known only from their actuators are being read.
+        """Also while actuator-only or candidate-confirmation reads are running.
 
         A zone those reads create is added after the start-up sweep, when the poll on add no
         longer waits for anything: it ran next to the following zone's read, outside the
-        start-up poll lock that read holds (``climate_discovery._ask_actuator_only_zones``),
-        and an F455 hands a reply to the wrong one of two crossing reads. Left to
-        ``_async_poll_after_discovery`` it takes its turn under that lock.
+        start-up poll lock that read holds (``climate_discovery._ask_actuator_only_zones`` /
+        ``_confirm_candidates``), and an F455 hands a reply to the wrong one of two crossing
+        reads. Left to ``_async_poll_after_discovery`` it takes its turn under that lock.
         """
         return super()._poll_on_add_waits() or (
             hasattr(self._gateway_handler, "wait_for_initial_discovery")
-            and getattr(self._gateway_handler, "actuator_only_reads_running", False) is True
+            and (
+                getattr(self._gateway_handler, "actuator_only_reads_running", False) is True
+                or getattr(self._gateway_handler, "candidate_reads_running", False) is True
+            )
         )
 
     async def _async_poll_after_discovery(self) -> None:
@@ -1429,7 +1578,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         handler = self._gateway_handler
         startup_lock = getattr(handler, "_who4_startup_poll_lock", None)
         if (
-            self._central
+            (self._central and not self._is_four_zone_central)
             or is_actuator_where(self._where)
             or self._interface_poll_refused
             or not isinstance(startup_lock, asyncio.Lock)
@@ -1522,13 +1671,25 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         """Queue ``*#4*Z*DIM##`` through the gateway's paced sender; False on an older handler."""
         if self._interface_poll_refused or is_actuator_where(self._where):
             return False
+        target_where = self._request_where
+        if self._central:
+            master_zone = four_zone_central_zone(self._where) if self._unified_master else None
+            if (
+                master_zone is None
+                or dimension not in (12, 13, 20)
+                or self._master_zone_polling_blocked(master_zone)
+            ):
+                return False
+            target_where = (
+                f"{master_zone}{BUS_ROUTING}{self._interface}" if self._interface else master_zone
+            )
         request = getattr(self._gateway_handler, "request_zone_dimension", None)
         if not callable(request):
             return False
         if again:
-            request(self._request_where, dimension, again=True)
+            request(target_where, dimension, again=True)
         else:
-            request(self._request_where, dimension)
+            request(target_where, dimension)
         return True
 
     def _fan_coil_sides_pending(self) -> bool:
@@ -1716,7 +1877,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         """
         if self._standalone_config is not None:
             return self._standalone_config
-        if getattr(self._gateway_handler, "has_central_unit", False) is not True:
+        if (
+            self._interface is not None
+            or getattr(self._gateway_handler, "has_central_unit", False) is not True
+        ):
             return True
         # Read from the constructor (``_advertised_hvac_modes``) before the field exists.
         return bool(getattr(self, "_standalone_detected", False))
@@ -1746,7 +1910,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         """
         modes = [HVACMode.OFF]
         if self._heating or self._cooling:
-            has_central = getattr(self._gateway_handler, "has_central_unit", False) is True
+            has_central = (
+                self._interface is None
+                and getattr(self._gateway_handler, "has_central_unit", False) is True
+            )
             if self._central or not (self._standalone and has_central):
                 modes.append(HVACMode.AUTO)
             # Called from the constructor before the season fields exist.
@@ -1799,9 +1966,31 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
     def _clear_unresponsive_issue(self) -> None:
         self._clear_fault(FaultKind.UNRESPONSIVE)
 
+    async def _async_prune_superseded(
+        self, target_hass: HomeAssistant, entity_id: str
+    ) -> None:
+        """Remove an unconfigured master zone superseded by ``#0#N`` before HA finished adding it."""
+        if self.platform is not None and entity_id in self.platform.entities:
+            await self.async_remove(force_remove=True)
+        elif target_hass.states.get(entity_id) is not None:
+            target_hass.states.async_remove(entity_id)
+        registry = er.async_get(target_hass)
+        if (entry := registry.async_get(entity_id)) is not None:
+            prune_entity(target_hass, registry, entry, entry.config_entry_id or "")
+
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added to hass."""
         target_hass = self.hass or self._hass
+        if self._superseded_by_central:
+            # Master Zone N was superseded by unified Central Unit 0N (#0#N) before HA finished
+            # committing its registry entry: defer removal until after add_to_platform_finish
+            # writes initial state so no zombie state or orphan registry/device entry remains.
+            if target_hass is not None and self.entity_id:
+                target_hass.async_create_task(
+                    self._async_prune_superseded(target_hass, self.entity_id),
+                    eager_start=False,
+                )
+            return
         if target_hass is not None:
             if self._central:
                 self._clear_unresponsive_issue()
@@ -1833,9 +2022,27 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # blindly. A restored fan mode asks at the end of ``async_restore_last_state``.
             self._ask_fan_coil_sides()
         await super().async_added_to_hass()
+        if getattr(self, "_superseded_by_central", False):
+            if target_hass is not None and self.entity_id:
+                target_hass.async_create_task(
+                    self._async_prune_superseded(target_hass, self.entity_id),
+                    eager_start=False,
+                )
+            return
         self._announce_climate_zone()
         # A zone created from its own season frame handled that frame before it was live.
         self._check_season_against_central()
+        if (
+            self._is_four_zone_central
+            and self._unified_master
+            and self._interface is None
+            and not self._interface_poll_refused
+            and (master_zone := four_zone_central_zone(self._where)) is not None
+            and not self._master_zone_polling_blocked(master_zone)
+        ):
+            watch = getattr(self._gateway_handler, "watch_zone_actuators", None)
+            if callable(watch):
+                self.async_on_remove(watch(master_zone))
         if zone_requests and _ZONE_WHERE.fullmatch(self._request_where):
             # hvac_action needs the actuators (dimension 20); without asking, it stays unknown
             # until one of them switches. The gateway asks again after a reconnect. A secondary
@@ -2144,6 +2351,17 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         """
         if self._central:
             return
+        if (
+            (controlled_zone := four_zone_controlled_zone(message)) is not None
+            and self._standalone_config is None
+            and not self._central_zone_seen
+            and controlled_zone == canonical_thermo_zone(self._where)
+            and _two_digit_interface(thermo_event_interface(message)) == self._interface
+        ):
+            if not self._standalone_detected:
+                self._set_standalone_detected(True)
+                self._refresh_hvac_modes()
+            return
         zone = central_report_zone(message)
         if zone is None or zone != canonical_thermo_zone(self._where):
             return  # #0 / #0#N (the central unit itself), or another zone's frame
@@ -2211,9 +2429,17 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if isinstance(reported, (int, float)) and abs(float(reported) - expected) < 0.05:
             check[2].set()
 
+    def _is_own_four_zone_central_report(self, message: OWNHeatingEvent) -> bool:
+        """Whether ``message`` is a 4-zone central unit report for this unconfigured master zone."""
+        return (
+            not self._central
+            and self._standalone_config is None
+            and four_zone_central_where(message) == f"#0#{canonical_thermo_zone(self._where)}"
+        )
+
     def _note_own_state(self, message: OWNHeatingEvent) -> None:
         """Keep whether the zone's own frame says it is off (``*4*303*2##``) or running (``*4*0*2##``)."""
-        if self._central or is_central_thermo_where(message):
+        if self._central or (is_central_thermo_where(message) and not self._is_own_four_zone_central_report(message)):
             return
         if _two_digit_interface(thermo_event_interface(message)) != self._interface:
             return  # the same zone number on another bus
@@ -2607,7 +2833,11 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
     def _note_own_season(self, message: OWNHeatingEvent) -> None:
         """Keep the season the zone reports in its own, plain ``Z`` form (``*4*0*2##``, ``*4*202*4##``)."""
         season = getattr(message, "season", None)
-        if self._central or not isinstance(season, str) or is_central_thermo_where(message):
+        if (
+            self._central
+            or not isinstance(season, str)
+            or (is_central_thermo_where(message) and not self._is_own_four_zone_central_report(message))
+        ):
             return
         if _two_digit_interface(thermo_event_interface(message)) != self._interface:
             return  # the same zone number on another bus
@@ -2952,6 +3182,130 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         def target_temperature(self) -> float | None:
             return self.native_target_temperature
 
+    @property
+    def _is_four_zone_central(self) -> bool:
+        """Whether this entity is a 4-zone central unit (#0#N, BTicino 4695)."""
+        return self._central and is_four_zone_central_where(self._where)
+
+    @property
+    def _has_central_schedule(self) -> bool:
+        """Whether a weekly program, scenario, or holiday plan is active."""
+        return (
+            self._program is not None
+            or self._scenario is not None
+            or self._holiday_days is not None
+            or self._daily_holiday
+        )
+
+    def _has_four_zone_manual_nominal(self) -> bool:
+        """Whether a 4-zone central unit holds an authoritative central manual setpoint."""
+        return (
+            self._is_four_zone_central
+            and self._target_temperature is not None
+            and not self._nominal_from_dim12
+            and not self._has_central_schedule
+        )
+
+    def _clear_four_zone_nominal_on_season_change(self, previous_season: str | None) -> None:
+        """Clear a 4-zone central unit's cached manual setpoint when the plant switches season."""
+        if (
+            self._is_four_zone_central
+            and previous_season is not None
+            and self._season is not None
+            and self._season_side(previous_season) != self._season_side(self._season)
+        ):
+            self._target_temperature = None
+            self._restored_nominal = None
+            self._nominal_before_dim12 = None
+            self._nominal_from_dim12 = False
+            self._target_temperature_restored = False
+
+    def _clear_master_dim12_pairing(self) -> None:
+        """Reset pending master-zone Dim 12 pairing state on a 4-zone central unit."""
+        self._master_season_active_at = None
+        self._master_dim12_at = None
+        self._idle_dim12_at = None
+        self._local_target_from_active_master = False
+        self._pending_master_dim12 = None
+
+    def _apply_pending_master_dim12_for_idle(self) -> None:
+        """Apply a fresh stashed master Dim 12 (e.g. protection 7.0 °C) on entering idle/protection."""
+        pending = self._pending_master_dim12
+        if pending is not None and time.monotonic() - pending[1] <= _FOUR_ZONE_BURST_WINDOW:
+            self._local_target_temperature = pending[0]
+            self._local_target_reported = True
+        self._clear_master_dim12_pairing()
+
+    def _apply_four_zone_schedule_setpoint(
+        self,
+        *,
+        leaving_idle: bool,
+        had_manual: bool,
+        schedule_changed: bool = False,
+        initial_report: bool = False,
+    ) -> None:
+        """Reconcile or clear the setpoint when a 4-zone central unit enters a schedule."""
+        now = time.monotonic()
+        pending = self._pending_master_dim12
+        active_season_fresh = (
+            self._master_season_active_at is not None
+            and now - self._master_season_active_at <= _FOUR_ZONE_BURST_WINDOW
+        )
+        if self._local_target_reported and (
+            self._local_target_from_active_master
+            or (
+                (leaving_idle or schedule_changed)
+                and self._holiday_days is None
+                and not self._daily_holiday
+                and active_season_fresh
+                and self._master_dim12_at is not None
+                and now - self._master_dim12_at <= _FOUR_ZONE_BURST_WINDOW
+            )
+        ):
+            self._reconcile_local_target()
+            self._clear_master_dim12_pairing()
+        elif (
+            had_manual
+            and pending is not None
+            and now - pending[1] <= _FOUR_ZONE_BURST_WINDOW
+            and active_season_fresh
+        ):
+            self._local_target_temperature = pending[0]
+            self._local_target_reported = True
+            self._reconcile_local_target()
+            self._clear_master_dim12_pairing()
+        elif (
+            initial_report
+            and self._local_target_reported
+            and self._idle_dim12_at is not None
+            and now - self._idle_dim12_at <= _FOUR_ZONE_BURST_WINDOW
+        ):
+            # Cold-start burst order Dim 12 -> *4*110P*#0#N## -> *4*1/0*N##: keep the fresh
+            # Dim 12 and _idle_dim12_at so the trailing master season frame promotes it.
+            return
+        elif leaving_idle or had_manual or schedule_changed:
+            self._target_temperature = None
+            self._nominal_from_dim12 = False
+            self._restored_nominal = None
+            self._target_temperature_restored = False
+            self._local_target_temperature = None
+            self._local_target_reported = False
+            self._local_target_base = None
+            self._clear_master_dim12_pairing()
+            # A 4695 in a weekly program may not emit a fresh master-zone Dim 12
+            # (e.g. *#4*#0#N## poll in plant-cu4695.tsv:17, #5d matching manual+offset,
+            # or schedule transition without Dim 12 in the burst window). Ask *#4*N*12##
+            # (forwarded by 13/13 oracle gateways, trace-corpus.tsv:57) without again=True
+            # (which is keyed on WHERE only and would bypass Dim 20 ALL_ACTUATORS_SWEEP_FRESH).
+            if (
+                self._unified_master
+                and self.hass is not None
+                and getattr(self._gateway_handler, "silent_zone_poll_needed", True) is not False
+            ):
+                self._request_zone_dimension(12)
+                if not self._local_offset_reported:
+                    self._request_zone_dimension(13)
+
     def _saved_nominal_in_force(self) -> float | None:
         """The commanded setpoint saved before a restart, while nothing has replaced the restored setpoint."""
         restored: tuple[float, float] | None = getattr(self, "_restored_nominal", None)
@@ -2985,8 +3339,12 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             return restored
         if self._target_temperature is not None:
             return self._target_temperature
-        if self._local_target_temperature is not None and self._attr_hvac_mode != HVACMode.OFF:
-            return round(self._local_target_temperature - self._local_offset, 1)
+        if (
+            self._local_target_temperature is not None
+            and self._attr_hvac_mode != HVACMode.OFF
+            and self._central_operation is None
+        ):
+            return round(self._local_target_temperature - self._applied_local_offset, 1)
         return None
 
     def _derive_local_offset(self, local_target: float | None, nominal_target: float | None) -> bool:
@@ -3027,8 +3385,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._derive_local_offset(self._local_target_temperature, self._target_temperature)
             self._dim12_at = None
             self._dim14_at = None
+        offset = self._local_offset if self._is_four_zone_central else self._applied_local_offset
         base = (
-            round(self._local_target_temperature - self._local_offset, 1)
+            round(self._local_target_temperature - offset, 1)
             if self._local_target_temperature is not None
             else None
         )
@@ -3134,13 +3493,14 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 HVACMode.AUTO: "auto",
             }
             cmd_mode = mode_map.get(hvac_mode)
-            if cmd_mode and self._where.removeprefix("4-") in ("#0", "0"):
+            if cmd_mode:
                 # The season frame and its restore are one operation: a later command of this
-                # entity is written after both.
+                # entity is written after both, on both 99-zone (#0) and 4-zone (#0#N) units.
                 async with self._central_command_lock:
-                    await self._set_central_unit_mode(hvac_mode, cmd_mode)
-            elif cmd_mode:
-                await self._set_central_unit_mode(hvac_mode, cmd_mode)
+                    if self._is_four_zone_central and cmd_mode in ("heat", "cool"):
+                        await self._write_four_zone_central_season(hvac_mode, cmd_mode)
+                    else:
+                        await self._set_central_unit_mode(hvac_mode, cmd_mode)
             return
 
         if hvac_mode == HVACMode.OFF:
@@ -3148,7 +3508,11 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 lambda direct: OWNHeatingCommand.set_mode(where=self._bus_where, mode=CLIMATE_MODE_OFF, standalone=direct)
             )
         elif hvac_mode == HVACMode.AUTO:
-            if self._standalone and getattr(self._gateway_handler, "has_central_unit", False) is not True:
+            has_central = (
+                self._interface is None
+                and getattr(self._gateway_handler, "has_central_unit", False) is True
+            )
+            if self._standalone and not has_central:
                 # Automatic is the central unit's program. On a plant without one the
                 # gateway ACKs *4*311*#Z## and nobody acts on it, and *4*311*Z## is
                 # NACKed (F461 2.0.11, tests/fixtures/traces/f461_live_2026-10-15). The
@@ -3209,7 +3573,11 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._raise_if_zone_command_refused(written, str(cmd))
         elif hvac_mode in (HVACMode.HEAT, HVACMode.COOL):
             heat = hvac_mode == HVACMode.HEAT
-            under_central = not self._standalone and getattr(self._gateway_handler, "has_central_unit", False) is True
+            under_central = (
+                not self._standalone
+                and self._interface is None
+                and getattr(self._gateway_handler, "has_central_unit", False) is True
+            )
             if under_central and self._season_reported and self._season is not None and (
                 self._season in _CONDITIONING_SEASONS if heat else self._season == SEASON_HEATING
             ):
@@ -3293,62 +3661,142 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 translation_placeholders={"name": self._display_name, "frame": frame},
             )
 
-    async def _write_central_setpoint(self, target_temperature: float) -> None:
-        """Write the central unit's manual setpoint; a refusal by the gateway is raised."""
-        # *#4*#0*#14*T*M## puts the central unit in manual with setpoint T; M is the season
-        # of that manual mode (WHO 4 p. 23: 1 heating, 2 conditioning; the monitor frame is
-        # *4*110#T*#0## "Manual mode - Heating" / *4*210#T*#0## "Manual mode - Conditioning").
-        # A real F454 plant answered *#4*#0*#14*0165*1## with *4*110#0165*#0## (#697). So
-        # the digit follows the season the plant is in, not only the mode shown: a central
-        # unit that is OFF (*4*203*#0##) or on its program in the conditioning season was
-        # written M = 1, manual heating.
-        if self._attr_hvac_mode == HVACMode.COOL:
-            mode = "cool"
-        elif self._attr_hvac_mode == HVACMode.HEAT:
-            mode = "heat"
+    async def _write_four_zone_central_season(self, hvac_mode: HVACMode, cmd_mode: str) -> None:
+        """Write `heat` / `cool` of a 4-zone central unit (``#0#N``).
+
+        Per BTicino 4695 firmware disassembly (``LH4695_AM5875_010103.fwz``) and oracle plant
+        emulation (``plant-cu4695.tsv``):
+        - Cross-season (reported or restored season differs from ``hvac_mode``): send the
+          season frame (``*4*0*#0#N##`` / ``*4*1*#0#N##``, flips season into protection
+          ``202``/``102``) followed by ``*4*3100*#0#N##`` to resume the active weekly program
+          in the new season, matching the 99-zone central unit.
+        - Same-season or season unknown: never send ``*4*1/0*#0#N##`` (no-op ``TX=[]`` -> NACK
+          on Gen D). Write generic manual setpoint ``*#4*#0#N*#14*TTTT*3##`` (``M=3``, ``C1 02``)
+          when a nominal setpoint is known, or ``*4*3100*#0#N##`` (``C1 01 FF``) to wake from
+          OFF/protection/program when no setpoint has been reported yet.
+        """
+        season = self._central_reported_season or self._season
+        if isinstance(season, str) and (season == SEASON_HEATING) != (hvac_mode == HVACMode.HEAT):
+            season_cmd = OWNHeatingCommand.set_central_mode(where=self._bus_where, mode=cmd_mode)
+            await self._send_central_command(season_cmd, "_central_echo", written_required=True)
+            # Re-check after season_cmd waited in the pool: a live non-idle report in the
+            # target season (e.g. manual setpoint from the wall) must not be replaced by
+            # *4*3100*#0#N##.
+            still_needs_restore = self._central_reported_idle is not False or (
+                isinstance(self._central_reported_season, str)
+                and (self._central_reported_season == SEASON_HEATING)
+                != (hvac_mode == HVACMode.HEAT)
+            )
+            if still_needs_restore:
+                restore = OWNHeatingCommand.set_central_mode(where=self._bus_where, mode="auto")
+                await self._send_central_command(
+                    restore, "_central_restore_echo", written_required=True
+                )
+            return
+        reports_before = self._central_report_count
+        nominal = self._effective_nominal_temperature()
+        use_manual = (
+            nominal is not None
+            and not self._has_central_schedule
+            and not self._nominal_from_dim12
+        )
+        if use_manual and nominal is not None:
+            delivered = await self._write_central_setpoint(nominal)
         else:
-            mode = "cool" if self._season in _CONDITIONING_SEASONS else "heat"
+            restore = OWNHeatingCommand.set_central_mode(where=self._bus_where, mode="auto")
+            delivered = await self._send_central_command(
+                restore, "_central_echo", refusal_raises=True
+            )
+        if (
+            self._central_report_count != reports_before
+            or not delivered
+            or not isinstance(season, str)
+            or (season == SEASON_HEATING) != (hvac_mode == HVACMode.HEAT)
+            or self._remote_control == "disabled"
+        ):
+            return
+        was_idle = (
+            self._attr_hvac_mode == HVACMode.OFF
+            or self._central_operation is not None
+            or self._holiday_days is not None
+            or self._daily_holiday
+        )
+        self._central_operation = None
+        if use_manual:
+            self._show_nominal()
+        elif was_idle:
+            self._holiday_days = None
+            self._daily_holiday = False
+            self._target_temperature = None
+            self._nominal_from_dim12 = False
+            self._restored_nominal = None
+            self._target_temperature_restored = False
+            if not self._local_target_from_active_master:
+                self._local_target_temperature = None
+                self._local_target_reported = False
+                self._local_target_base = None
+        if self._attr_hvac_action == HVACAction.OFF:
+            self._attr_hvac_action = HVACAction.IDLE
+        self._attr_hvac_mode = hvac_mode
+        if self.hass is not None:
+            self.async_write_ha_state()
+
+    async def _write_central_setpoint(self, target_temperature: float) -> bool:
+        """Write the central unit's manual setpoint; a refusal by the gateway is raised.
+
+        Uses generic mode ``M = 3`` (``mode="auto"``, SCS ``C1 02``), which keeps the current
+        season on both 99-zone (``#0``, live 3550 behind F461 2026-11-23) and 4-zone (``#0#N``,
+        4695 ROM ``0x0EA31F..0x0EA347``, ``plant-cu4695.tsv:30, 33``, ``#994`` frame 5) central
+        units; seasonal ``M = 1`` / ``M = 2`` (``C1 12`` / ``C1 22``) are dropped by the 4695 when
+        they do not match its active season.
+        """
+        if self._is_four_zone_central:
+            # 4695 ROM 0x0EA350..0x0EA3AB enforces B6 in 0x0A..0x46 (5.0..35.0 °C).
+            target_temperature = min(35.0, max(5.0, target_temperature))
         setpoint = OWNHeatingCommand.set_central_temperature(
             where=self._bus_where,
             temperature=target_temperature,
-            mode=mode,
+            mode=SETPOINT_WRITE_MODE,
         )
         written: Any = await self._gateway_handler.send(setpoint)
         if not isinstance(written, asyncio.Future):
-            return
+            return True
         await asyncio.wait([written], timeout=SETPOINT_DELIVERY_TIMEOUT)
-        if written.done() and written.cancelled() and getattr(written, "_gateway_nack", False) is True:
-            raise HomeAssistantError(
-                f"{self._display_name}: the gateway refused {setpoint}",
-                translation_domain=DOMAIN,
-                translation_key="central_command_refused",
-                translation_placeholders={"name": self._display_name, "frame": str(setpoint)},
-            )
+        if not written.done():
+            written.cancel()
+            return False
+        if written.cancelled():
+            if getattr(written, "_gateway_nack", False) is True:
+                raise HomeAssistantError(
+                    f"{self._display_name}: the gateway refused {setpoint}",
+                    translation_domain=DOMAIN,
+                    translation_key="central_command_refused",
+                    translation_placeholders={"name": self._display_name, "frame": str(setpoint)},
+                )
+            return False
+        if written.exception() is not None:
+            return False
+        return True
 
     async def async_set_temperature(self, **kwargs: Any) -> None:
         """Set new target temperature."""
         if self._refuse_interface_write():
             return
+        raw_temperature = kwargs.get("temperature", self._local_target_temperature)
+        if raw_temperature is None:
+            return
         target_temperature = round(
-            float(
-                kwargs.get("temperature", self._local_target_temperature)  # type: ignore[arg-type]
-            )
-            - self._local_offset,
+            float(raw_temperature) - self._applied_local_offset,
             1,
         )
         if self._central:
-            if self._where.removeprefix("4-") in ("#0", "0"):
-                # Not between a season frame and its restore (``async_set_hvac_mode``): the mode
-                # is resolved once the lock is taken.
-                async with self._central_command_lock:
-                    await self._write_central_setpoint(target_temperature)
-            else:
+            # Serialized with mode/season commands so a setpoint write never lands between a
+            # season frame and its ``*4*3100*...##`` restore.
+            async with self._central_command_lock:
                 await self._write_central_setpoint(target_temperature)
-            self._target_temperature = target_temperature
-            self._local_target_base = None
-            self._nominal_from_dim12 = False
-            if self.hass is not None:
-                self.async_write_ha_state()
+            # State follows the central unit's own bus report (``*4*110#TTTT*#0##`` /
+            # ``*4*110#TTTT*#0#N##``), not an optimistic write: when Remote Control
+            # (Telegestione) is disabled the gateway still ACKs while the central unit ignores it.
             return
         direct = self._standalone
         command = OWNHeatingCommand.set_temperature(
@@ -3409,10 +3857,11 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         """Whether a dimension 12/14 frame may be a protection setpoint rather than the nominal one.
 
         The trailing ``3`` cannot tell them apart (a manual write on a MyHomeServer1 plant
-        ends in it too, #454), so the zone's mode decides: OFF, or not known yet, means
-        protection is possible; a zone known to be running heats or cools to what it reports.
+        ends in it too, #454), so the zone's mode decides: OFF, central protection
+        (``antifreeze`` / ``thermal_protection``, where ``hvac_mode`` stays HEAT / COOL), or
+        not known yet, means protection is possible; a running zone heats or cools to what it reports.
         """
-        if self._attr_hvac_mode == HVACMode.OFF:
+        if self._attr_hvac_mode == HVACMode.OFF or self._central_operation is not None:
             return True
         value: list[str] = getattr(message, "dimension_value", None) or []
         return bool(len(value) > 1 and value[1] == "3" and self._attr_hvac_mode is None)
@@ -3433,8 +3882,13 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
 
     def _remember_nominal(self, saved_nominal: float | None = None) -> None:
         """Keep the nominal setpoint a dimension 12 frame is about to replace."""
-        nominal = saved_nominal if saved_nominal is not None else self._target_temperature
-        self._nominal_before_dim12 = (nominal, time.monotonic())
+        if saved_nominal is not None:
+            nominal: float | None = saved_nominal
+            from_dim12 = False
+        else:
+            nominal = self._target_temperature
+            from_dim12 = self._nominal_from_dim12
+        self._nominal_before_dim12 = (nominal, from_dim12, time.monotonic())
 
     def _restore_nominal_before_protection(self) -> None:
         """A protection setpoint arrives just before the frame that turns the zone OFF.
@@ -3450,9 +3904,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._unpaired_dim12_at = None
         self._paired_burst = None
         self._dim14_at = None
-        if remembered is not None and time.monotonic() - remembered[1] <= _PROTECTION_FRAME_WINDOW:
+        window = _FOUR_ZONE_BURST_WINDOW if self._is_four_zone_central else _PROTECTION_FRAME_WINDOW
+        if remembered is not None and time.monotonic() - remembered[2] <= window:
             self._target_temperature = remembered[0]
-            self._nominal_from_dim12 = False
+            self._nominal_from_dim12 = remembered[1] if self._is_four_zone_central else False
 
     def _show_nominal(self) -> None:
         """Show the nominal setpoint plus the knob offset until the zone reports dimension 12 again.
@@ -3470,7 +3925,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             nominal = self._target_temperature
         if nominal is None:
             return
-        self._local_target_temperature = round(nominal + self._local_offset, 1)
+        self._local_target_temperature = round(nominal + self._applied_local_offset, 1)
         self._local_target_reported = False
         self._local_target_base = None
         self._dim12_at = None
@@ -3535,13 +3990,13 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             where=self._bus_where,
             mode=cmd_mode,
         )
-        if hvac_mode in (HVACMode.HEAT, HVACMode.COOL) and self._where.removeprefix("4-") in ("#0", "0"):
+        if hvac_mode in (HVACMode.HEAT, HVACMode.COOL):
             # *4*1*#0## / *4*0*#0## only change the season (WHO 4 p. 5). The 3550
             # answers with the operating mode it is in, e.g. *4*102*#0## antifreeze,
             # or nothing when the season does not change (live F461 and F455,
-            # 2026-11-08), so the mode shown comes from that answer. A 4-zone
-            # central (#0#1..#0#4) is not polled and its reports are routed to the
-            # zone, so it keeps the mode it was set to.
+            # 2026-11-08), so the mode shown comes from that answer. `heat` / `cool`
+            # of a 4-zone central unit (#0#N, N=1..96) do not come here: they are
+            # handled by `_write_four_zone_central_season`.
             # Decided before the season frame goes out, on what the central unit reported.
             leaves_idle = self._season_command_leaves_central_idle(hvac_mode)
             # The restore follows only a season frame that was written: the frame is awaited.
@@ -3561,17 +4016,42 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         # nothing is shown. A report of the central unit that came
         # while the delivery was awaited is newer than the command: it stays what is shown.
         reports_before = self._central_report_count
-        await self._send_central_command(command, "_central_echo", refusal_raises=True)
-        if self._central_report_count != reports_before:
+        delivered = await self._send_central_command(command, "_central_echo", refusal_raises=True)
+        if (
+            self._central_report_count != reports_before
+            or self._remote_control == "disabled"
+            or (self._is_four_zone_central and not delivered)
+        ):
             return
+        was_idle = self._attr_hvac_mode == HVACMode.OFF or self._central_operation is not None
+        was_holiday = self._holiday_days is not None or self._daily_holiday
+        had_manual = self._has_four_zone_manual_nominal()
         self._central_operation = None
         if hvac_mode == HVACMode.OFF:
             self._attr_hvac_action = HVACAction.OFF
+            self._mark_actuators_off()
+            self._daily_holiday = False
+            if self._is_four_zone_central:
+                self._clear_master_dim12_pairing()
+        else:
+            if self._is_four_zone_central and (was_idle or was_holiday or had_manual):
+                self._holiday_days = None
+                self._daily_holiday = False
+                self._target_temperature = None
+                self._nominal_from_dim12 = False
+                self._restored_nominal = None
+                self._target_temperature_restored = False
+                if not self._local_target_from_active_master:
+                    self._local_target_temperature = None
+                    self._local_target_reported = False
+                    self._local_target_base = None
+            if self._attr_hvac_action == HVACAction.OFF:
+                self._attr_hvac_action = HVACAction.IDLE
         self._attr_hvac_mode = hvac_mode
         if self.hass is not None:
             self.async_write_ha_state()
             if self._where.removeprefix("4-") in ("#0", "0"):
-                # A ``#0#N`` entity is one zone of a 4-zone central unit: not the plant's mode.
+                # A ``#0#N`` entity is a 4-zone central unit whose zones are written directly, not under a 99-zone central unit.
                 async_dispatcher_send(
                     self.hass,
                     central_mode_signal(self._gateway_handler.mac, self._interface),
@@ -3619,7 +4099,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
     def _note_central_reported_state(self, message: OWNHeatingEvent, idle: bool | None) -> None:
         """Keep what a report of the central unit itself says: ``idle`` (None: unchanged) and its season."""
         # WHERE 0 is the general probes, not the central unit #0 (WHO 4 WHERE table).
-        if str(getattr(message, "where", "") or "").strip().removeprefix("4-") != "#0":
+        if self._is_four_zone_central:
+            if four_zone_central_where(message) != self._bus_where:
+                return
+        elif str(getattr(message, "where", "") or "").strip().removeprefix("4-") != "#0":
             return
         self._central_report_count += 1
         if idle is not None:
@@ -3631,14 +4114,14 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
 
     async def _send_central_command(
         self, command: Any, slot: str, *, written_required: bool = False, refusal_raises: bool = False
-    ) -> None:
+    ) -> bool:
         """Send a central unit command with the echo filter armed for it in ``slot``.
 
         With ``refusal_raises`` (the central unit's ``off`` and program) the delivery is waited for,
         at most ``SETPOINT_DELIVERY_TIMEOUT``: a refusal (NACK) raises ``central_command_refused``;
-        a frame that is confirmed, one that is cancelled without a NACK and one nothing answered
-        in that time return, as without it. The future is not cancelled and the echo stays armed
-        (the done callback anchors or clears it).
+        a frame that is confirmed returns ``True``, while one that is cancelled without a NACK,
+        failed, or unanswered in time returns ``False``. The future is not cancelled and the echo
+        stays armed (the done callback anchors or clears it).
 
         With ``written_required`` (the season frame and its restore) the delivery future the
         gateway hands back is awaited: a frame that is not written (cancelled, refused by a
@@ -3658,8 +4141,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._disarm_central_echo(slot, armed_at)
             raise
         if not isinstance(written, asyncio.Future):
+            self._central_echo_writes.pop(slot, None)
             self._anchor_central_echo(armed_at, None, slot)
-            return
+            return True
 
         def _on_written(future: "asyncio.Future[float]", armed_at: float = armed_at) -> None:
             if self._central_echo_writes.get(slot) is future:
@@ -3668,6 +4152,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
 
         if written_required and not written.done():
             self._central_echo_writes[slot] = written
+        else:
+            self._central_echo_writes.pop(slot, None)
         written.add_done_callback(_on_written)
         if not written_required:
             if refusal_raises:
@@ -3681,7 +4167,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     translation_key="central_command_refused",
                     translation_placeholders={"name": self._display_name, "frame": frame},
                 )
-            return
+            return not (
+                refusal_raises
+                and (not written.done() or written.cancelled() or written.exception() is not None)
+            )
         # Not ``await written``: a cancelled future would raise CancelledError, and a cancelled
         # service call must not cancel the frame (its echo stays recognised when it is written).
         await asyncio.wait((written,), timeout=SETPOINT_DELIVERY_TIMEOUT)
@@ -3724,6 +4213,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 translation_key="central_command_unconfirmed",
                 translation_placeholders={"name": self._display_name, "frame": frame},
             ) from cause
+        return True
 
     @callback
     def _disarm_central_echo(self, slot: str, armed_at: float) -> None:
@@ -3731,6 +4221,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         echo: tuple[str, float | None, float] | None = getattr(self, slot)
         if echo is not None and echo[2] == armed_at:
             setattr(self, slot, None)
+            self._central_echo_writes.pop(slot, None)
 
     @callback
     def _anchor_central_echo(
@@ -3807,10 +4298,22 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         thermostat answers in the plain ``Z`` form. An F455 emits ``*4*311*#2##`` after every
         status report of the standalone zone 2 (live, 2026-11-08: 8 of 8, none on the F461
         monitoring the same bus), which OWNd decodes as zone 2 in automatic.
+
+        The own report of a 4-zone central unit (``#0#N``) is the state of zone N, the zone of
+        the master panel, which reports no mode of its own after a setpoint written to the
+        central unit (#994): a zone nobody configured takes it, a zone configured
+        ``standalone: true`` does not.
         """
         if self._central or not self._standalone:
             return False
-        if message.message_type not in (MESSAGE_TYPE_MODE, MESSAGE_TYPE_MODE_TARGET, MESSAGE_TYPE_SEASON):
+        if message.message_type not in (
+            MESSAGE_TYPE_MODE,
+            MESSAGE_TYPE_MODE_TARGET,
+            MESSAGE_TYPE_SEASON,
+            MESSAGE_TYPE_TARGET_TEMPERATURE,
+        ):
+            return False
+        if self._is_own_four_zone_central_report(message):
             return False
         return is_central_thermo_where(message)
 
@@ -3878,15 +4381,22 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         teaches the knob offset it is shown with (a knob at +1 that had not reported: 21.0
         written, ``*#4*2*12*0220*3##`` back).
         """
-        if self._where.removeprefix("4-") in ("#0", "0") and (
-            central_unit_where(message) is None or is_central_unit_actuator_status(message)
-        ):
+        if self._superseded_by_central:
+            return
+        if _two_digit_interface(thermo_event_interface(message)) != self._interface:
+            return
+        if (
+            self._where.removeprefix("4-") in ("#0", "0") and central_unit_where(message) is None
+        ) or (
+            self._is_four_zone_central
+            and is_central_thermo_where(message)
+            and four_zone_central_where(message) != self._bus_where
+        ) or (self._central and is_central_unit_actuator_status(message)):
             # The 99-zone central unit also listens under ``0`` (its zone number), the WHERE
             # of a general frame: "General probes (all probes)" (WHO 4 p. 6) is not the
-            # central unit, and neither is ``#0#N``, a zone of a 4-zone central unit. The
-            # answer to the all-zone actuator request carries WHERE ``#0`` and is no report of
-            # the central unit (#944); it reaches this entity through the sensor platform's
-            # router too.
+            # central unit, and neither is ``#0#N`` (a 4-zone central unit). An actuator
+            # status with WHERE ``#0`` or ``#0#N`` is no report of a central unit (#944, #994);
+            # it reaches this entity through the sensor platform's router too.
             return
         self._note_conditioning_report(message)  # first: the frame is then read as a cooling zone's
         try:
@@ -3896,11 +4406,13 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
 
     def _matches_zone_sensor_event(self, message: OWNHeatingEvent) -> bool:
         """Whether ``message`` carries a valid zone temperature/humidity report for this entity."""
+        target_zone = four_zone_central_zone(self._where)
+        is_99_central = self._central and target_zone is None
         return (
-            self._central
+            is_99_central
             or getattr(type(getattr(message, "zone", None)), "__module__", "") == "unittest.mock"
             or thermo_zone_sensor_target(message)
-            == (canonical_thermo_zone(self._where), self._interface)
+            == (target_zone or canonical_thermo_zone(self._where), self._interface)
         )
 
     def _handle_event(self, message: OWNHeatingEvent) -> None:
@@ -3962,8 +4474,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 and math.isfinite(raw_hum)
                 else None
             )
+            is_99_central = self._central and not is_four_zone_central_where(self._where)
             if self._matches_zone_sensor_event(message) and (
-                self._central or (hum_val is not None and 0.0 <= hum_val <= 100.0)
+                is_99_central or (hum_val is not None and 0.0 <= hum_val <= 100.0)
             ):
                 LOGGER.debug(
                     "%s %s",
@@ -3971,10 +4484,17 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     message.human_readable_log,
                 )
                 self._enable_humidity()
-                self._attr_current_humidity = message.main_humidity if self._central else hum_val
+                self._attr_current_humidity = message.main_humidity if is_99_central else hum_val
                 self._humidity_reported = True
                 self._announce_climate_humidity()
         elif message.message_type == MESSAGE_TYPE_TARGET_TEMPERATURE:
+            if self._is_four_zone_central:
+                # On a 4-zone central unit (#0#N, BTicino 4695), authoritative central manual
+                # setpoints arrive via *4*110#TTTT*#0#N## / *4*210#TTTT*#0#N## (MODE_TARGET).
+                # Plain master-zone Dimension 14 (*#4*N*14*TTTT*3##, returned by *#4*N## even
+                # during weekly programs and protection, plant-cu4695.tsv:17,23) and echoed
+                # #14 writes must never establish or overwrite central manual provenance.
+                return
             LOGGER.debug(
                 "%s %s",
                 self._gateway_handler.log_id,
@@ -4011,7 +4531,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # (F461: 14 = 21.0 while 12 = 23.5), so a dimension 12 report stays what is shown.
             if not is_protection_or_off and not self._local_target_reported:
                 self._local_target_temperature = (
-                    round(self._target_temperature + self._local_offset, 1)
+                    round(self._target_temperature + self._applied_local_offset, 1)
                     if self._target_temperature is not None
                     else None
                 )
@@ -4067,7 +4587,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._knob_pos = "?"
             else:
                 self._knob_pos = "UNKNOWN"
-            if self._attr_hvac_mode != HVACMode.OFF:
+            if not self._central and self._attr_hvac_mode != HVACMode.OFF:
                 if not self._local_target_reported:
                     if self._target_temperature is not None:
                         self._local_target_temperature = round(
@@ -4096,14 +4616,48 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             )
             now = time.monotonic()
             raw_msg = str(message)
+            is_protection_or_off = self._dimension_3_is_protection(message)
+            if self._has_four_zone_manual_nominal() and not is_protection_or_off:
+                # Central manual setpoint (*4*110#TTTT*#0#N## / *4*210#TTTT*#0#N##) is
+                # authoritative for the plant-wide target; a delayed master-zone Dim 12
+                # (which includes Zone N's local knob offset) must neither shift the central
+                # setpoint nor flip _nominal_from_dim12 to True. Stash it unconditionally
+                # (tagging equal_to_manual) so Manual -> Program with an equal active comfort
+                # setpoint reconciles cleanly while protection transitions still ignore
+                # delayed manual echoes.
+                if (
+                    message.local_set_temperature is not None
+                    and self._target_temperature is not None
+                    and message.local_set_temperature
+                    != round(self._target_temperature + self._local_offset, 1)
+                ):
+                    self._pending_master_dim12 = (message.local_set_temperature, now)
+                return
             self._local_target_temperature = message.local_set_temperature
             self._local_target_reported = self._local_target_temperature is not None
+            if self._is_four_zone_central:
+                self._pending_master_dim12 = None
+                self._master_dim12_at = now if self._local_target_reported else None
+                if is_protection_or_off and self._local_target_reported:
+                    if (
+                        self._master_season_active_at is not None
+                        and now - self._master_season_active_at <= _FOUR_ZONE_BURST_WINDOW
+                    ):
+                        self._local_target_from_active_master = True
+                        self._idle_dim12_at = None
+                    else:
+                        self._local_target_from_active_master = False
+                        self._idle_dim12_at = now
+                else:
+                    self._local_target_from_active_master = False
+                    self._idle_dim12_at = None
             self._dim12_at = (
                 now
-                if self._local_target_reported and self._attr_hvac_mode != HVACMode.OFF
+                if self._local_target_reported
+                and self._attr_hvac_mode != HVACMode.OFF
+                and self._central_operation is None
                 else None
             )
-            is_protection_or_off = self._dimension_3_is_protection(message)
             saved_nominal = self._saved_nominal_in_force()
             written = self._written_target_temperature
             if written is not None and self._attr_hvac_mode == HVACMode.OFF and self._is_own_write_echo(now):
@@ -4147,6 +4701,35 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 if self._reconcile_local_target():
                     self._paired_burst = (raw_msg, now)
         elif message.message_type == MESSAGE_TYPE_SEASON:
+            if (
+                self._is_four_zone_central
+                and four_zone_central_where(message) is None
+            ):
+                now = time.monotonic()
+                self._master_season_active_at = now
+                if (
+                    self._idle_dim12_at is not None
+                    and now - self._idle_dim12_at <= _FOUR_ZONE_BURST_WINDOW
+                ):
+                    self._local_target_from_active_master = True
+                    self._idle_dim12_at = None
+                    if (
+                        self._has_central_schedule
+                        and self._attr_hvac_mode not in (None, HVACMode.OFF)
+                        and self._central_operation is None
+                        and self._target_temperature is None
+                        and self._local_target_reported
+                    ):
+                        self._reconcile_local_target()
+                        self._clear_master_dim12_pairing()
+                        self._publish_state()
+                if self._central_report_count > 0 or (
+                    self._attr_hvac_mode is not None and not self._restored_mode_unknown
+                ):
+                    # On a unified 4-zone central unit (#0#N), plain master-zone season frames
+                    # (*4*1*N## / *4*0*N##) belong to the embedded probe's local mode echo, not
+                    # the central unit's state: keep #0#N (live or restored) authoritative.
+                    return
             # *4*1*Z## / *4*0*Z## is the zone operation mode frame: the zone
             # (or the central unit) runs in the heating / conditioning season
             # (Legrand WHO 4 v2.0.0 p. 5, 13, 16, 19, 63). OWNd decodes it as
@@ -4170,6 +4753,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             previous_season = self._season
             self._season = message.season
             self._season_reported = True
+            self._clear_four_zone_nominal_on_season_change(previous_season)
+            self._restored_mode_unknown = False
             if self._central:
                 # The season only: neither protection nor off, and a reported off stays.
                 self._note_central_reported_state(message, None)
@@ -4224,7 +4809,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._central
                 and self.hass is not None
                 and self._attr_hvac_mode is not None
-                # A ``#0#N`` entity is one zone of a 4-zone central unit: not the plant's mode.
+                # A ``#0#N`` entity is a 4-zone central unit whose zones are written directly, not under a 99-zone central unit.
                 and self._where.removeprefix("4-") in ("#0", "0")
             ):
                 async_dispatcher_send(
@@ -4234,12 +4819,36 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 )
             self._follow_season_change(previous_season)
         elif message.message_type == MESSAGE_TYPE_MODE:
+            if self._is_four_zone_central and four_zone_central_where(message) is None:
+                # Plain master-zone mode frames (*4*303*N##, *4*102*N##, *4*202*N##) accompany
+                # #0#N reports: keep #0#N authoritative, clearing active-master Dim 12 pairing
+                # on OFF/protection, and only allowing legacy OWNd (< 2.0.0b11) plain season
+                # frames (*4*0*N## / *4*1*N##) to seed mode before #0#N itself has reported.
+                plain_what = str(message).split("*")[2] if str(message).startswith("*4*") else ""
+                is_pre_report_plain_season = (
+                    self._central_report_count == 0
+                    and (self._attr_hvac_mode is None or self._restored_mode_unknown)
+                    and plain_what in ("0", "1")
+                )
+                if not is_pre_report_plain_season:
+                    if (
+                        message.mode == CLIMATE_MODE_OFF
+                        or plain_what in _CENTRAL_PROTECTION
+                        or plain_what == _CENTRAL_GENERIC_PROTECTION
+                    ):
+                        self._clear_master_dim12_pairing()
+                    return
             if not self._central and is_central_thermo_where(message):
                 self._unpaired_dim12_at = None
             self._hvac_mode_restored = False  # the zone itself says what it runs in
+            self._restored_mode_unknown = False
             prev_mode = self._attr_hvac_mode
+            prev_central_op = self._central_operation
+            prev_schedule = (self._program, self._scenario, self._holiday_days, self._daily_holiday)
+            had_manual_before = self._has_four_zone_manual_nominal()
             previous_season = self._season
             self._remember_season(message)
+            self._clear_four_zone_nominal_on_season_change(previous_season)
             self._note_own_season(message)
             # OWNd releases without MESSAGE_TYPE_SEASON decode the zone operation mode
             # frame *4*1*Z## / *4*0*Z## as a plain heat / cool mode; it still tells the
@@ -4252,6 +4861,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._follow_season_change(previous_season)
             self._program = getattr(message, "program", None)
             self._holiday_days = getattr(message, "holiday_days", None)
+            self._daily_holiday = raw_what.split("#", 1)[0] in ("115", "215", "315")
             self._scenario = getattr(message, "scenario", None)
             protection = _CENTRAL_PROTECTION.get(raw_what) if self._central else None
             if self._central and raw_what == _CENTRAL_GENERIC_PROTECTION and self._season is not None:
@@ -4282,6 +4892,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 # BTicino's client shows it as a status of the season (libqtdevices
                 # thermal_device.cpp WIN_PROTECTION / SUM_PROTECTION).
                 LOGGER.debug("%s %s (%s)", self._gateway_handler.log_id, message.human_readable_log, protection[0])
+                self._restore_nominal_before_protection()
+                if self._is_four_zone_central:
+                    self._apply_pending_master_dim12_for_idle()
                 if protection[1] in self._attr_hvac_modes:
                     self._attr_hvac_mode = protection[1]
                 if self._attr_hvac_action == HVACAction.OFF:
@@ -4320,21 +4933,35 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     message.human_readable_log,
                 )
                 self._restore_nominal_before_protection()
+                if self._is_four_zone_central:
+                    self._apply_pending_master_dim12_for_idle()
                 self._attr_hvac_mode = HVACMode.OFF
                 self._attr_hvac_action = HVACAction.OFF
                 self._mark_actuators_off()
             self._hydrate_nominal_from_local(prev_mode)
-            if (
-                prev_mode == HVACMode.OFF
-                and self._attr_hvac_mode != HVACMode.OFF
-                and self._target_temperature is not None
-            ):
-                self._show_nominal()
+            if self._attr_hvac_mode != HVACMode.OFF and self._central_operation is None:
+                leaving_idle = prev_mode == HVACMode.OFF or prev_central_op is not None
+                if self._is_four_zone_central and self._has_central_schedule:
+                    self._apply_four_zone_schedule_setpoint(
+                        leaving_idle=leaving_idle,
+                        had_manual=had_manual_before,
+                        schedule_changed=prev_schedule
+                        != (
+                            self._program,
+                            self._scenario,
+                            self._holiday_days,
+                            self._daily_holiday,
+                        ),
+                        initial_report=prev_mode is None
+                        and prev_schedule == (None, None, None, False),
+                    )
+                elif leaving_idle and self._target_temperature is not None:
+                    self._show_nominal()
             if (
                 self._central
                 and self.hass is not None
                 and self._attr_hvac_mode is not None
-                # A ``#0#N`` entity is one zone of a 4-zone central unit: not the plant's mode.
+                # A ``#0#N`` entity is a 4-zone central unit whose zones are written directly, not under a 99-zone central unit.
                 and self._where.removeprefix("4-") in ("#0", "0")
             ):
                 async_dispatcher_send(
@@ -4343,6 +4970,11 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._attr_hvac_mode,
                 )
         elif message.message_type == MESSAGE_TYPE_MODE_TARGET:
+            if self._is_four_zone_central and four_zone_central_where(message) is None:
+                # On a unified 4-zone central unit (#0#N), only #0#N carries the central
+                # manual target; non-#0#N WHAT#PARAM frames routed under master zone N
+                # (e.g. timed manual *4*312#TTTT#H*#1##) must never overwrite #0#N state.
+                return
             if not self._central and is_central_thermo_where(message):
                 self._unpaired_dim12_at = None
             if self._central:
@@ -4355,11 +4987,15 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                         message, False if isinstance(getattr(message, "season", None), str) else None
                     )
             self._hvac_mode_restored = False
+            self._restored_mode_unknown = False
             prev_mode = self._attr_hvac_mode
+            previous_season = self._season
             self._remember_season(message)
+            self._clear_four_zone_nominal_on_season_change(previous_season)
             self._note_own_season(message)
             self._program = getattr(message, "program", None)
             self._holiday_days = getattr(message, "holiday_days", None)
+            self._daily_holiday = False
             self._scenario = getattr(message, "scenario", None)
             if not self._central:
                 # As in the mode branch: manual (110 / 210 / 310) with its setpoint; anything not
@@ -4404,8 +5040,11 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._attr_hvac_action = HVACAction.OFF
                 self._mark_actuators_off()
             if message.set_temperature is not None and message.set_temperature >= 0:
+                if self._is_four_zone_central:
+                    self._clear_master_dim12_pairing()
                 self._target_temperature = message.set_temperature
                 self._nominal_from_dim12 = False
+                self._nominal_before_dim12 = None
                 self._target_temperature_restored = False
                 self._restored_nominal = None  # the zone reported its commanded setpoint
                 self._show_nominal()
@@ -4415,7 +5054,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._central
                 and self.hass is not None
                 and self._attr_hvac_mode is not None
-                # A ``#0#N`` entity is one zone of a 4-zone central unit: not the plant's mode.
+                # A ``#0#N`` entity is a 4-zone central unit whose zones are written directly, not under a 99-zone central unit.
                 and self._where.removeprefix("4-") in ("#0", "0")
             ):
                 async_dispatcher_send(
@@ -4424,6 +5063,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._attr_hvac_mode,
                 )
         elif message.message_type == MESSAGE_TYPE_ZONE_STATE:
+            if self._central:
+                return
             LOGGER.debug(
                 "%s %s",
                 self._gateway_handler.log_id,
@@ -4636,6 +5277,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         elif message.message_type == MESSAGE_TYPE_FAN_SPEED or (
             hasattr(message, "fan_speed") and message.fan_speed is not None
         ):
+            if self._central:
+                return
             LOGGER.debug(
                 "%s %s",
                 self._gateway_handler.log_id,
@@ -4673,7 +5316,14 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     # An "off" already shown came from the zone's valve report: that one stays.
                     self._fan_off_reported = True
                 self._running_fan_speed = "off"
-        elif self._central and (diag_what := _central_diagnostic_what(message)) is not None:
+        elif (
+            self._central
+            and (
+                not self._is_four_zone_central
+                or four_zone_central_where(message) == self._bus_where
+            )
+            and (diag_what := _central_diagnostic_what(message)) is not None
+        ):
             LOGGER.debug(
                 "%s %s",
                 self._gateway_handler.log_id,

@@ -100,7 +100,7 @@ def test_3550_frames_never_resolve_to_zone_99(raw_frame: str) -> None:
 
 @pytest.mark.parametrize("raw_frame", BTICINO_4695_FRAMES)
 def test_4695_frames_never_resolve_to_zone_99(raw_frame: str) -> None:
-    """Assert that 4695 4-zone central unit frames route to subordinate zone 1 and never resolve to zone 99 (#582)."""
+    """4695 frames are the central unit ``#0#N``'s (#994), still reach zone N, and never resolve to zone 99 (#582)."""
     message = OWNEvent.parse(raw_frame)
     assert message is not None
 
@@ -110,8 +110,8 @@ def test_4695_frames_never_resolve_to_zone_99(raw_frame: str) -> None:
 
     address = _zone_address(message)
     assert address is not None
-    assert address.where == "1"
-    assert address.clean_where == "1"
+    assert address.where == "#0#1"
+    assert address.clean_where == "#0#1"
 
     route_keys = _zone_route_keys(message, address)
     assert "99" not in route_keys
@@ -1128,7 +1128,9 @@ def test_four_zone_central_unit_alone_still_answers_to_its_zone_number():
     assert validated["4-1"]["zone"] == "#0#1" and validated["1"] is validated["zone_1"] is validated["#0#1"]
     configured: dict[str, dict] = {"climate": {}}
     _apply_yaml_platforms({"climate": validated}, configured)
-    assert _zone_config(configured["climate"], Address("1"), "1")["zone"] == "#0#1"
+    assert _zone_config(configured["climate"], Address("#0#1"), "#0#1")["zone"] == "#0#1"
+    # zone 1 found on the bus is a zone of its own, not a second central unit (#994)
+    assert _zone_config(configured["climate"], Address("1"), "1") == {}
     # behind an F422 the alias carries the interface, as before
     routed = climate_schema({"c": {"zone": "2", "central": True, "interface": "01"}})
     assert set(routed) == {"c", "#0#2#4#01", "4-2#4#01", "2#4#01"}

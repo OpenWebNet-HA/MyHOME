@@ -482,7 +482,7 @@ async def test_auto_fallback_survives_the_f455_trailing_311() -> None:
         ("*4*210*#4##", True),  # zone manual conditioning by central unit, live 3550
         ("*4*203*#4##", True),  # zone off conditioning by central unit, live 3550
         ("*4*102*#0##", True),  # the central unit itself (WHO 4 p. 64)
-        ("*4*303*#0#1##", True),  # 4-zone central unit
+        ("*4*303*#0#1##", False),  # a 4-zone central unit: its zones are written directly (#994)
         ("*#4*#4*14*0205*2##", True),  # a dimension of a zone of the central
         ("*#4*2*0*0238##", False),  # a standalone thermostat's temperature
         ("*#4*101*0*0205##", False),  # a probe (WHO 4 p. 6)
@@ -526,16 +526,25 @@ async def test_failed_send_disarms_the_echo() -> None:
     assert central._central_echo is None
 
 
-# PR #880 review: a 4-zone central unit (#0#1..#0#4) is not polled, it keeps HEAT / COOL.
+# A 4-zone central unit (#0#1..#0#96) keeps same-season HEAT/COOL once acknowledged,
+# while cross-season HEAT/COOL send the season frame + *4*3100*#0#N## and wait for the report (#994).
 
 
 @pytest.mark.parametrize("hvac_mode", [HVACMode.HEAT, HVACMode.COOL])
 async def test_four_zone_central_keeps_the_mode_it_is_set_to(hvac_mode: HVACMode) -> None:
     gateway = _gateway()
     central = _climate(gateway, "#0#1", standalone=None, central=True)
+    _replay(central, ["*4*110#0175*#0#1##"])  # heating 17.5 (issue_994, second file, frame 20)
     await central.async_set_hvac_mode(hvac_mode)
-    assert central.hvac_mode == hvac_mode
-    assert _sent(gateway) == [f"*4*{1 if hvac_mode == HVACMode.HEAT else 0}*#0#1##"]
+    if hvac_mode == HVACMode.HEAT:
+        assert central.hvac_mode == HVACMode.HEAT
+        assert _sent(gateway) == ["*#4*#0#1*#14*0175*3##"]
+    else:
+        # Cross-season switches send season frame + 3100 restore and wait for bus report.
+        assert _sent(gateway) == ["*4*0*#0#1##", "*4*3100*#0#1##"]
+        assert central.hvac_mode == HVACMode.HEAT
+        _replay(central, ["*4*2101*#0#1##"])
+        assert central.hvac_mode == HVACMode.COOL
 
 
 # PR #880 review: an AUTO the zone itself reports is not cancelled by its season frame.

@@ -31,7 +31,13 @@ from .const import (
     PLATFORMS,
 )
 from .repairs import async_create_legacy_yaml_imported_issue
-from .where_grammar import canonical_central_zone, canonical_point_address, canonical_thermo_zone
+from .where_grammar import (
+    canonical_central_zone,
+    canonical_point_address,
+    canonical_thermo_zone,
+    is_four_zone_central_where,
+    split_zone_routing,
+)
 
 
 def _read_legacy_yaml(
@@ -74,6 +80,8 @@ def _apply_yaml_platforms(
                 runtime_cfg = copy.deepcopy(d_cfg, memo)
                 routing = ""
                 z_val: str | None = None
+                base_z = ""
+                eff_routing = ""
                 aliases: list[str] = []
                 central_keys: set[str] = set()
                 if isinstance(runtime_cfg, dict):
@@ -98,10 +106,11 @@ def _apply_yaml_platforms(
                         routing = f"{BUS_ROUTING}{iface_str}"
                     if CONF_ZONE in runtime_cfg or "zone" in runtime_cfg:
                         z_val = str(runtime_cfg.get(CONF_ZONE) or runtime_cfg.get("zone"))
-                        clean_z = z_val.split("#")[-1]
-                        aliases = [f"{clean_z}{routing}"] if routing else [clean_z, f"zone_{clean_z}"]
-                        if z_val.startswith("#0#"):
-                            central_keys = {*aliases, f"4-{clean_z}{routing}"}
+                        base_z, eff_routing = split_zone_routing(z_val, routing)
+                        clean_z = base_z.split("#")[-1]
+                        aliases = [f"{clean_z}{eff_routing}"] if eff_routing else [clean_z, f"zone_{clean_z}"]
+                        if base_z.startswith("#0#"):
+                            central_keys = {*aliases, f"4-{clean_z}{eff_routing}"}
                 if d_id in central_keys:
                     central_aliases.append((plat, d_id, runtime_cfg))
                 else:
@@ -124,20 +133,20 @@ def _apply_yaml_platforms(
                         )
                         configured_platforms[plat][where_key] = runtime_cfg
                 if z_val is not None:
-                    configured_platforms[plat][f"{z_val}{routing}"] = runtime_cfg
-                    if z_val.startswith("#0#"):
+                    configured_platforms[plat][f"{base_z}{eff_routing}"] = runtime_cfg
+                    if base_z.startswith("#0#"):
                         central_aliases.extend((plat, alias, runtime_cfg) for alias in aliases)
                     else:
                         configured_platforms[plat].update(dict.fromkeys(aliases, runtime_cfg))
                         # ``1``, ``01`` and ``#1`` are zone 1; ``001`` is all the probes of zone 1, another address.
                         if (
-                            (digits := z_val.removeprefix("#")).isascii()
+                            (digits := base_z.removeprefix("#")).isascii()
                             and digits.isdigit()
                             and len(digits) <= 2
-                            and (canon := canonical_thermo_zone(z_val)) is not None
+                            and (canon := canonical_thermo_zone(base_z)) is not None
                         ):
-                            bare = f"{canon}{routing}"
-                            numbers = [bare, f"4-{bare}"] if routing else [bare, f"4-{bare}", f"zone_{bare}"]
+                            bare = f"{canon}{eff_routing}"
+                            numbers = [bare, f"4-{bare}"] if eff_routing else [bare, f"4-{bare}", f"zone_{bare}"]
                             zone_numbers.extend((plat, key, bare, runtime_cfg) for key in numbers if key not in aliases)
     for plat, alias, bare, runtime_cfg in zone_numbers:
         # ``4-1`` and ``zone_1`` are whose ``1`` is: one zone under all three.
@@ -201,13 +210,18 @@ def canonicalise_imported_platforms(
             for cfg in devices.values()
             if plat == "climate"
             and isinstance(cfg, dict)
-            and cfg.get(CONF_CENTRAL)
+            and (cfg.get(CONF_CENTRAL) or is_four_zone_central_where(str(cfg.get(CONF_ZONE) or "")))
             and isinstance(cfg.get(CONF_ZONE), str)
             and canonical_central_zone(cfg[CONF_ZONE]) == cfg[CONF_ZONE]
         }
         for d_id, cfg in devices.items():
             who = str(cfg.get(CONF_WHO, "")) if isinstance(cfg, dict) else ""
-            stored_zone = cfg.get(CONF_ZONE) if plat == "climate" and isinstance(cfg, dict) and cfg.get(CONF_CENTRAL) else None
+            is_central_cfg = (
+                plat == "climate"
+                and isinstance(cfg, dict)
+                and (cfg.get(CONF_CENTRAL) or is_four_zone_central_where(str(cfg.get(CONF_ZONE) or "")))
+            )
+            stored_zone = cfg.get(CONF_ZONE) if is_central_cfg else None
             if isinstance(stored_zone, str) and (fixed_zone := canonical_central_zone(stored_zone)) != stored_zone:
                 # 2.0.0 stored ``zone: "0"`` with ``central: true`` as ``#0#0`` (and ``#0#1`` as
                 # ``#0##0#1``, ``0#4#01`` as ``#0#0#4#01``); the validator gives ``#0``
@@ -222,10 +236,15 @@ def canonicalise_imported_platforms(
                         plat, d_id, new_id if new_id != d_id else fixed_zone,
                     )
                     continue
-                new_devices[new_id] = {**cfg, CONF_ZONE: fixed_zone}
+                new_devices[new_id] = {**cfg, CONF_ZONE: fixed_zone, CONF_CENTRAL: True}
                 central_fixed = True
                 if new_id != d_id:
                     central_moved.append(f"{plat}: {d_id} -> {new_id}")
+                continue
+            if is_central_cfg and not cfg.get(CONF_CENTRAL):
+                new_devices[d_id] = {**cfg, CONF_CENTRAL: True}
+                central_fixed = True
+                central_moved.append(f"{plat}: {d_id} central -> True")
                 continue
             if who not in ("1", "2") or not isinstance(cfg.get(CONF_WHERE), str):
                 new_devices[d_id] = cfg
@@ -304,19 +323,20 @@ def _apply_imported_copy(
     is applied, and the moved copy is stored, so the registry migration that follows
     and the platforms see one and the same address (#147).
     """
-    imported = entry.options.get(CONF_MIGRATED_YAML_PLATFORMS)
-    if not isinstance(imported, dict) or not any(imported.values()):
+    raw_imported = entry.options.get(CONF_MIGRATED_YAML_PLATFORMS)
+    if not isinstance(raw_imported, dict) or not any(raw_imported.values()):
         return
-    imported, rewritten = canonicalise_imported_platforms(imported)
-    if rewritten:
+    imported, rewritten = canonicalise_imported_platforms(raw_imported)
+    if rewritten or imported != raw_imported:
         hass.config_entries.async_update_entry(
             entry, options={**entry.options, CONF_MIGRATED_YAML_PLATFORMS: imported}
         )
-        LOGGER.info(
-            "Imported copy of myhome.yaml for gateway %s: %d point address(es) moved to the "
-            "canonical spelling (%s)",
-            entry.data.get(CONF_MAC), len(rewritten), "; ".join(rewritten),
-        )
+        if rewritten:
+            LOGGER.info(
+                "Imported copy of myhome.yaml for gateway %s: %d point address(es) moved to the "
+                "canonical spelling (%s)",
+                entry.data.get(CONF_MAC), len(rewritten), "; ".join(rewritten),
+            )
     _apply_yaml_platforms(_restore_shared_devices(imported), configured_platforms)
     LOGGER.info(
         "Using the imported copy of myhome.yaml for gateway %s: the file is missing, "

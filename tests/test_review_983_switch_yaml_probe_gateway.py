@@ -850,3 +850,109 @@ async def test_a_whole_zone_off_puts_the_known_outputs_of_the_whole_zone_switch_
     assert zone.extra_state_attributes["actuator_levels"] == {"3": 60}
     zone.handle_event(OWNMessage.parse(off))
     assert zone.is_on is False and zone.extra_state_attributes["actuator_levels"] == {"3": 0}
+
+
+# ── PR 983 section 2 leftovers: switch write identity + sent_at anchor, candidate reads deferral ──
+
+
+async def test_thermo_switch_direct_write_identity_and_sent_at_anchor(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Object identity distinguishes same-tick calls (even after confirmation), and sent_at anchors on write."""
+    gateway = _mock_gateway()
+    futures: list[asyncio.Future[float]] = []
+
+    async def send(_cmd: object) -> asyncio.Future[float]:
+        fut: asyncio.Future[float] = asyncio.get_running_loop().create_future()
+        futures.append(fut)
+        return fut
+
+    gateway.send = AsyncMock(side_effect=send)
+    sw = _zone_switch(hass, gateway)
+
+    # Two calls in the exact same monotonic tick: cancelling call 1 must not disarm call 2.
+    with patch("custom_components.myhome.switch.time.monotonic", return_value=100.0):
+        t1 = asyncio.create_task(sw.async_turn_on())
+        await asyncio.sleep(0)
+        t2 = asyncio.create_task(sw.async_turn_off())
+        await asyncio.sleep(0)
+        assert len(futures) == 2
+        t1.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await t1
+        assert sw._pending_direct_write is not None and sw._pending_direct_write[0] is False
+        # Confirming call 2 mutates in place; then resolving its future 10 s later anchors sent_at.
+        sw.handle_event(OWNMessage.parse("*#4*3#1*20*0##"))
+        assert sw._pending_direct_write is not None and sw._pending_direct_write[2] is True
+        futures[1].set_result(110.0)
+        await t2
+
+    # Revert 0.3 s after write anchor (10.3 s after original queue time) still logs the revert warning.
+    with (
+        caplog.at_level("WARNING"),
+        patch("custom_components.myhome.switch.time.monotonic", return_value=110.3),
+    ):
+        sw.handle_event(OWNMessage.parse("*#4*3#1*20*1##"))
+    assert "reverted to ON" in caplog.text
+    futures[0].cancel()
+
+
+async def test_candidate_reads_defer_poll_on_add_and_arm_confirming_pair_after_quiet_wait(
+    hass: HomeAssistant,
+) -> None:
+    """Candidate reads defer `_poll_on_add_waits` without touching `_all_actuators_swept_at`,
+    and arm `_confirming_pair` only after `read_zone_temperature`'s pre-read quiet wait."""
+    from custom_components.myhome.climate_discovery import ZoneDiscovery
+    from custom_components.myhome.discovery import Address, DeviceContext
+
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": DISCOVERY_MAC}, unique_id=DISCOVERY_MAC)
+    entry.add_to_hass(hass)
+    handler = _f455_handler(hass, "F461")
+    handler._initial_discovery_done.set()
+    handler._all_actuators_swept_at = 42.0
+    handler._last_event_frame_at = 1.0
+    runtime = attach_runtime(hass, entry, DISCOVERY_MAC, handler)
+    runtime.platforms["climate"] = {}
+
+    zones = ZoneDiscovery(hass, entry, runtime, lambda _ctx, _cfg: MagicMock())
+    entity = _central_climate(handler, "15", standalone=True, central=False)
+    assert entity._poll_on_add_waits() is False
+
+    quiet_entered = asyncio.Event()
+    quiet_release = asyncio.Event()
+    confirming_during_quiet: list[object] = []
+    confirming_at_send: list[object] = []
+    poll_waited_during_reads: list[bool] = []
+
+    async def fake_wait_quiet(_since: float) -> None:
+        if not quiet_entered.is_set():
+            quiet_entered.set()
+            await quiet_release.wait()
+
+    async def fake_send_status(_cmd: object) -> asyncio.Future[float]:
+        confirming_at_send.append(zones._confirming_pair)
+        poll_waited_during_reads.append(entity._poll_on_add_waits())
+        fut: asyncio.Future[float] = asyncio.get_running_loop().create_future()
+        fut.set_result(1.0)
+        return fut
+
+    handler._wait_for_bus_quiet = fake_wait_quiet  # type: ignore[method-assign]
+    handler.send_status_request = AsyncMock(side_effect=fake_send_status)  # type: ignore[method-assign]
+    handler.wait_for_initial_discovery = AsyncMock()  # type: ignore[method-assign]
+
+    first = OWNMessage.parse("*#4*15*0*0215##")
+    ctx = DeviceContext(who="4", address=Address("15"), source="bus", message=first, cfg={})
+    assert zones.accept(ctx) is False
+    await quiet_entered.wait()
+    # During pre-read quiet wait, _confirming_pair is NOT armed yet, so a duplicate echo is rejected!
+    confirming_during_quiet.append(zones._confirming_pair)
+    assert zones.accept(ctx) is False
+    quiet_release.set()
+    if zones._candidate_task is not None:
+        await zones._candidate_task
+
+    assert confirming_during_quiet == [None]
+    assert confirming_at_send == [("15", None)]
+    assert poll_waited_during_reads == [True]
+    assert handler.candidate_reads_running is False
+    assert handler._all_actuators_swept_at == 42.0  # untouched!

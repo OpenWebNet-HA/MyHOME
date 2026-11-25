@@ -188,6 +188,9 @@ SPLIT_FRAMES = [
     "*#4*3#2#1#4#01*22*1*0215*2*0##",  # behind an F422
     "*#4*3#2#1*#22*1*0215*2*0##",  # another client's write
     "*#4*3#2#1*22##",
+    "*#4*45#1*22*1*0215*2*0##",  # 2-token Z#N form (MH202 / historical touchscreen, thermo-dim22.md:90-93)
+    "*#4*45#1*#22*3**1*1##",
+    "*#4*2#1#4#01*22*1*0215*2*0##",  # 2-token Z#N behind an F422
 ]
 
 

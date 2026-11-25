@@ -613,19 +613,25 @@ async def test_central_unit_async_set_temperature(hass: HomeAssistant, mock_gate
     )
     central.entity_id = "climate.central_unit"
 
-    # In HEAT mode
+    # In HEAT mode (state follows the central unit's bus report, not an optimistic write)
     central._attr_hvac_mode = HVACMode.HEAT
     mock_gateway.send.reset_mock()
     await central.async_set_temperature(temperature=21.5)
-    assert central._target_temperature == 21.5
     mock_gateway.send.assert_awaited_once()
+    assert str(mock_gateway.send.await_args.args[0]) == "*#4*#0*#14*0215*3##"
+    assert central.target_temperature is None
+    central.handle_event(OWNEvent.parse("*4*110#0215*#0##"))
+    assert central.target_temperature == 21.5
 
     # In COOL mode
     central._attr_hvac_mode = HVACMode.COOL
     mock_gateway.send.reset_mock()
     await central.async_set_temperature(temperature=24.0)
-    assert central._target_temperature == 24.0
     mock_gateway.send.assert_awaited_once()
+    assert str(mock_gateway.send.await_args.args[0]) == "*#4*#0*#14*0240*3##"
+    assert central.target_temperature == 21.5
+    central.handle_event(OWNEvent.parse("*4*210#0240*#0##"))
+    assert central.target_temperature == 24.0
 
 
 async def test_central_unit_event_dispatches_central_mode(hass: HomeAssistant, mock_gateway):

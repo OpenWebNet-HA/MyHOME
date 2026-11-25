@@ -352,8 +352,8 @@ async def test_stale_season_under_lock():
     futures[2].set_result(time.monotonic())
     await asyncio.gather(heat, slider)
     assert (
-        _sent(gateway)[-1] == "*#4*#0*#14*0165*1##"
-    )  # issue_697/f454_99zone_central_subordinate_zones.json:38
+        _sent(gateway)[-1] == "*#4*#0*#14*0165*3##"
+    )  # generic manual M=3, serialized behind the season+restore pair
 
 
 async def test_nacked_central_setpoint():

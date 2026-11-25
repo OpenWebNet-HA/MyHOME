@@ -1229,7 +1229,7 @@ def test_is_actuator_where_distinguishes_actuators_from_central_and_routed():
     assert is_actuator_where("0#0") is True
     assert is_actuator_where("0#1") is True
     assert is_actuator_where("#0#0") is True
-    assert is_actuator_where("#0#9") is True
+    assert is_actuator_where("#0#9") is False  # 4-zone central unit #0#1..#0#99
     assert is_actuator_where("2#1#4#01") is True
     assert is_actuator_where("2#4#4#01") is True
     assert is_actuator_where("2#4#4#1") is True
@@ -1428,8 +1428,12 @@ async def test_a_zone_behind_an_interface_is_not_written_where_the_gateway_route
 
 
 @pytest.mark.parametrize("where", ["#0#1", "#0#2", "#0#3", "#0#4", "4-#0#4"])
-async def test_four_zone_central_channels_1_to_4_are_central_and_never_polled(hass, fast_bus_pacing, where):
-    """4-zone central unit channels (#0#1..#0#4) are central even when restored without central=True."""
+async def test_four_zone_central_channels_1_to_4_are_central_and_poll_own_status(hass, fast_bus_pacing, where):
+    """4-zone central unit channels (#0#1..#0#4) are central and poll *#4*#0#N## plus unified
+    master-zone temperature/actuators (*#4*N*0## / *#4*N*20##), never *#4*#0#N*14## or *#4*#0#N*20##.
+    """
+    clean = where.removeprefix("4-")
+    master = clean.rsplit("#", 1)[1]
     for model in ("Generic", "F461", "F454", "MH202"):
         handler = _handler(hass, model)
         handler._initial_discovery_done.set()
@@ -1437,7 +1441,7 @@ async def test_four_zone_central_channels_1_to_4_are_central_and_never_polled(ha
         cu = MyHOMEClimate(
             hass=hass,
             name=f"Central {where}",
-            device_id=f"4-{where.removeprefix('4-')}",
+            device_id=f"4-{clean}",
             who="4",
             where=where,
             heating=True,
@@ -1454,16 +1458,23 @@ async def test_four_zone_central_channels_1_to_4_are_central_and_never_polled(ha
         cu.entity_id = "climate.cu_4zone"
         cu.async_write_ha_state = MagicMock()
         assert cu._central is True
-        assert cu._poll_on_add is False
+        assert cu._poll_on_add is True
         await cu.async_added_to_hass()
-        await cu.async_update()
         await _settle(hass)
-        handler.send_status_request.assert_not_awaited()
-        assert handler._actuator_zones == {}
+        sent = [str(call.args[0]) for call in handler.send_status_request.await_args_list]
+        assert f"*#4*{clean}*14##" not in sent
+        assert f"*#4*{clean}*20##" not in sent
+        expected = [f"*#4*{clean}##", f"*#4*{master}*0##"]
+        if model == "F461":
+            expected.append("*#4*0#0*20##")
+        elif not handler.actuator_request_refused and not handler.zone_actuator_request_refused:
+            expected.append(f"*#4*{master}*20##")
+        assert set(sent) == set(expected) and len(sent) == len(expected)
+        assert handler._actuator_zones == {master: 1}
 
 
-async def test_four_zone_central_configured_channels_use_4695_model_and_skip_polls(hass, fast_bus_pacing):
-    """Configuring #0#2..#0#4 sets Central Unit (4695), default Central Unit name, and _central=True via climate.build()."""
+async def test_four_zone_central_configured_channels_use_4695_model_and_poll_status(hass, fast_bus_pacing):
+    """Configuring #0#2..#0#4 sets Central Unit (4695), default Central Unit name, and polls *#4*#0#N##."""
     from pytest_homeassistant_custom_component.common import MockConfigEntry
 
     from custom_components.myhome.climate import async_setup_entry
@@ -1488,7 +1499,7 @@ async def test_four_zone_central_configured_channels_use_4695_model_and_skip_pol
         "central_2": {CONF_WHERE: "#0#2"},
         "central_3": {CONF_WHERE: "#0#3"},
         "central_4": {CONF_WHERE: "#0#4"},
-        "local_02": {CONF_WHERE: "02"},
+        "local_02": {CONF_WHERE: "02", "standalone": True},
     }
 
     added: list[MyHOMEClimate] = []
@@ -1500,17 +1511,20 @@ async def test_four_zone_central_configured_channels_use_4695_model_and_skip_pol
         assert ent._central is True
         assert ent._model == "Central Unit (4695)"
         assert ent._device_name.startswith("Central Unit ")
-        assert ent._poll_on_add is False
+        assert ent._poll_on_add is True
         ent.hass = hass
         ent.entity_id = f"climate.central_{ch[-1]}"
         ent.async_write_ha_state = MagicMock()
-        await ent.async_added_to_hass()
+        handler.send_status_request.reset_mock()
         await ent.async_update()
+        sent = [str(call.args[0]) for call in handler.send_status_request.await_args_list]
+        # #0#2 has standalone local_02 -> no master-zone temp poll; #0#3/#0#4 unify master zone -> poll *#4*N*0##
+        assert sent == ([f"*#4*{ch}##"] if ch == "#0#2" else [f"*#4*{ch}##", f"*#4*{ch[-1]}*0##"])
     # Zero-padded local zone "02" (zone_number == "02") must stay a regular Heating Zone, not central.
     assert by_where["02"]._central is False
     assert by_where["02"]._model == "Heating Zone"
     await _settle(hass)
-    handler.send_status_request.assert_not_awaited()
+    assert handler._actuator_zones == {}
 
 
 @pytest.mark.parametrize("where", ["2#4#100", "3#4#001", "#4#01"])

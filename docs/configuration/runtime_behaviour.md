@@ -182,36 +182,36 @@ A dimension 15 frame whose sensor field and temperature are all zeros is **not a
 
 ---
 
-## 🌡️ Central heating units (`#0` / `#0#1`) are broadcast event-driven
+## 🌡️ Central heating units (`#0` / `#0#N`) are broadcast event-driven
 
-Central thermoregulation units (such as the BTicino **3550** at address `#0` and the **4695** 4-zone unit at `#0#1`) manage subordinate zones and set plant-wide seasonal modes (heating, cooling, off, auto).
+Central thermoregulation units (such as the BTicino **3550** at address `#0` and the **4695** 4-zone unit at `#0#N`, `1..96`) manage subordinate zones and set plant-wide seasonal modes (heating, cooling, off, auto).
 
 Central units handle status updates differently from subordinate zones (`1..99`):
 
 - **Dimension 14 queries rejected**: Gateways reject Dimension 14 status queries (`*#4*#0*14##`) with fast NACK, as Dimension 14 status queries are only defined for zone thermostats `1..99` (#629).
-- **Plain status requests supported**: Authentic physical gateway traces (#629) confirm that 99-zone central units (`#0`) reliably answer the plain status request `*#4*#0##` within ~0.17 s, returning their operating mode (`*4*202*#0##` for conditional OFF) and status flags (`*4*21*#0##`, `*4*22*#0##`, `*4*24*#0##`).
-- **Startup Polling**: On startup, and when an update of the entity is asked for (`homeassistant.update_entity`), the integration queries central unit `#0` with `*#4*#0##`; Home Assistant does not poll the entity on an interval. Answering populates the seasonal mode and coordinates subordinate zones. This poll is informational: an unanswered `*#4*#0##` never raises an `unresponsive_zone` repair (captured on an F454 and an F455 so far). 4-zone central units (`#0#1`) remain exempt to prevent gateway timeouts.
+- **Plain status requests supported**: Authentic physical gateway traces confirm that 99-zone central units (`#0`, #629) answer `*#4*#0##` within ~0.17 s and 4-zone central units (`#0#N`, #994) answer `*#4*#0#N##` within ~0.14 s, returning their operating mode and status flags (`*4*21*...`, `*4*31*...`, etc.).
+- **Startup Polling**: On startup, and when an update of the entity is asked for (`homeassistant.update_entity`), the integration queries `#0` with `*#4*#0##` and `#0#N` with `*#4*#0#N##` (plus master zone temperature `*#4*N*0##` on gateways that drop `*#4*0##` when unified `#0#N` has no live temperature yet); Home Assistant does not poll central units on an interval. This poll is informational: an unanswered central-unit poll never raises an `unresponsive_zone` repair.
 
 Central units coordinate with the plant as follows:
 
-1. **Startup Hydration & Polling**: On restart, the central unit entity is restored from its previous state (`async_restore_last_state()`) and sends canonical status request `*#4*#0##`, updating its mode and subordinate zones upon answer.
+1. **Startup Hydration & Polling**: On restart, the central unit entity is restored from its previous state (`async_restore_last_state()`) and sends its canonical status request (`*#4*#0##` for `#0`, `*#4*#0#N##` for `#0#N`), updating its mode (and, for `#0`, subordinate zones) upon answer.
 2. **Outbound Mode Commands**: When commanded from Home Assistant, the central unit receives canonical seasonal mode commands (`OWNHeatingCommand.set_central_mode`):
 
-    - `*4*303*#0##` (Central unit OFF command)
-    - `*4*1*#0##` (Heating season command)
-    - `*4*0*#0##` (Conditioning season command)
-    - `*4*3100*#0##` (Auto / restore scheduled programming command)
-    - `*#4*#0*#14*<temp>*<mode>##` (Target temperature setpoint command)
+    - `*4*303*#0##` / `*4*303*#0#N##` (Central unit OFF command)
+    - `*4*1*#0##` / `*4*1*#0#N##` (Heating season command)
+    - `*4*0*#0##` / `*4*0*#0#N##` (Conditioning season command)
+    - `*4*3100*#0##` / `*4*3100*#0#N##` (Auto / restore scheduled programming command)
+    - `*#4*#0*#14*<temp>*3##` / `*#4*#0#N*#14*<temp>*3##` (Target temperature setpoint command, `5.0..40.0 °C` on `#0` and `5.0..35.0 °C` on `#0#N`)
 
-    *(Note: Home Assistant's mode switch on `#0` does not send `WHAT = 103` or `102` — Heating OFF and Antifreeze protection — it sends the frames listed above; they reach it as status reports from thermostats/central units on the bus.)*
+    *(Note: Home Assistant's mode switch on `#0` / `#0#N` does not send `WHAT = 103` or `102` — Heating OFF and Antifreeze protection — it sends the frames listed above; they reach it as status reports from thermostats/central units on the bus.)*
 3. **Inbound Operating Mode & Status Broadcasts**: The physical central unit broadcasts events across the bus whenever its state changes:
 
     - Operating mode status: `*4*110*#0##` (Manual Heating status), `*4*210*#0##` (Manual Cooling / Conditioning status), `*4*311*#0##` (Programmed/automatic generic status; mapped to `HVACMode.AUTO` in Home Assistant), `*4*303*#0##` / `*4*103*#0##` (OFF status), `*4*202*#0##` (thermal protection status, conditioning season), `*4*102*#0##` (antifreeze status, heating season). Thermal protection and antifreeze are not OFF: the central unit keeps its season and holds the protection setpoint, so the entity shows `cool` / `heat` with the attribute `central_operation` (`thermal_protection` / `antifreeze`). A `3550` answers a season frame with that season's protection and stays there, or answers nothing when it is already in that season, in protection or off; that is why `heat` / `cool` on `#0` follow the season frame with `*4*3100*#0##` when the central unit has reported protection, off or the other season (live F461 + F455, 2026-11-18).
     - Target temperature setpoints: `*4*110#<temp>*#0##` (Heating setpoint), `*4*210#<temp>*#0##` (Cooling setpoint).
     - Remote control / local adjustments: `*4*20*#0##`, `*4*21*#0##`, `*4*40*#0##`.
     - Programs & scenarios: `*4*1101*#0##` .. `*4*1103*#0##` (Weekly heating programs 1..3), `*4*1201*#0##` .. `*4*1216*#0##` (Scenarios 1..16).
-4. **Canonical Status Polling**: Central unit `#0` is queried with plain status request `*#4*#0##`, avoiding the rejected Dimension 14 query (`*#4*#0*14##`) while ensuring the central unit's initial state is populated at startup.
-5. **Subordinate Coordination**: When the central unit changes seasonal mode (either via command or inbound broadcast event), it dispatches an internal event (`myhome_central_mode_<mac>`) so non-standalone subordinate zones synchronize their operating mode immediately.
+4. **Canonical Status Polling**: Central units are queried with plain status requests (`*#4*#0##` for `#0`, `*#4*#0#N##` for `#0#N`), avoiding the rejected Dimension 14 query (`*#4*#0*14##`) while ensuring initial state is populated at startup.
+5. **Subordinate Coordination (`#0` only)**: When a 99-zone central unit (`#0`) changes seasonal mode (either via command or inbound broadcast event), it dispatches an internal event (`myhome_central_mode_<mac>`) so non-standalone subordinate zones synchronize their operating mode immediately. A 4-zone central unit (`#0#N`) never dispatches `myhome_central_mode_<mac>`: its subordinate zones (`N+1..N+3`) follow their own direct bus reports.
 6. **Bus Discovery Isolation**: All broadcast frames emitted by a 3550 central unit carry address `#0`. They never resolve to or invent phantom zone `99` (commercial name *"Centrale termoregolazione 99 zone"*). If an installation physically includes a Zone 99 thermostat, on-wire frames directed to zone 99 (`*4*...*99##`) will discover and manage it normally.
 
 *(#582, #629)*
