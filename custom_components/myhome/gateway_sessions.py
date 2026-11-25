@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from OWNd.connection import OWNCommandSession, OWNEventSession, OWNGateway
-from OWNd.exceptions import OWNAuthError
+from OWNd.exceptions import OWNAuthError, OWNProtocolError
 from OWNd.message import OWNCommand, OWNGatewayEvent, OWNMessage
 
 from .actuator_lock import actuator_locks_of
@@ -87,6 +87,11 @@ _PRE_WIRE_SEND_REASONS: frozenset[str] = frozenset(
 )
 
 _POOL_TERMINATED = "pool_terminated"
+# Pool-level cooldown after a fatal ``negotiation_error`` (matching OWNd's
+# RECONNECT_PAUSE_FATAL / SEND_AUTH_COOLDOWN = 60 s): prevents every queued
+# command in sending_loop() from opening a fresh TCP + password handshake while
+# avoiding a false HA reauth or permanently killing the command worker.
+NEGOTIATION_ERROR_COOLDOWN: float = 60.0
 
 
 class _PoolTerminated(Exception):
@@ -102,7 +107,7 @@ class _PooledCommandSession(OWNCommandSession):
         self._pool = pool
 
     async def connect(self, *, raise_on_error: bool = False) -> dict[str, Any] | None:
-        """Skip opening a TCP socket once the pool is shutting down or auth-refused."""
+        """Skip opening a TCP socket once the pool is shutting down, auth-refused, or cooling down."""
         if self._pool._terminate_sender:
             return {"Success": False, "Message": _POOL_TERMINATED}
         if self._pool._auth_refused:
@@ -112,12 +117,51 @@ class _PooledCommandSession(OWNCommandSession):
             if raise_on_error:
                 raise err
             return {"Success": False, "Message": reason}
+        if self._pool._negotiation_error_until > time.monotonic():
+            if self._pool._negotiation_error_target == self._login_target():
+                proto_err = OWNProtocolError(
+                    "OpenWebNet negotiation protocol error (negotiation_error)",
+                    reason="negotiation_error",
+                )
+                self._last_error = proto_err
+                if raise_on_error:
+                    raise proto_err
+                return {"Success": False, "Message": "negotiation_error"}
+            self._pool._negotiation_error_until = 0.0
+            self._pool._negotiation_error_target = None
+
+        connect_task: asyncio.Task[dict[str, Any] | None] = asyncio.create_task(
+            super().connect(raise_on_error=raise_on_error)
+        )
+        stop_task: asyncio.Task[bool] = asyncio.create_task(
+            self._pool._sender_stop.wait()
+        )
         try:
-            return await super().connect(raise_on_error=raise_on_error)
-        except _PoolTerminated:
-            with contextlib.suppress(Exception):
-                await self._close_streams()
+            wait_tasks: set[asyncio.Task[Any]] = {connect_task, stop_task}
+            done, _ = await asyncio.wait(
+                wait_tasks,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if connect_task in done and not self._pool._terminated_meanwhile():
+                return connect_task.result()
+            if connect_task in done:
+                with contextlib.suppress(Exception):
+                    connect_task.result()
             return {"Success": False, "Message": _POOL_TERMINATED}
+        finally:
+            if not stop_task.done():
+                stop_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await stop_task
+            if not connect_task.done():
+                connect_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await connect_task
+                with contextlib.suppress(Exception):
+                    await self._close_streams()
+            elif self._pool._terminated_meanwhile():
+                with contextlib.suppress(Exception):
+                    await self._close_streams()
 
     async def _negotiate(self) -> dict[str, Any]:
         """Serialize session negotiation across the pool and abort once auth is refused."""
@@ -127,11 +171,25 @@ class _PooledCommandSession(OWNCommandSession):
             if self._pool._auth_refused:
                 reason = self._pool._auth_refused_reason or "password_error"
                 return {"Success": False, "Message": reason}
+            target = self._login_target()
+            if (
+                self._pool._negotiation_error_until > time.monotonic()
+                and self._pool._negotiation_error_target == target
+            ):
+                return {"Success": False, "Message": "negotiation_error"}
             result: dict[str, Any] = await super()._negotiate()
             msg = result.get("Message")
-            if not result.get("Success") and isinstance(msg, str) and msg in AUTH_REFUSALS:
+            if result.get("Success"):
+                self._pool._negotiation_error_until = 0.0
+                self._pool._negotiation_error_target = None
+            elif isinstance(msg, str) and msg in AUTH_REFUSALS:
                 self._pool._auth_refused_reason = msg
                 self._pool.handler._on_auth_refused(msg, "command")
+            elif msg == "negotiation_error":
+                self._pool._negotiation_error_until = (
+                    time.monotonic() + NEGOTIATION_ERROR_COOLDOWN
+                )
+                self._pool._negotiation_error_target = target
             return result
 
 
@@ -1480,6 +1538,9 @@ class CommandWorkerPool:
         # Set once the gateway refused the password: nothing is queued any more.
         self._auth_refused: bool = False
         self._auth_refused_reason: str | None = None
+        # Pool-level cooldown after a fatal ``negotiation_error`` (60 s per login target).
+        self._negotiation_error_until: float = 0.0
+        self._negotiation_error_target: tuple[object, object, object] | None = None
         # Serializes command-session handshakes across workers so a changed password
         # is never presented by 2–4 workers concurrently (avoiding the 3-in-60s HMAC
         # gateway lockout, OpenWebNet Encyclopedia `protocol/authentication.md`).
@@ -2066,6 +2127,10 @@ class CommandWorkerPool:
     def _refused_meanwhile(self) -> bool:
         """The refusal flag, read again after an await (it can be set while ``put()`` is suspended)."""
         return self._auth_refused
+
+    def _terminated_meanwhile(self) -> bool:
+        """The shutdown flag, read again after an await (it can be set while ``connect()`` is suspended)."""
+        return self._terminate_sender
 
     def stop_after_auth_refusal(self) -> None:
         """Stop every worker and refuse new frames: the gateway refused the password."""

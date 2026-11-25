@@ -381,7 +381,7 @@ class MyHOMEScopeCover(MyHOMECover):
                     member._follow_scope_stop(written)
             not_before = max(at, queued_at) if at is not None else queued_at
             for leader, leader_gen in tilting_leaders:
-                if leader._is_tilting and leader_gen == leader._run_generation:
+                if leader_gen == leader._run_generation:
                     if isinstance(written, asyncio.Future) and not written.done():
                         leader._pulse_stop_written = written
                     leader._settle_pulse_on_write(written, leader_gen, not_before)

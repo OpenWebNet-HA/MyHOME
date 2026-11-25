@@ -703,6 +703,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._learned_stop_before_move: bool = False
         self._relay_hold_until: float | None = None
         self._relay_hold_opening: bool | None = None
+        self._relay_hold_cleared: bool = False
         self._last_stop_generation: int = 0
         self._slat_tilt = bool(slat_tilt)
         raw_slat_time = _clamp_slat_time(slat_time)
@@ -1153,9 +1154,12 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._relay_hold_until = deadline
         if opening is not None:
             self._relay_hold_opening = opening
+        self._relay_hold_cleared = False
 
     def _clear_relay_hold(self) -> None:
         """Clear the relay-hold window once a non-translation stop proves the relay opened."""
+        if self._relay_hold_until is not None:
+            self._relay_hold_cleared = True
         self._relay_hold_until = None
         self._relay_hold_opening = None
 
@@ -1289,6 +1293,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         @callback
         def _on_written(fut: asyncio.Future) -> None:  # type: ignore
             if generation != self._run_generation:
+                _consume_write_exception(fut)
                 return
             if fut.cancelled() or fut.exception() is not None:
                 # The frame never reached the bus: abort motion if this was an open/close
@@ -2082,7 +2087,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         ):
             if last_state.state in (STATE_OPENING, STATE_CLOSING):
                 self._arm_relay_hold(time.monotonic(), opening=last_state.state == STATE_OPENING)
-            else:
+            elif "relay_hold_until" in record:
                 raw_hold_until = record.get("relay_hold_until")
                 if (
                     isinstance(raw_hold_until, str)
@@ -2101,6 +2106,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                             raw_hold_dir = record.get("relay_hold_direction")
                             if raw_hold_dir in ("open", "close"):
                                 self._relay_hold_opening = raw_hold_dir == "open"
+            else:
                 raw_ts = last_state.attributes.get("motion_started_at")
                 raw_dir: Any = None
                 if not raw_ts:
@@ -2153,13 +2159,18 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 data["motion_started_at"] = self._motion_started_at
                 if self.is_opening or self.is_closing:
                     data["motion_direction"] = "open" if self.is_opening else "close"
-            if self._relay_hold_until is not None:
-                remaining = self._relay_hold_until - time.monotonic()
-                if remaining > 0.0:
-                    hold_until = dt_util.utcnow() + timedelta(seconds=remaining)
-                    data["relay_hold_until"] = hold_until.isoformat(timespec="milliseconds")
-                    if self._relay_hold_opening is not None:
-                        data["relay_hold_direction"] = "open" if self._relay_hold_opening else "close"
+            hold_remaining = (
+                self._relay_hold_until - time.monotonic()
+                if self._relay_hold_until is not None
+                else 0.0
+            )
+            if hold_remaining > 0.0:
+                hold_until = dt_util.utcnow() + timedelta(seconds=hold_remaining)
+                data["relay_hold_until"] = hold_until.isoformat(timespec="milliseconds")
+                if self._relay_hold_opening is not None:
+                    data["relay_hold_direction"] = "open" if self._relay_hold_opening else "close"
+            elif self._relay_hold_cleared and (self._last_run or self._motion_started_at):
+                data["relay_hold_until"] = None
         if self._last_run:
             data["last_run"] = dict(self._last_run)
         if self._actuator_locked is not None and self.scope is None:

@@ -475,6 +475,58 @@ async def test_item5_dim10_stopped_level_during_stop_send_yield_point_and_scope(
     assert blind3.current_cover_tilt_position == 50  # NOT snapped to 100%!
     assert blind3._pulse_stop_inflight_gen is None
 
+    # 3a. Same scope-stop race with an UNRESOLVED delivery Future (real CommandWorkerPool behavior):
+    #     blind3 still binds _pulse_stop_written = fut while in flight and consumes late Future errors
+    #     even if area3's _run_generation advances before fut fails!
+    loop = asyncio.get_running_loop()
+    loop_errors: list[dict[str, Any]] = []
+    orig_handler = loop.get_exception_handler()
+    loop.set_exception_handler(lambda _l, ctx: loop_errors.append(ctx))
+    try:
+        gw3u = _make_gateway(model="MyHomeServer1", immediate_write=False, clock=clock)
+        blind3u = _make_cover(
+            hass,
+            gw3u,
+            "34",
+            advanced=True,
+            slat_tilt=True,
+            slat_time=0.8,
+            model="K4672M2S",
+            pos=0,
+            tilt=0,
+        )
+        area3u = _make_scope_cover(hass, gw3u, "3", [blind3u], slat_tilt=True, slat_time=0.8)
+        blind3u._is_tilting = True
+        blind3u._tilt_direction = "open"
+        blind3u._tilt_initial_position = 0
+        blind3u._tilt_start_time = clock.now - 0.4
+        pending_stop_futs: list[asyncio.Future[float]] = []
+
+        async def _send_scope_unresolved(cmd: object, **kw: Any) -> asyncio.Future[float]:
+            raw = str(cmd)
+            fut: asyncio.Future[float] = loop.create_future()
+            gw3u.sent.append((raw, fut))
+            if raw == "*2*0*3##":
+                pending_stop_futs.append(fut)
+                blind3u.handle_event(OWNMessage.parse("*#2*34*10*10*1*001*0##"))
+            return fut
+
+        gw3u.send = AsyncMock(side_effect=_send_scope_unresolved)
+        await area3u.async_stop_cover()
+        assert not blind3u._is_tilting
+        assert blind3u.current_cover_tilt_position == 50
+        assert len(pending_stop_futs) == 1
+        assert blind3u._pulse_stop_written is pending_stop_futs[0]
+        # Advance area3u's generation and fail the stop future: both _track_write and _settle must consume it.
+        area3u._run_generation += 1
+        pending_stop_futs[0].set_exception(RuntimeError("scope stop nack"))
+        pending_stop_futs.clear()
+        await _yield_loop()
+        assert blind3u._pulse_stop_written is None
+        assert loop_errors == []
+    finally:
+        loop.set_exception_handler(orig_handler)
+
     # 3b. Scope cover stop raising mid-send cleans up BOTH follower_gens and tilting_leaders._pulse_stop_inflight_gen!
     release3b = asyncio.Event()
 
@@ -736,6 +788,49 @@ async def test_item15_relay_hold_restore_gating_dim10_clear_and_settle_persisten
     )
     await restored_past.async_restore_last_state(State("cover.cover_44", "open", {ATTR_CURRENT_POSITION: 100}))
     assert restored_past._relay_hold_until is None
+
+    # 3d. Post-interlock 0.6 s settle WITH recent last_run_ended_at must NOT be clobbered to 65 s directional hold!
+    cov_interlock = _make_cover(hass, gw, "45", travel_time=25, pos=100)
+    cov_interlock.handle_event(OWNEvent.parse("*2*2*45##"))
+    clock.now += 5.0
+    cov_interlock.handle_event(OWNEvent.parse("*2*1*4##"))  # trips interlock -> 0.6 s hold, dir=None, last_run=close
+    assert cov_interlock.is_closing is False
+    assert cov_interlock._relay_hold_opening is None
+    assert cov_interlock._last_run["direction"] == "close"
+    interlock_extra = cov_interlock.extra_restore_state_data
+    assert interlock_extra is not None
+    interlock_attrs = dict(cov_interlock.extra_state_attributes, current_position=cov_interlock.current_cover_position)
+    restored_interlock = _make_cover(hass, gw, "45", travel_time=25, pos=None)
+    restored_interlock.async_get_last_extra_data = AsyncMock(return_value=interlock_extra)
+    await restored_interlock.async_restore_last_state(State("cover.cover_45", "open", interlock_attrs))
+    assert restored_interlock._relay_hold_until is not None
+    assert restored_interlock._relay_hold_until - clock.now == pytest.approx(PRE_MOVE_STOP_SETTLE_DELAY, abs=0.2)
+    assert restored_interlock._relay_hold_opening is None
+    # Once the 0.6 s settle elapses, a wall-switch Area 4 OPEN starts opening instead of being dropped.
+    clock.now += PRE_MOVE_STOP_SETTLE_DELAY + 0.1
+    restored_interlock.handle_event(OWNEvent.parse("*2*1*4##"))
+    assert restored_interlock.is_opening is True
+    restored_interlock._cancel_stop_task()
+    restored_interlock._cancel_wall_settle()
+    restored_interlock._stop_live_refresh()
+
+    # 3e. Explicit *2*0*W## stop clears _relay_hold_until=None while keeping recent last_run_ended_at:
+    #     export records relay_hold_until=None so restart does NOT resurrect a 65 s hold.
+    cov_stopped = _make_cover(hass, gw, "46", travel_time=25, pos=100)
+    cov_stopped.handle_event(OWNEvent.parse("*2*2*46##"))
+    clock.now += 5.0
+    cov_stopped.handle_event(OWNEvent.parse("*2*0*46##"))
+    assert cov_stopped._relay_hold_until is None
+    assert cov_stopped._last_run["direction"] == "close"
+    stopped_extra = cov_stopped.extra_restore_state_data
+    assert stopped_extra is not None
+    assert stopped_extra.as_dict()["relay_hold_until"] is None
+    stopped_attrs = dict(cov_stopped.extra_state_attributes, current_position=cov_stopped.current_cover_position)
+    restored_stopped = _make_cover(hass, gw, "46", travel_time=25, pos=None)
+    restored_stopped.async_get_last_extra_data = AsyncMock(return_value=stopped_extra)
+    await restored_stopped.async_restore_last_state(State("cover.cover_46", "open", stopped_attrs))
+    assert restored_stopped._relay_hold_until is None
+    assert restored_stopped._stops_before_move(False) is False
 
 
 # ── Item 16 (cover.py): is_native_point_cover checks gateway_mac & entry_mac ─

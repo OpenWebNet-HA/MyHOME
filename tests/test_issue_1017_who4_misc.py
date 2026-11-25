@@ -201,6 +201,36 @@ async def test_who4_yaml_leading_zero_sensor_routes_live_local_and_f422_frames(
     assert routed_opt_sensor.native_value == 18.2
     assert len(added) == 3
 
+    # Active fallback polls use canonical unpadded zone WHEREs (*#4*2*0##, *#4*2#4#01*0##, *#4*3#4#02*0##)
+    # while leaving probes (105) and 3-digit selectors (002) untouched.
+    assert str(local_sensor._fallback_read()) == "*#4*2*0##"
+    assert str(routed_inline_sensor._fallback_read()) == "*#4*2#4#01*0##"
+    assert str(routed_opt_sensor._fallback_read()) == "*#4*3#4#02*0##"
+    probe_sensor = MyHOMETemperatureSensor(
+        hass=hass,
+        device_id="4-105",
+        who="4",
+        where="105",
+        name="Probe 105",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        manufacturer="BTicino",
+        model="Temperature Probe",
+        gateway=_gateway,
+    )
+    assert str(probe_sensor._fallback_read()) == "*#4*105*0##"
+    selector_sensor = MyHOMETemperatureSensor(
+        hass=hass,
+        device_id="4-002",
+        who="4",
+        where="002",
+        name="Selector 002",
+        device_class=SensorDeviceClass.TEMPERATURE,
+        manufacturer="BTicino",
+        model="Temperature Probe",
+        gateway=_gateway,
+    )
+    assert str(selector_sensor._fallback_read()) == "*#4*002*0##"
+
 
 # ── Item 12 (#972/#983): temperature_bus_address foreign '#' and out-of-range interface guard ──
 

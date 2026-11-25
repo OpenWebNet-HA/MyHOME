@@ -2191,7 +2191,11 @@ class MyHOMETemperatureSensor(MyHOMESensorEntity):
             build = getattr(OWNHeatingCommand, "get_probe_temperature", None)  # absent in old OWNd
             if build is not None:
                 return cast(OWNHeatingCommand, build(self._where))
-        return OWNHeatingCommand.get_temperature(self._where)
+        where = str(self._where)
+        base, sep, rest = where.partition("#")
+        if base.isascii() and base.isdigit() and len(base) <= 2 and 1 <= int(base) <= 99:
+            where = f"{int(base)}{sep}{rest}"
+        return OWNHeatingCommand.get_temperature(where)
 
     def _push_is_fresh(self) -> bool:
         """Return True when a reading arrived within the last poll interval (a probe: ``PROBE_PUSH_FRESH``)."""

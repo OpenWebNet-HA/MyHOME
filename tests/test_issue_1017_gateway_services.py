@@ -39,6 +39,7 @@ from custom_components.myhome.gateway import (
 from custom_components.myhome.gateway_sessions import (
     _POOL_TERMINATED,
     AUTH_REFUSALS,
+    NEGOTIATION_ERROR_COOLDOWN,
     CommandWorkerPool,
     _PooledCommandSession,
 )
@@ -296,6 +297,150 @@ async def test_negotiation_error_is_protocol_error_and_does_not_trigger_reauth(
     pool = CommandWorkerPool(handler)
     assert pool._connect_refused({"Success": False, "Message": "negotiation_error"}, 0) is False
     handler._on_auth_refused.assert_not_called()
+
+
+async def test_pool_close_aborts_offline_connect_retry_backoff_immediately(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
+    """pool.close() cancels an offline/unreachable connect() retry backoff immediately without CancelledError."""
+    caplog.set_level(logging.ERROR)
+    entry = _make_entry(hass, mac="00:03:50:10:17:28", port=1)
+    handler = MyHOMEGatewayHandler(hass, entry, generate_events=False, broadcast_resync=False)
+    pool = handler._command_pool
+    handler._event_session_ready.set()
+
+    entered_sleep = asyncio.Event()
+    real_sleep = asyncio.sleep
+
+    async def _slow_backoff(delay: float, *_args: Any, **_kwargs: Any) -> None:
+        entered_sleep.set()
+        await real_sleep(60.0)
+
+    with (
+        patch("asyncio.open_connection", side_effect=ConnectionRefusedError("offline")),
+        patch("OWNd.connection.session.asyncio.sleep", side_effect=_slow_backoff),
+    ):
+        worker = asyncio.create_task(handler.sending_loop(0))
+        try:
+            await asyncio.wait_for(entered_sleep.wait(), timeout=2.0)
+            pool.close()
+            # Must exit immediately rather than sleeping through OWNd's 5-attempt ~13 s backoff.
+            await asyncio.wait_for(worker, timeout=1.5)
+        finally:
+            if not worker.done():
+                worker.cancel()
+                await asyncio.gather(worker, return_exceptions=True)
+
+    assert not worker.cancelled()
+    assert "prevent gateway lockout" not in caplog.text
+
+
+async def test_pooled_session_connect_handles_direct_terminate_in_negotiate(
+    hass: HomeAssistant,
+) -> None:
+    """Direct _terminate_sender=True inside _negotiate() (without _sender_stop) returns _POOL_TERMINATED cleanly."""
+    entry = _make_entry(hass, mac="00:03:50:10:17:29")
+    handler = MyHOMEGatewayHandler(hass, entry, generate_events=False, broadcast_resync=False)
+    pool = handler._command_pool
+    session = _PooledCommandSession(pool, gateway=handler.gateway)
+
+    async def _fake_open(_host: Any, _port: Any) -> tuple[MagicMock, MagicMock]:
+        pool._terminate_sender = True
+        writer = MagicMock()
+        writer.get_extra_info.return_value = None
+        writer.is_closing.return_value = False
+        writer.close = MagicMock()
+        writer.wait_closed = AsyncMock()
+        return MagicMock(), writer
+
+    with patch("asyncio.open_connection", side_effect=_fake_open):
+        res = await session.connect()
+    assert res == {"Success": False, "Message": _POOL_TERMINATED}
+
+
+async def test_negotiation_error_applies_pool_cooldown_and_recovers(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Persistent negotiation_error throttles retries for 60 s per login target without reauth or killing workers."""
+    now = 1000.0
+    monkeypatch.setattr("custom_components.myhome.gateway_sessions.time.monotonic", lambda: now)
+
+    entry = _make_entry(hass, mac="00:03:50:10:17:30")
+    handler = MyHOMEGatewayHandler(hass, entry, generate_events=False, broadcast_resync=False)
+    handler._on_auth_refused = MagicMock()  # type: ignore[method-assign]
+    pool = handler._command_pool
+    session_a = _PooledCommandSession(pool, gateway=handler.gateway)
+    session_b = _PooledCommandSession(pool, gateway=handler.gateway)
+
+    # 1. _negotiate() receiving negotiation_error arms pool cooldown without triggering reauth.
+    with patch(
+        "OWNd.connection.command_session.OWNCommandSession._negotiate",
+        AsyncMock(return_value={"Success": False, "Message": "negotiation_error"}),
+    ) as super_neg:
+        res1 = await session_a._negotiate()
+        assert res1 == {"Success": False, "Message": "negotiation_error"}
+        assert super_neg.await_count == 1
+        assert pool._negotiation_error_until == pytest.approx(now + NEGOTIATION_ERROR_COOLDOWN)
+        assert pool._negotiation_error_target == session_a._login_target()
+        handler._on_auth_refused.assert_not_called()
+
+        # 2. A concurrent worker entering _negotiate() while cooldown is active short-circuits immediately.
+        res2 = await session_b._negotiate()
+        assert res2 == {"Success": False, "Message": "negotiation_error"}
+        assert super_neg.await_count == 1
+
+    # 3. connect() during cooldown skips opening a TCP socket (both raise_on_error False and True).
+    with patch("asyncio.open_connection", side_effect=AssertionError("must not open socket during cooldown")):
+        res_c = await session_a.connect(raise_on_error=False)
+        assert res_c == {"Success": False, "Message": "negotiation_error"}
+        assert isinstance(session_a.last_error, OWNProtocolError)
+        assert session_a.last_error.reason == "negotiation_error"
+        with pytest.raises(OWNProtocolError) as exc_info:
+            await session_a.connect(raise_on_error=True)
+        assert exc_info.value.reason == "negotiation_error"
+
+    # 4. End-to-end sending_loop(): queued frames cancel pre-wire without opening sockets or killing worker.
+    handler._event_session_ready.set()
+    with patch("asyncio.open_connection", side_effect=AssertionError("cooldown must block TCP connect")):
+        worker = asyncio.create_task(handler.sending_loop(0))
+        try:
+            f1 = await handler.send(OWNCommand.parse("*1*1*21##"))
+            f2 = await handler.send(OWNCommand.parse("*1*1*22##"))
+            await asyncio.wait({f1, f2}, timeout=2.0)
+            assert f1.cancelled() and getattr(f1, "_not_written", False) is True
+            assert f2.cancelled() and getattr(f2, "_not_written", False) is True
+            # Worker stays alive (not killed by _connect_refused).
+            assert not worker.done()
+        finally:
+            pool.close()
+            await asyncio.wait_for(worker, timeout=2.0)
+
+    # Reset pool termination flags to verify target change and expiry recovery.
+    pool._terminate_sender = False
+    pool._sender_stop.clear()
+
+    # 5. Changing login target (e.g. password updated) clears cooldown immediately.
+    handler.gateway.password = "updated-pass"
+    with patch(
+        "OWNd.connection.command_session.OWNCommandSession.connect",
+        AsyncMock(return_value={"Success": True}),
+    ) as super_conn:
+        assert await session_a.connect() == {"Success": True}
+        assert super_conn.await_count == 1
+        assert pool._negotiation_error_until == 0.0
+        assert pool._negotiation_error_target is None
+
+    # 6. After cooldown expires, a successful _negotiate() clears the cooldown state cleanly.
+    pool._negotiation_error_until = now + NEGOTIATION_ERROR_COOLDOWN
+    pool._negotiation_error_target = session_a._login_target()
+    now += NEGOTIATION_ERROR_COOLDOWN + 1.0
+    with patch(
+        "OWNd.connection.command_session.OWNCommandSession._negotiate",
+        AsyncMock(return_value={"Success": True}),
+    ):
+        assert await session_a._negotiate() == {"Success": True}
+        assert pool._negotiation_error_until == 0.0
+        assert pool._negotiation_error_target is None
 
 
 # ── Item 13 (#1011): pre-wire not_written=True inside send() ──
