@@ -2603,3 +2603,135 @@ async def test_review_6054026044_four_zone_hardening(hass: HomeAssistant) -> Non
     assert is_central_unit_report(OWNHeatingEvent("*4*110#0160*#0#100##")) is False
     assert is_central_unit_report(OWNHeatingEvent("*4*110*#3#0##")) is False
     assert central_report_zone(OWNHeatingEvent("*4*110*#3#0##")) is None
+
+
+async def test_review_6054026044_coverage_edges(hass: HomeAssistant) -> None:
+    """Cover edge branches added for PR #1000 review 6054026044 (100 % line coverage)."""
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from homeassistant.core import State
+    from homeassistant.helpers import area_registry as ar
+    from homeassistant.helpers import device_registry as dr
+
+    from custom_components.myhome.ignored import IgnoredAddresses
+    from custom_components.myhome.myhome_device import MyHOMEEntity
+    from custom_components.myhome.sensor import MyHOMEClimateTemperatureSensor
+    from tests.test_climate_mode_state_2026_11_08 import _climate
+
+    # 1. climate.py:1178 (daily_holiday restore) & 1343 / 1353 (_master_zone_polling_blocked)
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": "00:03:50:aa:bb:cc", "host": "127.0.0.1"})
+    entry.add_to_hass(hass)
+    gw = _gateway(has_central_unit=False)
+    gw.mac = "00:03:50:aa:bb:cc"
+    gw.config_entry = entry
+    gw.device_registry_id = None
+    cu = _climate(gw, "#0#1", standalone=None, central=True)
+    cu.hass = hass
+    await cu.async_restore_last_state(
+        State("climate.central_unit_01", "auto", {"daily_holiday": True, "season": "heating"})
+    )
+    assert cu._daily_holiday is True
+    gw.ignored_addresses = IgnoredAddresses(["4/1"])
+    assert cu._master_zone_polling_blocked("1") is True
+    gw.ignored_addresses = IgnoredAddresses([])
+    with patch("custom_components.myhome.climate.is_exposed_on_bus", return_value=True):
+        assert cu._master_zone_polling_blocked("1") is True
+
+    # 2. climate.py:4986 (plain-zone WHAT#PARAM ignored on unified #0#1)
+    cu.handle_event(OWNHeatingEvent("*4*103*#0#1##"))
+    cu.handle_event(OWNHeatingEvent("*4*110#0200*1##"))
+    assert cu.hvac_mode == HVACMode.OFF
+
+    # 3. climate.py:2445, 2843, 3047, 3071 (interface mismatch guards on zone helpers)
+    z1 = _climate(gw, "1", standalone=None, central=False)
+    z1._cooling = False
+    z1._cooling_configured = False
+    z1._note_own_state(OWNHeatingEvent("*4*303*1#4#01##"))
+    assert z1._own_off is None
+    z1._note_own_season(OWNHeatingEvent("*4*0*1#4#01##"))
+    assert z1._own_season is None
+    z1._note_conditioning_report(OWNHeatingEvent("*4*0*1#4#01##"))
+    z1._note_conditioning_side(OWNHeatingEvent("*#4*1#4#01*19*5*1##"))
+    assert z1._cooling is False
+
+    # 4. climate.py:1975-1976 & 2026-2031 (mid-async_added_to_hass superseding & zombie state)
+    z_sup = _climate(gw, "1", standalone=None, central=False)
+    z_sup.hass = hass
+    z_sup.entity_id = "climate.climate_zone_1_superseded"
+    hass.states.async_set(z_sup.entity_id, "heat")
+
+    async def _supersede_mid_add(self_ent: MyHOMEEntity) -> None:
+        z_sup._superseded_by_central = True
+
+    with patch.object(MyHOMEEntity, "async_added_to_hass", autospec=True, side_effect=_supersede_mid_add):
+        await z_sup.async_added_to_hass()
+    await hass.async_block_till_done()
+    assert hass.states.get(z_sup.entity_id) is None
+
+    # 5. sensor.py:2727 & 2757-2762 (companion sensor mid-async_added_to_hass superseding & zombie state)
+    comp = MyHOMEClimateTemperatureSensor(
+        hass=hass,
+        name="Climate Zone 1",
+        device_id="4-1",
+        zone="1",
+        interface=None,
+        manufacturer="BTicino",
+        model="Thermostat",
+        gateway=gw,
+    )
+    comp.hass = hass
+    comp.entity_id = "sensor.climate_zone_1_temp_superseded"
+    hass.states.async_set(comp.entity_id, "21.0")
+
+    async def _supersede_sensor_mid_add(self_ent: MyHOMEEntity) -> None:
+        comp._superseded_by_central = True
+
+    with patch.object(MyHOMEEntity, "async_added_to_hass", autospec=True, side_effect=_supersede_sensor_mid_add):
+        await comp.async_added_to_hass()
+    await hass.async_block_till_done()
+    assert hass.states.get(comp.entity_id) is None
+
+    # 6. climate_discovery.py:630, 665, 671 (_rehome_master_output_sensors edge cases)
+    area = ar.async_get(hass).async_create("Utility")
+    dev_reg = dr.async_get(hass)
+    ent_reg = er.async_get(hass)
+    src_dev = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, f"{gw.mac}-4-1")},
+        name="Climate Zone 1",
+    )
+    dev_reg.async_update_device(src_dev.id, area_id=area.id, name_by_user="Boiler Room")
+    # Non-matching -output-level suffix hits line 630
+    ent_reg.async_get_or_create(
+        "sensor", DOMAIN, f"{gw.mac}-4-bad-output-level", config_entry=entry, device_id=src_dev.id
+    )
+    # Matching output-level sensor on src_dev triggers handover (line 665)
+    out_ent = ent_reg.async_get_or_create(
+        "sensor", DOMAIN, f"{gw.mac}-4-1#1-output-level", config_entry=entry, device_id=src_dev.id
+    )
+    runtime = SimpleNamespace(
+        gateway=gw,
+        mac=gw.mac,
+        platforms={"climate": {}, "sensor": {}},
+        entities={"climate": {}, "sensor": {}},
+    )
+    disc = ZoneDiscovery(hass, entry, runtime, lambda _ctx, _cfg: cu)
+    disc._rehome_master_output_sensors(
+        ent_reg, ("1", None), cu, source_device_id=src_dev.id, hand_over_settings=True
+    )
+    cu_dev = next(
+        (
+            d
+            for d in dr.async_entries_for_config_entry(dev_reg, entry.entry_id)
+            if (DOMAIN, f"{gw.mac}-4-#0#1") in d.identifiers
+        ),
+        None,
+    )
+    assert cu_dev is not None
+    assert cu_dev.area_id == area.id
+    assert cu_dev.name_by_user == "Boiler Room"
+    out_reg = ent_reg.async_get(out_ent.entity_id)
+    assert out_reg is not None and out_reg.device_id == cu_dev.id
+    # Second call with out_ent already on cu_dev hits src_dev_id == cu_device.id (line 671)
+    disc._rehome_master_output_sensors(ent_reg, ("1", None), cu)

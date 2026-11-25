@@ -4705,10 +4705,6 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._is_four_zone_central
                 and four_zone_central_where(message) is None
             ):
-                if is_central_thermo_where(message):
-                    # Central-addressed *4*0/1*#N## or #N#CU frames are never plain
-                    # master-zone probe season echoes and must never pair Dim 12 or seed #0#N.
-                    return
                 now = time.monotonic()
                 self._master_season_active_at = now
                 if (
@@ -4824,11 +4820,6 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._follow_season_change(previous_season)
         elif message.message_type == MESSAGE_TYPE_MODE:
             if self._is_four_zone_central and four_zone_central_where(message) is None:
-                # Central-addressed #N / #N#CU frames (F455 synthetic *4*311*#N##, 4695 C2
-                # *4*110*#N#CU##, 3550 *4*...*#N##) are never #0#N state and must never touch
-                # #0#N or clear its master Dim 12 pairing.
-                if is_central_thermo_where(message):
-                    return
                 # Plain master-zone mode frames (*4*303*N##, *4*102*N##, *4*202*N##) accompany
                 # #0#N reports: keep #0#N authoritative, clearing active-master Dim 12 pairing
                 # on OFF/protection, and only allowing legacy OWNd (< 2.0.0b11) plain season

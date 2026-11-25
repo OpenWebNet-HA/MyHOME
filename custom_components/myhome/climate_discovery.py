@@ -908,8 +908,6 @@ class ZoneDiscovery:
                 continue
             fixed_addr = canonical_central_zone(raw_addr)
             corrected = f"{prefix}{fixed_addr}"
-            if corrected == str(entry.unique_id):
-                continue
             if kept := registry.async_get_entity_id(entry.domain, entry.platform, corrected):
                 removed_device_id = entry.device_id
                 self._hand_over_device_settings(removed_device_id, getattr(registry.async_get(kept), "device_id", None))
