@@ -34,7 +34,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from homeassistant.components.climate import HVACMode
 from homeassistant.const import CONF_HOST, CONF_MAC, CONF_NAME, CONF_PASSWORD, CONF_PORT
-from homeassistant.core import State
+from homeassistant.core import State, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from OWNd.message import OWNCommand, OWNHeatingEvent, OWNMessage
 from OWNd.profiles import get_gateway_profile
@@ -432,6 +432,7 @@ async def test_worker_fifo_bleed_protects_poll_health_dispatches_foreign_zone_an
 
     dispatched_raw: list[str] = []
 
+    @callback
     def _on_dispatch(msg: OWNMessage) -> None:
         dispatched_raw.append(str(msg))
         if isinstance(msg, OWNHeatingEvent):
@@ -524,7 +525,7 @@ async def test_event_dispatcher_ignores_stray_ack_and_nack_without_unsupported_l
 
     dispatched: list[Any] = []
     unsub = async_dispatcher_connect(
-        hass, f"myhome_message_{SYNTHETIC_MAC}", lambda msg: dispatched.append(msg)
+        hass, f"myhome_message_{SYNTHETIC_MAC}", callback(lambda msg: dispatched.append(msg))
     )
     try:
         dispatcher = GatewayEventDispatcher(handler)

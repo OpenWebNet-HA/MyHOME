@@ -1704,7 +1704,7 @@ async def test_dali_combined_ct_brightness_f422_nack_poll_guard_and_coarse_quant
     unsub_pri = async_dispatcher_connect(
         hass,
         f"myhome_message_{pri_mac}",
-        lambda msg: pri_dali.handle_event(msg) if isinstance(msg, OWNEvent) else None,
+        callback(lambda msg: pri_dali.handle_event(msg) if isinstance(msg, OWNEvent) else None),
     )
     try:
         done_stb = hass.loop.create_future()
@@ -1721,6 +1721,7 @@ async def test_dali_combined_ct_brightness_f422_nack_poll_guard_and_coarse_quant
         assert stb_gw._echo_watchdog._watches == {}
     finally:
         unsub_pri()
+        stb_gw._echo_watchdog.cancel_all()
 
     # 9. Real physical F418/F418U2 dimmer after HA restart (RestoreEntity, not was_fine,
     #    was_coarse_preset is False) ALWAYS echoes stored hardware speed != 0 (e.g. *5 in

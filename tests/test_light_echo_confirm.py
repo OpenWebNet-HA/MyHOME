@@ -32,6 +32,7 @@ from homeassistant.const import (
     CONF_PASSWORD,
     CONF_PORT,
 )
+from homeassistant.core import callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.util import dt as dt_util
 from OWNd.message import OWNCommand, OWNMessage
@@ -480,7 +481,9 @@ async def test_worker_reads_back_an_acknowledged_command_and_dispatches_the_answ
     handler = MyHOMEGatewayHandler(hass, _entry(port))
     handler._event_session_ready.set()
     received: list[str] = []
-    unsub = async_dispatcher_connect(hass, f"myhome_message_{handler.mac}", lambda msg: received.append(str(msg)))
+    unsub = async_dispatcher_connect(
+        hass, f"myhome_message_{handler.mac}", callback(lambda msg: received.append(str(msg)))
+    )
     worker = asyncio.create_task(handler.sending_loop(0))
     try:
         written = await handler.send(OWNCommand.parse("*1*1*07##"))
@@ -537,7 +540,9 @@ async def test_the_read_back_is_the_same_on_every_gateway_model(hass, monkeypatc
     assert echo_watchdog_of(handler) is handler._echo_watchdog
     handler._event_session_ready.set()
     received: list[str] = []
-    unsub = async_dispatcher_connect(hass, f"myhome_message_{handler.mac}", lambda msg: received.append(str(msg)))
+    unsub = async_dispatcher_connect(
+        hass, f"myhome_message_{handler.mac}", callback(lambda msg: received.append(str(msg)))
+    )
     worker = asyncio.create_task(handler.sending_loop(0))
     try:
         await asyncio.wait_for(await handler.send(OWNCommand.parse("*1*1*05##")), 5)
@@ -832,7 +837,7 @@ async def test_warm_standby_dim14_bridges_to_primary_before_echo_watchdog_status
     unsub_pri = async_dispatcher_connect(
         hass,
         f"myhome_message_{pri_gw.mac}",
-        lambda msg: dali.handle_event(msg) if getattr(msg, "who", None) == 1 else None,
+        callback(lambda msg: dali.handle_event(msg) if getattr(msg, "who", None) == 1 else None),
     )
 
     worker = asyncio.create_task(stb_gw.sending_loop(0))
@@ -860,6 +865,7 @@ async def test_warm_standby_dim14_bridges_to_primary_before_echo_watchdog_status
         assert stb_gw._echo_watchdog.pending == {}
     finally:
         unsub_pri()
+        stb_gw._echo_watchdog.cancel_all()
         stb_gw._command_pool.close()
         worker.cancel()
         await asyncio.gather(worker, return_exceptions=True)
