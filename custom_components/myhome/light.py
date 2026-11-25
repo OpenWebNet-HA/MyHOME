@@ -1793,15 +1793,9 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             name=f"myhome_light_{self._where}_status_check",
         )
         if task.done():
-            # Started eagerly and failed before its first wait (the send queue is shut down): the
-            # check has settled itself and holds no slot; this level 0 cannot be verified.
-            if not task.cancelled() and task.exception() is not None:
-                LOGGER.debug(
-                    "%s light %s: status request not queued: %r",
-                    self._gateway_handler.log_id,
-                    self._full_where,
-                    task.exception(),
-                )
+            # Started eagerly and ended before its first wait (e.g. send queue shut down):
+            # clear pending so later checks are not blocked; this level 0 cannot be verified.
+            self._level_zero_pending = False
             return False
         self._level_zero_check_task = task
         return True
@@ -1859,6 +1853,13 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             if self._level_zero_check_task is asyncio.current_task():
                 self._level_zero_pending = False
             raise
+        except Exception as err:  # noqa: BLE001 - queue shutdown during unload (eager or after yield)
+            LOGGER.debug(
+                "%s light %s: status check aborted: %r",
+                self._gateway_handler.log_id,
+                self._full_where,
+                err,
+            )
         finally:
             # A check followed by a newer one leaves the light to that one.
             if self._level_zero_check_task is asyncio.current_task():

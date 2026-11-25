@@ -252,12 +252,13 @@ def test_firmware_oracle_and_gateway_pre_move_stop_matrix(hass: HomeAssistant) -
                 assert prod in COVER_PRE_MOVE_STOP_OMITTED
                 assert gateway_emits_cover_pre_move_stop(prod) is False
 
-    # Live-captured MH201, brand-prefixed aliases, unmeasured F455/Generic, and profile flag override
+    # Live-captured MH201 / F455, brand-prefixed aliases, unmeasured F452/Generic, and profile flag override
     assert gateway_emits_cover_pre_move_stop("MH201", profile=get_gateway_profile("MH201")) is False
     assert gateway_emits_cover_pre_move_stop("BTicino MH202") is False
     assert gateway_emits_cover_pre_move_stop("BTicino F461") is True
     assert gateway_emits_cover_pre_move_stop("BTicino 3488") is True
-    assert gateway_emits_cover_pre_move_stop("F455", profile=get_gateway_profile("F455")) is None
+    assert gateway_emits_cover_pre_move_stop("F455", profile=get_gateway_profile("F455")) is True
+    assert gateway_emits_cover_pre_move_stop("F452", profile=get_gateway_profile("F452")) is None
     assert gateway_emits_cover_pre_move_stop(None, profile=GenericGatewayProfile()) is None
     assert (
         gateway_emits_cover_pre_move_stop(
@@ -466,9 +467,9 @@ async def test_bug_b_f461_pre_stop_followed_by_motor_start_and_partial_position_
     assert cov_f461.current_cover_position == 0
     assert cov_f461._learned_stop_before_move is False
 
-    # 2. Unknown gateway (F455) + partial set_cover_position(50): unfollowed *2*0* aborts _auto_stop
+    # 2. Unknown gateway (F452) + partial set_cover_position(50): unfollowed *2*0* aborts _auto_stop
     # without sending a delayed stop AND sets _learned_stop_before_move = True!
-    gw_f455 = _make_gateway(model="F455", immediate_write=False, clock=clock)
+    gw_f455 = _make_gateway(model="F452", immediate_write=False, clock=clock)
     cov_f455 = _make_cover(hass, gw_f455, "41", travel_time=15, pos=0)
     await cov_f455.async_set_cover_position(**{ATTR_POSITION: 50})
     assert [f for f, _ in gw_f455.sent] == ["*2*1*41##"]
@@ -486,7 +487,7 @@ async def test_bug_b_f461_pre_stop_followed_by_motor_start_and_partial_position_
     assert cov_f455._learned_stop_before_move is True
     assert [f for f, _ in gw_f455.sent] == ["*2*1*41##"]  # no delayed *2*0*41## sent!
 
-    # Once learned, while energized on F455, reversing automatically sends pre-move stop!
+    # Once learned, while energized on F452, reversing automatically sends pre-move stop!
     cov_f455.handle_event(OWNEvent.parse("*2*1*41##"))
     assert cov_f455.is_opening is True
     gw_f455.sent.clear()
@@ -508,7 +509,7 @@ async def test_bug_b_echo_stop_fallback_timer_for_simple_strategy_and_hass_none_
     hass: HomeAssistant,
 ) -> None:
     """Verify _arm_echo_stop_timer settles SimpleUpDownStopStrategy covers with no _stop_task."""
-    gw = _make_gateway(model="F455", immediate_write=True)
+    gw = _make_gateway(model="F452", immediate_write=True)
     cov_simple = _make_cover(
         hass,
         gw,
@@ -536,7 +537,7 @@ async def test_bug_b_echo_stop_fallback_timer_for_simple_strategy_and_hass_none_
     assert cov_simple._learned_stop_before_move is True
 
     # Stop arriving BEFORE write completion re-arms timer to write_ts + ECHO_WINDOW in _on_written
-    gw_delayed = _make_gateway(model="F455", immediate_write=False)
+    gw_delayed = _make_gateway(model="F452", immediate_write=False)
     cov_pre_write = _make_cover(hass, gw_delayed, "48", strategy_name="simple", stop_before_move=False, pos=None)
     await cov_pre_write.async_open_cover()
     cov_pre_write.handle_event(OWNEvent.parse("*2*0*48##"))

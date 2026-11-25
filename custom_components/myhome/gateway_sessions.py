@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from OWNd.connection import OWNCommandSession, OWNEventSession, OWNGateway
-from OWNd.exceptions import OWNAuthError
+from OWNd.exceptions import OWNAuthError, OWNProtocolError
 from OWNd.message import OWNCommand, OWNGatewayEvent, OWNMessage
 
 from .actuator_lock import actuator_locks_of
@@ -61,6 +61,43 @@ EVENT_INACTIVITY_TIMEOUT: float | None = None
 # password again (reauth).
 AUTH_REFUSALS: frozenset[str] = frozenset({"password_error", "password_required"})
 
+# OWNd ``last_error.reason`` values guaranteed to occur before any byte of the
+# command frame is written to the socket (verified against OWNd session.py and
+# command_session.py). Post-write outcomes (nack, unexpected_response,
+# command_timeout, connection_lost, session_crash) are deliberately excluded.
+_PRE_WIRE_SEND_REASONS: frozenset[str] = frozenset(
+    {
+        "connection_unavailable",
+        "connection_error",
+        "connect_timeout",
+        "connection_refused",
+        "connection_closed",
+        "connection_reset",
+        "network_error",
+        "password_error",
+        "password_required",
+        "password_retry",
+        "negotiation_error",
+        "negotiation_timeout",
+        "negotiation_refused",
+        "negotiation_failed",
+        "destructive_frame",
+        "invalid_frame",
+    }
+)
+
+_POOL_TERMINATED = "pool_terminated"
+# Pool-level cooldown after a fatal ``negotiation_error`` (matching OWNd's
+# RECONNECT_PAUSE_FATAL / SEND_AUTH_COOLDOWN = 60 s): prevents every queued
+# command in sending_loop() from opening a fresh TCP + password handshake while
+# avoiding a false HA reauth or permanently killing the command worker.
+NEGOTIATION_ERROR_COOLDOWN: float = 60.0
+
+
+class _PoolTerminated(Exception):
+    """Internal signal that ``CommandWorkerPool`` shut down while waiting to negotiate."""
+
+
 class _PooledCommandSession(OWNCommandSession):
     """``OWNCommandSession`` whose handshake serializes across a ``CommandWorkerPool``."""
 
@@ -69,21 +106,90 @@ class _PooledCommandSession(OWNCommandSession):
         super().__init__(**kwargs)
         self._pool = pool
 
+    async def connect(self, *, raise_on_error: bool = False) -> dict[str, Any] | None:
+        """Skip opening a TCP socket once the pool is shutting down, auth-refused, or cooling down."""
+        if self._pool._terminate_sender:
+            return {"Success": False, "Message": _POOL_TERMINATED}
+        if self._pool._auth_refused:
+            reason = self._pool._auth_refused_reason or "password_error"
+            err = OWNAuthError(f"Gateway authentication failed ({reason})", reason=reason)
+            self._last_error = err
+            if raise_on_error:
+                raise err
+            return {"Success": False, "Message": reason}
+        if self._pool._negotiation_error_until > time.monotonic():
+            if self._pool._negotiation_error_target == self._login_target():
+                proto_err = OWNProtocolError(
+                    "OpenWebNet negotiation protocol error (negotiation_error)",
+                    reason="negotiation_error",
+                )
+                self._last_error = proto_err
+                if raise_on_error:
+                    raise proto_err
+                return {"Success": False, "Message": "negotiation_error"}
+            self._pool._negotiation_error_until = 0.0
+            self._pool._negotiation_error_target = None
+
+        connect_task: asyncio.Task[dict[str, Any] | None] = asyncio.create_task(
+            super().connect(raise_on_error=raise_on_error)
+        )
+        stop_task: asyncio.Task[bool] = asyncio.create_task(
+            self._pool._sender_stop.wait()
+        )
+        try:
+            wait_tasks: set[asyncio.Task[Any]] = {connect_task, stop_task}
+            done, _ = await asyncio.wait(
+                wait_tasks,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if connect_task in done and not self._pool._terminated_meanwhile():
+                return connect_task.result()
+            if connect_task in done:
+                with contextlib.suppress(Exception):
+                    connect_task.result()
+            return {"Success": False, "Message": _POOL_TERMINATED}
+        finally:
+            if not stop_task.done():
+                stop_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await stop_task
+            if not connect_task.done():
+                connect_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await connect_task
+                with contextlib.suppress(Exception):
+                    await self._close_streams()
+            elif self._pool._terminated_meanwhile():
+                with contextlib.suppress(Exception):
+                    await self._close_streams()
+
     async def _negotiate(self) -> dict[str, Any]:
         """Serialize session negotiation across the pool and abort once auth is refused."""
         async with self._pool._connect_lock:
-            if self._pool._auth_refused or self._pool._terminate_sender:
-                reason = (
-                    self._pool._auth_refused_reason or "password_error"
-                    if self._pool._auth_refused
-                    else "connection_refused"
-                )
+            if self._pool._terminate_sender:
+                raise _PoolTerminated
+            if self._pool._auth_refused:
+                reason = self._pool._auth_refused_reason or "password_error"
                 return {"Success": False, "Message": reason}
+            target = self._login_target()
+            if (
+                self._pool._negotiation_error_until > time.monotonic()
+                and self._pool._negotiation_error_target == target
+            ):
+                return {"Success": False, "Message": "negotiation_error"}
             result: dict[str, Any] = await super()._negotiate()
             msg = result.get("Message")
-            if not result.get("Success") and isinstance(msg, str) and msg in AUTH_REFUSALS:
+            if result.get("Success"):
+                self._pool._negotiation_error_until = 0.0
+                self._pool._negotiation_error_target = None
+            elif isinstance(msg, str) and msg in AUTH_REFUSALS:
                 self._pool._auth_refused_reason = msg
                 self._pool.handler._on_auth_refused(msg, "command")
+            elif msg == "negotiation_error":
+                self._pool._negotiation_error_until = (
+                    time.monotonic() + NEGOTIATION_ERROR_COOLDOWN
+                )
+                self._pool._negotiation_error_target = target
             return result
 
 
@@ -1432,6 +1538,9 @@ class CommandWorkerPool:
         # Set once the gateway refused the password: nothing is queued any more.
         self._auth_refused: bool = False
         self._auth_refused_reason: str | None = None
+        # Pool-level cooldown after a fatal ``negotiation_error`` (60 s per login target).
+        self._negotiation_error_until: float = 0.0
+        self._negotiation_error_target: tuple[object, object, object] | None = None
         # Serializes command-session handshakes across workers so a changed password
         # is never presented by 2–4 workers concurrently (avoiding the 3-in-60s HMAC
         # gateway lockout, OpenWebNet Encyclopedia `protocol/authentication.md`).
@@ -1699,7 +1808,7 @@ class CommandWorkerPool:
                 )
                 res = None
 
-            if self._connect_refused(res, worker_id) or self._auth_refused or self._terminate_sender:
+            if self._terminate_sender or self._auth_refused or self._connect_refused(res, worker_id):
                 return
 
             while not self._terminate_sender:
@@ -1757,9 +1866,9 @@ class CommandWorkerPool:
                     if not session_is_open(_command_session):
                         res = await _command_session.connect()
                         if (
-                            self._connect_refused(res, worker_id)
+                            self._terminate_sender
                             or self._auth_refused
-                            or self._terminate_sender
+                            or self._connect_refused(res, worker_id)
                         ):
                             _cancel_written(task, not_written=True)
                             return
@@ -1834,7 +1943,7 @@ class CommandWorkerPool:
                             last_error.reason,
                             worker_id,
                         )
-                        _cancel_written(task)
+                        _cancel_written(task, not_written=True)
                         self.handler._on_auth_refused(last_error.reason, "command")
                         return
                     bleed_zones = (
@@ -1880,7 +1989,8 @@ class CommandWorkerPool:
                             # a setpoint write and an action that reports the failure
                             # (command_delivery.py) tell the two apart.
                             setattr(written, "_gateway_nack", True)
-                        _cancel_written(task)
+                        not_written = getattr(last_error, "reason", None) in _PRE_WIRE_SEND_REASONS
+                        _cancel_written(task, not_written=not_written)
                     else:
                         if (
                             task["is_status_request"]
@@ -2017,6 +2127,10 @@ class CommandWorkerPool:
     def _refused_meanwhile(self) -> bool:
         """The refusal flag, read again after an await (it can be set while ``put()`` is suspended)."""
         return self._auth_refused
+
+    def _terminated_meanwhile(self) -> bool:
+        """The shutdown flag, read again after an await (it can be set while ``connect()`` is suspended)."""
+        return self._terminate_sender
 
     def stop_after_auth_refusal(self) -> None:
         """Stop every worker and refuse new frames: the gateway refused the password."""

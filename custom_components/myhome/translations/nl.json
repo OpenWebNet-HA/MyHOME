@@ -803,6 +803,9 @@
     },
     "send_message_refused_frame": {
       "message": "Verzenden van \"{message}\" geweigerd: dit frame is uit veiligheidsvoorzorg geblokkeerd; er is niets verzonden"
+    },
+    "sync_time_unsupported_offset": {
+      "message": "Kan de gatewayklok niet synchroniseren voor tijdzone \"{timezone}\": {error}. OpenWebNet ondersteunt alleen hele UTC-uren."
     }
   },
   "entity": {

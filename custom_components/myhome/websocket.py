@@ -217,6 +217,7 @@ def _get_gateway_and_monitor(
     ``mac`` is given only that gateway is returned, never a substitute.
     """
     wanted = dr.format_mac(mac) if mac else None
+    fallback: tuple[Any, BusMonitor | None] | None = None
 
     for entry in hass.config_entries.async_entries(DOMAIN):
         if wanted and dr.format_mac(entry.data.get(CONF_MAC, "")) != wanted:
@@ -224,9 +225,12 @@ def _get_gateway_and_monitor(
         runtime = get_runtime_data(entry)
         if runtime is None:
             continue
-        return runtime.gateway, runtime.bus_monitor
+        if wanted or getattr(runtime.gateway, "is_follower", False) is not True:
+            return runtime.gateway, runtime.bus_monitor
+        if fallback is None:
+            fallback = (runtime.gateway, runtime.bus_monitor)
 
-    return None, None
+    return fallback if fallback is not None else (None, None)
 
 
 def _cached_ownd_version(hass: HomeAssistant) -> str:

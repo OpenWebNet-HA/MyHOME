@@ -584,18 +584,38 @@ class ConfigFlowDiscoveryMixin:
             if refused_session == "command" or monitor_open_no_challenge:
                 # Split authentication: monitor session (*99*1##) can be open while
                 # the command session (*99*0##) requires the password. Verify the
-                # command session too (even if entry.runtime_data is None) so a
-                # wrong password does not reload into a loop.
-                cmd_session = OWNCommandSession(gateway=gateway, logger=LOGGER)
-                try:
-                    cmd_res: typing.Any = await cmd_session.connect()
-                except Exception:  # pylint: disable=broad-except
-                    cmd_res = {"Success": False, "Message": "cannot_connect"}
-                finally:
+                # command session with test_connection() (not connect(), which
+                # retries 4 x 60 s on HMAC lockout and hides password_retry behind
+                # cannot_connect), with the same single retry on connection_closed
+                # used above for single-slot gateways (e.g. MH201).
+                async def _run_cmd_test() -> typing.Any:
+                    cmd_session = OWNCommandSession(gateway=gateway, logger=LOGGER)
                     try:
-                        await cmd_session.close()
+                        return await cmd_session.test_connection()
                     except Exception:  # pylint: disable=broad-except
-                        pass
+                        return {"Success": False, "Message": "cannot_connect"}
+                    finally:
+                        try:
+                            await cmd_session.close()
+                        except Exception:  # pylint: disable=broad-except
+                            pass
+
+                cmd_res: typing.Any = await _run_cmd_test()
+                if (
+                    isinstance(cmd_res, dict)
+                    and not cmd_res.get("Success")
+                    and cmd_res.get("Message") == "connection_closed"
+                ):
+                    LOGGER.warning(
+                        "Gateway %s (%s:%s) command test connection closed by gateway; "
+                        "retrying once after %ss pause",
+                        gateway.model_name,
+                        gateway.address,
+                        gateway.port,
+                        _cf.TEST_CONNECTION_RETRY_DELAY,
+                    )
+                    await _cf.asyncio.sleep(_cf.TEST_CONNECTION_RETRY_DELAY)
+                    cmd_res = await _run_cmd_test()
                 if not isinstance(cmd_res, dict) or not cmd_res.get("Success"):
                     test_result = (
                         cmd_res

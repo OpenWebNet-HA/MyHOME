@@ -298,7 +298,7 @@ async def async_setup_entry(
             config_entry.async_on_unload(
                 async_dispatcher_connect(
                     hass,
-                    f"myhome_new_device_{mac}",
+                    f"myhome_new_device_{dr.format_mac(mac)}",
                     _async_new_device_listener,
                 )
             )

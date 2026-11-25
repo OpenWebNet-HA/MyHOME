@@ -803,6 +803,9 @@
     },
     "send_message_refused_frame": {
       "message": "Refus d'envoyer « {message} » : cette trame est bloquée par mesure de sécurité ; rien n'a été envoyé"
+    },
+    "sync_time_unsupported_offset": {
+      "message": "Impossible de synchroniser l'horloge de la passerelle pour le fuseau horaire « {timezone} » : {error}. OpenWebNet ne prend en charge que les décalages UTC d'heures entières."
     }
   },
   "entity": {

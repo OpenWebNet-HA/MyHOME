@@ -835,10 +835,10 @@ def prune_orphaned_companions(hass: HomeAssistant, config_entry_id: str, own_mac
 
 @callback
 def announce_new_device(hass: HomeAssistant, mac: str, who: str, address: Address, name: str) -> None:
-    """Tell the button platform a lockable actuator exists (lock / unlock / calibrate buttons)."""
+    """Tell the button and number platforms a lockable/native actuator exists."""
     async_dispatcher_send(
         hass,
-        f"myhome_new_device_{mac}",
+        f"myhome_new_device_{dr.format_mac(mac)}",
         {"who": who, "where": address.where, "interface": address.interface, "name": name, "device_id": address.key},
     )
 
