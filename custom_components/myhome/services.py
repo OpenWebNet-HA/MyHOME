@@ -418,22 +418,33 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         """Handle time synchronization service call."""
         gateway = call.data.get(ATTR_GATEWAY, None)
         timezone = hass.config.as_dict().get("time_zone", "UTC")
+
+        async def _send_time_sync(gw_handler: Any, cmd_dt: Any, cmd_t: Any) -> None:
+            await gw_handler.send(cmd_dt)
+            # MyHomeServer1 and 3488 are silent on WHO 13 DIM 0 (*#13**#0*...##)
+            # while ACKing DIM 22 (*#13**#22*...##, which already writes date + time):
+            # oracle results/{MyHomeServer1/028206,3488/030205}/oracle/full/who13-clock.tsv:16-32.
+            if _handler_model_key(gw_handler) not in ("MYHOMESERVER1", "3488"):
+                await gw_handler.send(cmd_t)
+
         if gateway is None:
             gateways = _loaded_gateways(hass)
-            if not gateways:
+            primaries = [
+                gw_handler
+                for gw_handler in gateways.values()
+                if getattr(gw_handler, "is_follower", False) is not True
+            ]
+            if not primaries:
                 raise _no_gateway_error()
             cmd_datetime, cmd_time = _build_time_sync_commands(timezone)
             # Once per bus: a secondary/standby shares its primary's bus
-            for gw_handler in gateways.values():
-                if getattr(gw_handler, "is_follower", False) is not True:
-                    await gw_handler.send(cmd_datetime)
-                    await gw_handler.send(cmd_time)
+            for gw_handler in primaries:
+                await _send_time_sync(gw_handler, cmd_datetime, cmd_time)
             return
 
         handler = _require_gateway_handler(hass, gateway)
         cmd_datetime, cmd_time = _build_time_sync_commands(timezone)
-        await handler.send(cmd_datetime)
-        await handler.send(cmd_time)
+        await _send_time_sync(handler, cmd_datetime, cmd_time)
 
     async def handle_send_message(call: ServiceCall) -> None:
         """Handle sending an arbitrary OpenWebNet message."""

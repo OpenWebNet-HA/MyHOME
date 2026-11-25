@@ -61,6 +61,38 @@ EVENT_INACTIVITY_TIMEOUT: float | None = None
 # password again (reauth).
 AUTH_REFUSALS: frozenset[str] = frozenset({"password_error", "password_required"})
 
+# OWNd ``last_error.reason`` values guaranteed to occur before any byte of the
+# command frame is written to the socket (verified against OWNd session.py and
+# command_session.py). Post-write outcomes (nack, unexpected_response,
+# command_timeout, connection_lost, session_crash) are deliberately excluded.
+_PRE_WIRE_SEND_REASONS: frozenset[str] = frozenset(
+    {
+        "connection_unavailable",
+        "connection_error",
+        "connect_timeout",
+        "connection_refused",
+        "connection_closed",
+        "connection_reset",
+        "network_error",
+        "password_error",
+        "password_required",
+        "password_retry",
+        "negotiation_error",
+        "negotiation_timeout",
+        "negotiation_refused",
+        "negotiation_failed",
+        "destructive_frame",
+        "invalid_frame",
+    }
+)
+
+_POOL_TERMINATED = "pool_terminated"
+
+
+class _PoolTerminated(Exception):
+    """Internal signal that ``CommandWorkerPool`` shut down while waiting to negotiate."""
+
+
 class _PooledCommandSession(OWNCommandSession):
     """``OWNCommandSession`` whose handshake serializes across a ``CommandWorkerPool``."""
 
@@ -69,15 +101,31 @@ class _PooledCommandSession(OWNCommandSession):
         super().__init__(**kwargs)
         self._pool = pool
 
+    async def connect(self, *, raise_on_error: bool = False) -> dict[str, Any] | None:
+        """Skip opening a TCP socket once the pool is shutting down or auth-refused."""
+        if self._pool._terminate_sender:
+            return {"Success": False, "Message": _POOL_TERMINATED}
+        if self._pool._auth_refused:
+            reason = self._pool._auth_refused_reason or "password_error"
+            err = OWNAuthError(f"Gateway authentication failed ({reason})", reason=reason)
+            self._last_error = err
+            if raise_on_error:
+                raise err
+            return {"Success": False, "Message": reason}
+        try:
+            return await super().connect(raise_on_error=raise_on_error)
+        except _PoolTerminated:
+            with contextlib.suppress(Exception):
+                await self._close_streams()
+            return {"Success": False, "Message": _POOL_TERMINATED}
+
     async def _negotiate(self) -> dict[str, Any]:
         """Serialize session negotiation across the pool and abort once auth is refused."""
         async with self._pool._connect_lock:
-            if self._pool._auth_refused or self._pool._terminate_sender:
-                reason = (
-                    self._pool._auth_refused_reason or "password_error"
-                    if self._pool._auth_refused
-                    else "connection_refused"
-                )
+            if self._pool._terminate_sender:
+                raise _PoolTerminated
+            if self._pool._auth_refused:
+                reason = self._pool._auth_refused_reason or "password_error"
                 return {"Success": False, "Message": reason}
             result: dict[str, Any] = await super()._negotiate()
             msg = result.get("Message")
@@ -1699,7 +1747,7 @@ class CommandWorkerPool:
                 )
                 res = None
 
-            if self._connect_refused(res, worker_id) or self._auth_refused or self._terminate_sender:
+            if self._terminate_sender or self._auth_refused or self._connect_refused(res, worker_id):
                 return
 
             while not self._terminate_sender:
@@ -1757,9 +1805,9 @@ class CommandWorkerPool:
                     if not session_is_open(_command_session):
                         res = await _command_session.connect()
                         if (
-                            self._connect_refused(res, worker_id)
+                            self._terminate_sender
                             or self._auth_refused
-                            or self._terminate_sender
+                            or self._connect_refused(res, worker_id)
                         ):
                             _cancel_written(task, not_written=True)
                             return
@@ -1834,7 +1882,7 @@ class CommandWorkerPool:
                             last_error.reason,
                             worker_id,
                         )
-                        _cancel_written(task)
+                        _cancel_written(task, not_written=True)
                         self.handler._on_auth_refused(last_error.reason, "command")
                         return
                     bleed_zones = (
@@ -1880,7 +1928,8 @@ class CommandWorkerPool:
                             # a setpoint write and an action that reports the failure
                             # (command_delivery.py) tell the two apart.
                             setattr(written, "_gateway_nack", True)
-                        _cancel_written(task)
+                        not_written = getattr(last_error, "reason", None) in _PRE_WIRE_SEND_REASONS
+                        _cancel_written(task, not_written=not_written)
                     else:
                         if (
                             task["is_status_request"]

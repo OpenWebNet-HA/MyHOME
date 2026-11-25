@@ -723,14 +723,14 @@ async def test_split_auth_reauth_rejects_wrong_command_session_password(
 async def test_split_auth_reauth_handles_command_session_connect_and_close_exceptions(
     hass: HomeAssistant, entry: MockConfigEntry, harness: MockGatewayHarness, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """If verifying the command session raises on connect() and close(), reauth reports cannot_connect."""
+    """If verifying the command session raises on test_connection() and close(), reauth reports cannot_connect."""
     import custom_components.myhome.config_flow_discovery as cfd
 
     class _ExplodingCommandSession:
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             pass
 
-        async def connect(self) -> dict[str, Any]:
+        async def test_connection(self) -> dict[str, Any]:
             raise OSError("network down")
 
         async def close(self) -> None:
@@ -1019,7 +1019,7 @@ async def test_split_auth_reauth_checks_command_session_when_runtime_data_is_non
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             pass
 
-        async def connect(self) -> dict[str, Any]:
+        async def test_connection(self) -> dict[str, Any]:
             return {"Success": False, "Message": "password_error"}
 
         async def close(self) -> None:

@@ -403,13 +403,14 @@ KNOWN_GATEWAY_MODELS = frozenset(
     }
 )
 # WHO 2 SCS pre-move STOP behavior (#959): 11 of 12 emulated Linux automation gateways
-# (5 bt_luci + 6 coso libplug_automation_tr.so) synthesize a 2-telegram SCS sequence
+# (5 bt_luci + 6 coso libplug_automation_tr.so) plus live-verified F455 (fw 1.0.76,
+# Bus 1 capture 2026-11-25) synthesize a 2-telegram SCS sequence
 # ($03<W>00120A STOP + $03<W>001208/1209 UP/DOWN) for *2*1*W## / *2*2*W## (firmware_oracle.json
 # and mcp_index.json). MH202 (010024, older coso without pre-STOP) and bare-metal MH201 (3.3.6
 # live plant trace; also confirmed on 3.6.44) emit only the single direction telegram, so energized timed relay actuators
 # (L4671/2, F411/2, F411/4, F411U2) stop instead of reversing unless HA stops first.
 COVER_PRE_MOVE_STOP_EMITTED = frozenset(
-    {"3488", "F453", "F453AV", "F454", "F459", "F460", "F461", "H4684", "MH200", "MH200N", "MYHOMESERVER1"}
+    {"3488", "F453", "F453AV", "F454", "F455", "F459", "F460", "F461", "H4684", "MH200", "MH200N", "MYHOMESERVER1"}
 )
 COVER_PRE_MOVE_STOP_OMITTED = frozenset({"MH201", "MH202"})
 # The models the tables know, longest first so ``MH200N`` is not read as ``MH200``.
@@ -1183,6 +1184,9 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         Only on SCS-only gateways (no ``*#4*Z##``) whose startup sweep brings no zone
         temperature; elsewhere the zone status poll or the sweep reports it.
         """
+        target = self._who4_target()
+        if target is not self:
+            return target.zone_temperature_poll_needed
         if self.supports_zone_status:
             return False
         if self._model_key in KNOB_READ_IN_SILENT_ZONE_POLL:
