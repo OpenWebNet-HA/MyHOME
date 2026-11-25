@@ -57,6 +57,17 @@ data:
 
 ---
 
+## 🔒 Actuator Lock (`WHO = 14`) & Echo-Confirmed State
+
+Each point-to-point `WHO = 1` light and switch includes **Lock** (`*14*0*<WHERE>##`) and **Unlock** (`*14*1*<WHERE>##`) configuration buttons on its device page and stays synchronized with physical bus state even when locked ([#976](https://github.com/OpenWebNet-HA/MyHOME/issues/976)):
+
+* **Bidirectional `actuator_locked` Tracking**: Because tested OpenWebNet gateways reject `*#14*<WHERE>##` status queries with NACK and several gateways/actuators (`MH201`, legacy `MH200` / `MH200N` relays, `F422` `#4#II` local-bus interfaces) do not echo `WHO = 14` on `*99*1##`, Home Assistant tracks `actuator_locked` from both inbound non-translation `*14*0/1*...##` events and `*#*1##`-acknowledged outbound `*14*0/1*...##` commands (`button.<name>_lock` / `unlock`, `myhome.send_message`, scenes, and automations, across published `WHO_1.pdf` §4.2 point, Area `00` / `1`–`9` / `100`, and General `0` scopes — plus defensive resolution of configured `#G` groups — isolated per `#4#<Int>` local-bus interface per §2.3). Once observed, `actuator_locked: true | false` is exposed in `extra_state_attributes` and soft-restored across Home Assistant restarts, including when saved while `unavailable` (`*#*0##` NACKs are ignored).
+* **Non-Optimistic Parameterized Confirmation**: Plain `turn_on` / `turn_off` as well as parameterized writes — brightness (`Dimension 1` and coarse `WHAT = 2..10`), HSV/RGB colour (`Dimension 12`), colour temperature (`Dimension 14`), native hardware transitions, `myhome.turn_on_timed`, and step 1 of `software_stepped` fades (which anchors its `2.5 s` first-echo window on socket delivery rather than queue enqueue so `LightEchoWatchdog`'s `1.5 s` read-back can confirm dropped echoes, and sends a single target write when `actuator_locked: true`) — update Home Assistant state only when confirmed by the actuator's bus echo (`~90–330 ms`). Moving a brightness/colour slider on a locked dimmer produces **zero UI bounce** and fires **zero `state_changed` events** to automations or `expose:` follower entities, even on cold boot before `WHO = 14` has been seen.
+* **Dimension-Aware Read-Back (`LightEchoWatchdog`)**: If an acknowledged point-to-point command receives no matching event echo within `1.5 s` (e.g. under `F455` burst load) and the endpoint is not known to be locked, the gateway reads back `*#1*<WHERE>##` together with any written dimension (`Dimension 1` brightness, `Dimension 12` HSV, or `Dimension 14` colour temperature), recovering dropped echoes without leaving stale slider values ([#964](https://github.com/OpenWebNet-HA/MyHOME/pull/964), [#976](https://github.com/OpenWebNet-HA/MyHOME/issues/976)).
+* **State-Diff Self-Healing**: Outbound commands still transmit when `actuator_locked: true` because physical actuator lock RAM resets on a mains power cycle. Since locked 2nd-gen actuators (`F411/4`, `F418U2`) continue answering `*#1*<WHERE>##` / `*#1*<WHERE>*1##` status reads with their frozen state, `actuator_locked` clears to `false` only when a point-to-point non-translation `WHO = 1` event reports an actual state change (`is_on`, brightness, colour temperature, or HSV colour) — never on an unchanged poll reply.
+
+---
+
 ## 💡 Lighting Groups (SCS & DALI Groups)
 
 In MyHOME systems, lighting actuators can be grouped physically via configurators or MyHOME Suite into **SCS Groups** (`WHERE = #1` through `#255`), which is also the standard mechanism used to group fixtures on DALI gateway interfaces such as the **F429G**.

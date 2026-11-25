@@ -61,10 +61,12 @@ from OWNd.message import (
 from .access_policy import (
     AccessConfig,
     AccessController,
+    AccessDenied,
     Effect,
     Intent,
     PulseOutcome,
 )
+from .actuator_lock import actuator_locks_of, apply_actuator_lock_state, split_point_key
 from .const import (
     BUS_ROUTING,
     CALIBRATION_CUTOFF_EARLY,
@@ -183,6 +185,12 @@ from .gateway import (
     gateway_emits_cover_pre_move_stop,
 )
 from .myhome_device import MyHOMEEntity
+from .where_grammar import (
+    automation_dim10_info,
+    canonical_point_spelling,
+    expose_message_where,
+    normalize_where,
+)
 
 if TYPE_CHECKING:
     from .cover_scope import CoverFamily, CoverScope, MyHOMEScopeCover
@@ -197,6 +205,10 @@ LIVE_POSITION_REFRESH_INTERVAL = timedelta(seconds=1)
 OFF_ATTEMPTS = 3
 OFF_RETRY_DELAY = 1.0
 OFF_SETTLE_DELAY = 0.2
+
+# Grace window after a bare `*#*1##` (`_empty_reply`) status probe before concluding
+# no late event-session status frame followed.
+_EMPTY_PROBE_GRACE_S = 0.25
 
 # Longest an impulse-cover frame may wait for its write confirmation, the bound a
 # door-entry unlock has (lock.LOCK_WRITE_TIMEOUT, MyHOME#835): a pulse written long after
@@ -613,6 +625,14 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     # a scope cover follows its members and has its own memberless run timeout.
     _settles_open_close = True
     _attr_device_class = CoverDeviceClass.SHUTTER
+    _provisional_write_ts: float | None = None
+    _move_confirmed: bool = False
+    _actuation_unconfirmed: bool = False
+    _following_scope: bool = False
+    _expected_run_duration: float | None = None
+    _scope_run_active_until: float | None = None
+    _unconfirmed_move_unsub: CALLBACK_TYPE | None = None
+    _unconfirmed_move_task: asyncio.Task[None] | None = None
 
     def __init__(  # type: ignore
         self,
@@ -653,7 +673,16 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         )
 
         self._interface = interface
-        self._full_where = f"{self._where}#4#{self._interface}" if self._interface is not None else self._where
+        pt_canon, iface_canon = split_point_key(self._where, self._interface)
+        self._full_where = (
+            f"{pt_canon}#4#{iface_canon}"
+            if pt_canon and iface_canon is not None
+            else pt_canon
+            if pt_canon
+            else f"{self._where}#4#{self._interface}"
+            if self._interface is not None
+            else self._where
+        )
         # A configured class (myhome.yaml `class:`) wins; slat tilt only picks BLIND without one (#39).
         self._configured_device_class = device_class
         if device_class is not None:
@@ -665,6 +694,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._stop_before_move: bool | None = stop_before_move if isinstance(stop_before_move, bool) else None
         self._learned_stop_before_move: bool = False
         self._relay_hold_until: float | None = None
+        self._relay_hold_opening: bool | None = None
         self._last_stop_generation: int = 0
         self._slat_tilt = bool(slat_tilt)
         raw_slat_time = _clamp_slat_time(slat_time)
@@ -839,6 +869,124 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._auto_stop_duration: float | None = None
         self._timed_target_position: int | None = None
         self._pending_timed_target: int | None = None
+        self._provisional_write_ts = None
+        self._move_confirmed = False
+        self._probing_p2p_direction: str | None = None
+        self._restored_in_add: bool = False
+        self._actuation_unconfirmed = False
+        self._following_scope = False
+        self._expected_run_duration = None
+        self._scope_run_started_at: float | None = None
+        self._scope_run_active_until = None
+        self._unconfirmed_move_unsub = None
+        self._unconfirmed_move_task = None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return cover state attributes, including WHO=14 lock state when known."""
+        attrs = dict(getattr(self, "_attr_extra_state_attributes", None) or {})
+        if self._actuator_locked is not None:
+            attrs["actuator_locked"] = self._actuator_locked
+        if self._actuation_unconfirmed:
+            attrs["actuation_unconfirmed"] = True
+        return attrs
+
+    def _is_scope_excluded(self) -> bool:
+        """Return True when this cover is locked or failed unconfirmed actuation."""
+        return self.actuator_locked is True or self._actuation_unconfirmed
+
+    def _has_lock_tracking(self) -> bool:
+        """Return True when connected to a gateway with WHO=14 tracking or known lock state."""
+        return actuator_locks_of(self._gateway_handler) is not None or self._is_scope_excluded()
+
+    @callback
+    def handle_actuator_lock(self, locked: bool) -> None:
+        """Apply WHO=14 / Dimension 10 lock state, halting any active timed run or tilt."""
+        lock_state = bool(locked)
+        already_same = self._actuator_locked is lock_state
+        was_unconfirmed = self._actuation_unconfirmed
+        self._actuation_unconfirmed = False
+        self._scope_run_started_at = None
+        self._scope_run_active_until = None
+        if not already_same:
+            apply_actuator_lock_state(self, lock_state)
+        if lock_state:
+            self._clear_relay_hold()
+            calibrating_interrupted = False
+            if self._calibrating:
+                self._interrupt_calibration("actuator locked (WHO=14)")
+                calibrating_interrupted = True
+            if self._is_tilting:
+                self._cancel_stop_task()
+                self._run_generation += 1
+                now_lock = time.monotonic()
+                if self._tilt_start_time is None and self._tilt_follows is not None:
+                    self._tilt_start_time = self._tilt_follows._tilt_start_time
+                pulse_moved = self._move_confirmed or self._tilt_follows is not None
+                if (
+                    pulse_moved
+                    and self._tilt_start_time is not None
+                    and now_lock > self._tilt_start_time
+                ):
+                    self._apply_tilt_stop(now_lock)
+                else:
+                    self._abort_tilt()
+                self._publish_state()
+                return
+            if self._attr_is_opening or self._attr_is_closing:
+                self._cancel_stop_task()
+                self._end_echo_window()
+                self._run_generation += 1
+                if self._advanced:
+                    self._stop_live_refresh()
+                    self._move_start_time = None
+                    self._run_started_at = None
+                    self._motion_started_at = None
+                    self._attr_is_opening = False
+                    self._attr_is_closing = False
+                    self._following_scope = False
+                    self._refresh_travel_attributes()
+                elif self._move_confirmed:
+                    self._freeze_position(time.monotonic())
+                else:
+                    self._abort_motion()
+                    return
+                self._publish_state()
+                return
+            if already_same and not was_unconfirmed and not calibrating_interrupted:
+                return
+            self._publish_state()
+            return
+        if already_same and not was_unconfirmed:
+            return
+        self._publish_state()
+
+    def _run_may_finish_in_echo_window(self) -> bool:
+        """Return True when the active run could physically reach its target within ECHO_WINDOW."""
+        if self._expected_run_duration is not None:
+            return self._expected_run_duration <= ECHO_WINDOW
+        if self._advanced or self._strategy.assumed_state:
+            return False
+        opening = (
+            self._pending_cmd == "open"
+            if self._pending_cmd in ("open", "close")
+            else bool(self._attr_is_opening)
+        )
+        if self._start_position is not None:
+            rem = self._strategy.remaining_travel_for(
+                self._start_position, opening, entity=self
+            )
+            return rem is not None and rem <= ECHO_WINDOW
+        travel = self._travel_for(opening)
+        return 0 < travel <= ECHO_WINDOW
+
+    def _note_scope_run_for_unconfirmed(self, now: float, opening: bool) -> None:
+        """Arm a window in which a per-actuator end-stop (*2*0*W##) clears _actuation_unconfirmed."""
+        if not self._actuation_unconfirmed:
+            return
+        travel = self._travel_for(opening) if not self._advanced else 0.0
+        self._scope_run_started_at = now
+        self._scope_run_active_until = now + max(M0_RELAY_HOLD_WINDOW, travel + END_SETTLE_MARGIN)
 
     @property
     def _settles_on_timer(self) -> bool:
@@ -992,10 +1140,13 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         deadline = at + window
         if self._relay_hold_until is None or deadline > self._relay_hold_until:
             self._relay_hold_until = deadline
+        if opening is not None:
+            self._relay_hold_opening = opening
 
     def _clear_relay_hold(self) -> None:
         """Clear the relay-hold window once a non-translation stop proves the relay opened."""
         self._relay_hold_until = None
+        self._relay_hold_opening = None
 
     def _actuator_relay_may_be_energized(self, now: float) -> bool:
         """Return True when a timed actuator's motor relay may currently be energized."""
@@ -1004,8 +1155,56 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         if self._relay_hold_until is not None:
             if now < self._relay_hold_until:
                 return True
-            self._relay_hold_until = None
+            self._clear_relay_hold()
         return False
+
+    def _omits_bus_pre_move_stop(self) -> bool:
+        """Return True when the gateway omits synthetic SCS pre-move STOP frames (#959)."""
+        if self._advanced or self._calibrating:
+            return False
+        if self._stop_before_move is True:
+            return True
+        if self._stop_before_move is False:
+            return False
+        return self._gateway_emits_pre_move_stop() is False or self._learned_stop_before_move
+
+    def _opposite_relay_energized_for_scope(self, now: float, *, incoming_opening: bool) -> bool:
+        """True when an un-pre-stopped scope move hits an opposite-energized relay (#959, #977)."""
+        if not self._omits_bus_pre_move_stop():
+            return False
+        if self._is_tilting:
+            pulse_moved = self._move_confirmed or self._tilt_follows is not None
+            if pulse_moved and self._tilt_start_time is not None and now > self._tilt_start_time:
+                return self._tilt_direction == ("close" if incoming_opening else "open")
+        elif (self._attr_is_opening or self._attr_is_closing) and (
+            self._move_confirmed or not self._has_lock_tracking()
+        ):
+            return bool(self._attr_is_closing) if incoming_opening else bool(self._attr_is_opening)
+        if self._relay_hold_until is not None and now < self._relay_hold_until:
+            return self._relay_hold_opening is (not incoming_opening)
+        return False
+
+    def _apply_scope_interlock_stop(self, now: float) -> None:
+        """Settle an opposite-direction scope broadcast that tripped the actuator interlock to STOP."""
+        was_tilting = self._is_tilting
+        self._is_tilting = False
+        self._cancel_stop_task()
+        self._cancel_unconfirmed_move_timer()
+        self._end_echo_window()
+        self._end_run_from_unknown = False
+        self._run_generation += 1
+        self._last_stop_at = now
+        self._stopped_event.set()
+        if was_tilting:
+            self._apply_tilt_stop(now, record_end=False)
+        else:
+            self._freeze_position(now)
+        self._attr_is_opening = False
+        self._attr_is_closing = False
+        if self._attr_current_cover_position is not None:
+            self._attr_is_closed = self._attr_current_cover_position == 0
+        self._relay_hold_until = now + PRE_MOVE_STOP_SETTLE_DELAY
+        self._relay_hold_opening = None
 
     def _gateway_emits_pre_move_stop(self) -> bool | None:
         """Return whether the gateway serving this cover injects an SCS pre-move STOP."""
@@ -1023,6 +1222,23 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._echo_stop_unsub()
             self._echo_stop_unsub = None
 
+    def _cancel_unconfirmed_move_unsub(self) -> None:
+        """Cancel any pending ECHO_WINDOW unconfirmed-move callback."""
+        if self._unconfirmed_move_unsub is not None:
+            self._unconfirmed_move_unsub()
+            self._unconfirmed_move_unsub = None
+
+    def _cancel_unconfirmed_move_timer(self) -> None:
+        """Cancel any pending unconfirmed-move callback and active probe task."""
+        self._cancel_unconfirmed_move_unsub()
+        task = self._unconfirmed_move_task
+        if task is not None:
+            self._unconfirmed_move_task = None
+            loop = task.get_loop()
+            current = asyncio.current_task(loop) if loop.is_running() else None
+            if task is not current and not task.done():
+                task.cancel()
+
     def _begin_command(self, cmd: str) -> None:
         """Open an echo window for a command we are about to queue.
 
@@ -1032,6 +1248,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         window open, or every later stop frame would be taken for an echo.
         """
         self._cancel_echo_stop_timer()
+        self._cancel_unconfirmed_move_unsub()
         self._run_generation += 1
         self._pending_cmd = cmd
         self._echo_until = time.monotonic() + WRITE_TIMEOUT + ECHO_WINDOW
@@ -1047,7 +1264,11 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             # echo indefinitely.
             now = time.monotonic()
             self._echo_until = now + ECHO_WINDOW
-            if self._pending_cmd in ("open", "close") and not self._is_tilting:
+            if (
+                self._pending_cmd in ("open", "close")
+                and not self._is_tilting
+                and not self._is_scope_excluded()
+            ):
                 self._arm_relay_hold(now, opening=self._pending_cmd == "open")
             return
         generation = self._run_generation
@@ -1073,21 +1294,36 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 # A slat pulse never moves the curtain: no travel clock to start.
                 return
             if self._pending_cmd in ("open", "close") and not self._motor_started.is_set():
-                # Provisional anchor: the motor starts shortly after the write.
-                # The direction echo re-anchors precisely if the gateway relays it.
-                self._anchor_run(write_ts)
+                if self.scope is not None or self._following_scope:
+                    self._move_confirmed = True
+                    self._anchor_run(write_ts)
+                elif not self._has_lock_tracking():
+                    self._provisional_write_ts = write_ts
+                    self._anchor_run(write_ts)
+                else:
+                    self._provisional_write_ts = write_ts
+                    if self._stop_task is None or self._stop_task.done():
+                        self._arm_unconfirmed_move_timer(write_ts)
             elif self._pending_cmd == "stop":
                 if self._relay_hold_until is not None:
                     self._relay_hold_until = min(
                         self._relay_hold_until, write_ts + PRE_MOVE_STOP_SETTLE_DELAY
                     )
+                    self._relay_hold_opening = None
                 if not self._motor_started.is_set():
                     # Motion stops within ~0.04-0.12 s of the write on measured
                     # gateways (MyHOMEServer1 34-47 ms, F461 64-120 ms; #302, #705).
                     # Freeze provisionally at write_ts (+ MOTOR_STOP_DELAY) while
                     # _handle_echo re-anchors to the stop status arrival if relayed.
-                    self._freeze_position(write_ts + MOTOR_STOP_DELAY)
-                    self._motor_started.set()
+                    if (
+                        (self._attr_is_opening or self._attr_is_closing)
+                        and not self._move_confirmed
+                        and self._has_lock_tracking()
+                    ):
+                        self._settle_unconfirmed_stop()
+                    else:
+                        self._freeze_position(write_ts + MOTOR_STOP_DELAY)
+                        self._motor_started.set()
             # The estimate changed (clock started, or frozen): show it. Not every
             # gateway relays the stop status that would otherwise repaint it.
             self._publish_state()
@@ -1103,6 +1339,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     def _end_echo_window(self) -> None:
         self._cancel_echo_stop_timer()
+        self._cancel_unconfirmed_move_unsub()
         self._pending_cmd = None
         self._echo_until = None
         self._pending_stop_context = None
@@ -1242,7 +1479,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._motion_started_at = None
             self._refresh_travel_attributes()
         end_stop = (
-            not self._strategy.assumed_state
+            not self._advanced
+            and not self._strategy.assumed_state
             and run_started_at is not None
             and (is_opening or is_closing)
             and (travel := self._travel_for(is_opening)) > 0
@@ -1302,8 +1540,13 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._run_start_tilt = None
         self._run_lead = self._move_lead = 0.0
         self._auto_stop_duration = None
+        self._expected_run_duration = None
         self._timed_target_position = None
         self._full_run_to_end = False
+        self._provisional_write_ts = None
+        self._move_confirmed = False
+        self._probing_p2p_direction = None
+        self._following_scope = False
         if self._attr_current_cover_position is not None:
             self._attr_is_closed = (self._attr_current_cover_position == 0)
         elif self._strategy.assumed_state and (is_opening or is_closing):
@@ -1314,10 +1557,41 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             # A positioned cover whose position is still unknown: so is its state.
             self._attr_is_closed = None
 
+    def _settle_unconfirmed_stop(self) -> None:
+        """Clear unconfirmed optimistic motion on stop without drifting position or slats."""
+        self._stop_live_refresh()
+        self._run_start_position = None
+        self._run_start_tilt = None
+        self._run_lead = self._move_lead = 0.0
+        self._pending_stop_context = None
+        self._auto_stop_duration = None
+        self._expected_run_duration = None
+        self._timed_target_position = None
+        self._end_run_from_unknown = False
+        self._full_run_to_end = False
+        self._provisional_write_ts = None
+        self._move_confirmed = False
+        self._probing_p2p_direction = None
+        self._following_scope = False
+        self._move_start_time = None
+        self._run_started_at = None
+        self._motion_started_at = None
+        self._attr_is_opening = False
+        self._attr_is_closing = False
+        if self._attr_current_cover_position is not None:
+            self._start_position = self._attr_current_cover_position
+            self._attr_is_closed = self._attr_current_cover_position == 0
+        else:
+            self._start_position = None
+            self._attr_is_closed = self._is_closed_before_move
+        self._refresh_travel_attributes()
+        self._motor_started.set()
+
     def _abort_motion(self) -> None:
         """Abort motion state when a command frame failed to reach the bus."""
         self._stop_live_refresh()
         self._cancel_stop_task()
+        self._cancel_unconfirmed_move_timer()
         self._end_echo_window()
         if self._run_started_at is not None:
             self._strategy.on_run_ended(self, "abort", self._attr_current_cover_position, time.monotonic())
@@ -1326,9 +1600,14 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._run_lead = self._move_lead = 0.0
         self._pending_stop_context = None
         self._auto_stop_duration = None
+        self._expected_run_duration = None
         self._timed_target_position = None
         self._end_run_from_unknown = False
         self._full_run_to_end = False
+        self._provisional_write_ts = None
+        self._move_confirmed = False
+        self._probing_p2p_direction = None
+        self._following_scope = False
         self._move_start_time = None
         self._run_started_at = None
         self._motion_started_at = None
@@ -1394,6 +1673,112 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         )
         self._abort_motion()
 
+    def _arm_unconfirmed_move_timer(self, write_ts: float) -> None:
+        """Arm an ECHO_WINDOW expiry probe when no settle/auto-stop task is active."""
+        self._cancel_unconfirmed_move_timer()
+        if self.hass is None or self._calibrating:
+            return
+        generation = self._run_generation
+        motor_started = self._motor_started
+        delay = max(0.0, (write_ts + ECHO_WINDOW) - time.monotonic())
+
+        async def _probe_unconfirmed() -> None:
+            try:
+                await self._verify_unconfirmed_p2p_move(generation, motor_started, write_ts)
+            except (asyncio.CancelledError, _MoveSuperseded):
+                pass
+            finally:
+                if self._unconfirmed_move_task is asyncio.current_task():
+                    self._unconfirmed_move_task = None
+
+        @callback
+        def _on_expired(_now: Any) -> None:
+            self._unconfirmed_move_unsub = None
+            if (
+                generation != self._run_generation
+                or motor_started.is_set()
+                or self.hass is None
+            ):
+                return
+            if self._echo_stop_at is not None:
+                self._apply_echo_window_stop()
+                return
+            task = self.hass.async_create_background_task(
+                _probe_unconfirmed(),
+                name=f"myhome cover unconfirmed probe {self._full_where}",
+            )
+            if not task.done():
+                self._unconfirmed_move_task = task
+
+        self._unconfirmed_move_unsub = async_call_later(
+            self.hass,
+            delay,
+            HassJob(
+                _on_expired,
+                f"myhome cover unconfirmed move {self._full_where}",
+                cancel_on_shutdown=True,
+            ),
+        )
+
+    async def _verify_unconfirmed_p2p_move(
+        self,
+        generation: int,
+        motor_started: asyncio.Event,
+        write_ts: float | None,
+    ) -> float:
+        """Probe ``*#2*WHERE##`` when ``ECHO_WINDOW`` expires without a P2P motor-start echo."""
+        if self.actuator_locked is True:
+            self._abort_motion()
+            raise _MoveSuperseded
+        if self._pending_cmd in ("open", "close"):
+            self._probing_p2p_direction = self._pending_cmd
+        try:
+            send_status_req = getattr(self._gateway_handler, "send_status_request", None)
+            res = (
+                send_status_req(OWNAutomationCommand.status(self._full_where))
+                if callable(send_status_req)
+                else None
+            )
+            probe = await res if inspect.isawaitable(res) else res
+            if not isinstance(probe, asyncio.Future):
+                self._move_confirmed = True
+                if self._probing_p2p_direction in ("open", "close"):
+                    self._attr_is_opening = self._probing_p2p_direction == "open"
+                    self._attr_is_closing = self._probing_p2p_direction == "close"
+                    self._attr_is_closed = False
+                anchor_ts = (write_ts + MOTOR_START_DELAY) if write_ts is not None else time.monotonic()
+                self._anchor_run(anchor_ts)
+                self._publish_state()
+                return anchor_ts
+
+            await asyncio.wait({probe}, timeout=WRITE_TIMEOUT)
+            await asyncio.sleep(0)
+            if (
+                getattr(probe, "_empty_reply", False) is True
+                and not motor_started.is_set()
+                and generation == self._run_generation
+            ):
+                await asyncio.sleep(_EMPTY_PROBE_GRACE_S)
+            if generation != self._run_generation:
+                if not self._move_confirmed:
+                    raise _MoveSuperseded
+                return self._move_start_time if self._move_start_time is not None else time.monotonic()
+            if not motor_started.is_set():
+                if not self._run_may_finish_in_echo_window():
+                    self._actuation_unconfirmed = True
+                self._clear_relay_hold()
+                self._abort_motion()
+                raise _MoveSuperseded
+            self._move_confirmed = True
+            if self._move_start_time is None:
+                anchor_ts = (write_ts + MOTOR_START_DELAY) if write_ts is not None else time.monotonic()
+                self._anchor_run(anchor_ts)
+                self._publish_state()
+            return self._move_start_time  # type: ignore[return-value]
+        finally:
+            if generation == self._run_generation:
+                self._probing_p2p_direction = None
+
     async def _await_motion_anchor(self, written) -> float:  # type: ignore
         """Wait for our frame to be written and for the motor-start echo.
 
@@ -1452,6 +1837,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         if not motor_started.is_set() and self._echo_stop_at is not None:
             self._apply_echo_window_stop()
             raise _MoveSuperseded
+        if not motor_started.is_set() and self.scope is None and not self._following_scope:
+            return await self._verify_unconfirmed_p2p_move(generation, motor_started, write_ts)
         if not motor_started.is_set() and write_ts is not None and self._move_start_time == write_ts:
             # No direction status relayed (not every gateway does): the motor
             # started a measured MOTOR_START_DELAY after the write, not at it.
@@ -1473,6 +1860,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._end_run_from_unknown = False
         self._timed_target_position = None
         self._cancel_wall_settle()
+        self._cancel_unconfirmed_move_timer()
         if self._stop_task is not None:
             try:
                 current = asyncio.current_task()
@@ -1530,20 +1918,19 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added to hass."""
-        if self._advanced:
-            # Advanced covers query live position from bus; do not restore stale state
-            self._register_availability_listener()
-            health, address = self._device_health(), self._health_address
-            if health is not None and address is not None:
-                health.name_address(*address, self._device_name, owner=self._health_owner)
+        self._restored_in_add = False
+        await super().async_added_to_hass()
+        if self._advanced and not self._restored_in_add:
             record = await self._async_last_restore_record()
             self._restore_last_run(record)
             self._restore_strategy_state(record)
-            await self._async_poll_if_needed()
-        else:
-            await super().async_added_to_hass()
-            if (self._attr_is_opening or self._attr_is_closing) and not self._is_tilting and self._stop_task is None:
-                self._arm_wall_settle(bool(self._attr_is_opening))
+        if (
+            not self._advanced
+            and (self._attr_is_opening or self._attr_is_closing)
+            and not self._is_tilting
+            and self._stop_task is None
+        ):
+            self._arm_wall_settle(bool(self._attr_is_opening))
         if self._family is not None:
             self._family.membership_changed()
         if (target_hass := (self.hass or self._hass)) is not None and self._min_delta_unsub is None:
@@ -1567,7 +1954,13 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
 
     async def async_restore_last_state(self, last_state: Any) -> None:
         """Restore cover position and closure state."""
+        self._restored_in_add = True
         record = await self._async_last_restore_record()
+        await self._async_restore_actuator_lock(last_state, record)
+        if self._advanced:
+            self._restore_last_run(record)
+            self._restore_strategy_state(record)
+            return
         # Home Assistant keeps a state's attributes only while the entity is available
         # (Entity.__async_calculate_state), so a state saved while the gateway was
         # unreachable (the 15-minute dump, an entry reload, a stop) is "unavailable"
@@ -1640,21 +2033,30 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     self._attr_current_cover_tilt_position = max(0, min(100, int(round(float(last_tilt)))))
                 except (ValueError, TypeError):
                     pass
-        if not self._advanced:
+        if not self._advanced and self.actuator_locked is not True:
             if last_state.state in (STATE_OPENING, STATE_CLOSING):
                 self._arm_relay_hold(time.monotonic(), opening=last_state.state == STATE_OPENING)
             else:
-                raw_ts = last_state.attributes.get("motion_started_at") or last_state.attributes.get("last_run_ended_at")
+                raw_ts = last_state.attributes.get("motion_started_at")
+                raw_dir: Any = None
+                if not raw_ts:
+                    raw_ts = last_state.attributes.get("last_run_ended_at")
+                    raw_dir = last_state.attributes.get("last_run_direction")
                 if not raw_ts and saved_unavailable:
                     raw_ts = record.get("motion_started_at")
-                    if not raw_ts and isinstance(last_run := record.get("last_run"), Mapping):
+                    if raw_ts:
+                        raw_dir = record.get("motion_direction")
+                    elif isinstance(last_run := record.get("last_run"), Mapping):
                         raw_ts = last_run.get("ended_at")
+                        raw_dir = last_run.get("direction")
                 if isinstance(raw_ts, str) and (parsed_dt := dt_util.parse_datetime(raw_ts)) is not None:
                     age = (dt_util.utcnow() - parsed_dt).total_seconds()
                     if 0.0 <= age < M0_RELAY_HOLD_WINDOW:
                         deadline = time.monotonic() + (M0_RELAY_HOLD_WINDOW - age)
                         if self._relay_hold_until is None or deadline > self._relay_hold_until:
                             self._relay_hold_until = deadline
+                            if raw_dir in ("open", "close"):
+                                self._relay_hold_opening = raw_dir == "open"
         self._restore_last_run(record)
         self._restore_strategy_state(record)
 
@@ -1685,8 +2087,12 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 data["tilt"] = tilt
             if self._motion_started_at:
                 data["motion_started_at"] = self._motion_started_at
+                if self.is_opening or self.is_closing:
+                    data["motion_direction"] = "open" if self.is_opening else "close"
         if self._last_run:
             data["last_run"] = dict(self._last_run)
+        if self._actuator_locked is not None and self.scope is None:
+            data["actuator_locked"] = self._actuator_locked
         return RestoredExtraData(data) if data else None
 
     async def _async_last_restore_record(self) -> dict[str, Any]:
@@ -1717,6 +2123,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """Run when entity will be removed from hass."""
         self._run_generation += 1  # a run in flight must not act on a removed entity
         self._cancel_echo_stop_timer()
+        self._cancel_unconfirmed_move_timer()
         self._stop_live_refresh()
         self._cancel_stop_task()
         self._pending_stop_context = None
@@ -1796,6 +2203,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             written = await self._async_move(direction)
             try:
                 anchor = await self._await_motion_anchor(written)
+            except _MoveSuperseded as err:
+                raise HomeAssistantError(
+                    f"{self._display_name}: actuator did not start moving (possibly locked via WHO=14)"
+                ) from err
             except HomeAssistantError:
                 if self._calibration_interrupted:
                     raise CalibrationInterrupted(self._display_name, self._calibration_interrupted) from None
@@ -1861,6 +2272,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """
         if self._advanced:
             raise self._cover_reports_position_error()
+        if self.actuator_locked is True:
+            raise HomeAssistantError(
+                f"{self._display_name}: cannot calibrate while actuator is locked (WHO=14)"
+            )
         if self._calibrating:
             raise HomeAssistantError(
                 f"{self._display_name} is already being calibrated",
@@ -2472,6 +2887,13 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         member's motor-start echo too)."""
         self._stop_live_refresh()
         self._cancel_stop_task()
+        self._provisional_write_ts = None
+        self._move_confirmed = False
+        self._probing_p2p_direction = None
+        self._following_scope = False
+        self._expected_run_duration = None
+        self._scope_run_started_at = None
+        self._scope_run_active_until = None
         self._end_run_from_unknown = False
         self._full_run_to_end = False
         if not is_tilting or self._tilt_follows is not None:
@@ -2483,8 +2905,9 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             # relays a stop status before the direction status, which must not
             # end the pulse), but leaves the curtain's travel clock alone.
             self._begin_command(direction)
-            self._attr_is_opening = direction == "open"
-            self._attr_is_closing = direction == "close"
+            if not self._is_scope_excluded():
+                self._attr_is_opening = direction == "open"
+                self._attr_is_closing = direction == "close"
         elif not self._advanced:
             self._end_curtain_for_takeover(time.monotonic())
             # None while the position is unknown: only an end stop anchors that run.
@@ -2502,10 +2925,12 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._run_started_at = None
             self._motion_started_at = None  # the previous run's anchor is not this run's
             self._refresh_travel_attributes()
-            self._attr_is_opening = direction == "open"
-            self._attr_is_closing = direction == "close"
             self._is_closed_before_move = self._attr_is_closed
-            self._attr_is_closed = False
+            self._probing_p2p_direction = direction
+            if not self._is_scope_excluded():
+                self._attr_is_opening = direction == "open"
+                self._attr_is_closing = direction == "close"
+                self._attr_is_closed = False
             self._begin_command(direction)
         else:
             self._run_generation += 1
@@ -2518,16 +2943,11 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         when the gateway omits an SCS pre-move STOP (``MH201``, ``MH202``, or learned via
         an unfollowed stop inside ``ECHO_WINDOW``) and the actuator relay may be energized.
         """
-        if is_tilting or self._advanced or self._calibrating:
+        if is_tilting or not self._omits_bus_pre_move_stop():
             return False
         if self._stop_before_move is True:
             return True
-        if self._stop_before_move is False:
-            return False
-        emits = self._gateway_emits_pre_move_stop()
-        if emits is False or self._learned_stop_before_move:
-            return self._actuator_relay_may_be_energized(time.monotonic())
-        return False
+        return self._actuator_relay_may_be_energized(time.monotonic())
 
     async def _async_send_stop_for_pre_move(self) -> tuple[Any, int]:
         """Queue a pre-move stop and return ``(written, stop_generation)``."""
@@ -2558,11 +2978,18 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         is_tilting: bool = False,
         *,
         pre_stopped: bool = False,
+        expected_run_duration: float | None = None,
+        _gen_out: list[int] | None = None,
     ) -> asyncio.Future[Any] | None:
         """Queue a direction command and return its delivery future."""
         if not pre_stopped and self._stops_before_move(is_tilting):
             await self._async_stop_before_move()
         self._begin_run(direction, is_tilting)
+        if expected_run_duration is not None:
+            self._expected_run_duration = expected_run_duration
+        move_gen = self._run_generation
+        if _gen_out is not None:
+            _gen_out.append(move_gen)
         if direction == "open":
             command = OWNAutomationCommand.raise_shutter(self._full_where)
         else:
@@ -2570,6 +2997,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         written = await self._gateway_handler.send(command)
         if self._calibrating or self.calibration_hub.is_calibrating:
             _record_calibration_frame(self._gateway_handler, "tx", str(command), direction_action=direction, entity_id=self.entity_id)
+        if self._run_generation != move_gen:
+            return written
         if is_tilting or not self._advanced:
             self._track_write(written)
         if isinstance(written, asyncio.Future) and written.done():
@@ -2612,8 +3041,11 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             finally:
                 self._pending_timed_target = None
             pre_stopped = True
-        written = await self._async_move("open" if opening else "close", pre_stopped=pre_stopped)
-        if self._is_promoted_native():
+        gen_box: list[int] = []
+        written = await self._async_move(
+            "open" if opening else "close", pre_stopped=pre_stopped, _gen_out=gen_box
+        )
+        if self._is_promoted_native() or not gen_box or self._run_generation != gen_box[0]:
             return
         self._settle_run_to_end(opening, written)
 
@@ -2624,6 +3056,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         for an own command; the write is tracked and the run settles on the travel timer
         like an own open / close (#770, #795).
         """
+        self._following_scope = True
         self._track_write(written)
         self._settle_run_to_end(opening, written)
         self._publish_state()
@@ -2650,9 +3083,14 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._run_lead = self._move_lead = 0.0
         self._pending_stop_context = None
         self._auto_stop_duration = None
+        self._expected_run_duration = None
         self._timed_target_position = None
         self._end_run_from_unknown = False
         self._full_run_to_end = False
+        self._provisional_write_ts = None
+        self._move_confirmed = False
+        self._probing_p2p_direction = None
+        self._following_scope = False
         self._refresh_travel_attributes()
         self._publish_state()
 
@@ -2907,15 +3345,21 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             await self._async_run_to_end(False, pre_stopped=pre_stopped)
             return
 
+        gen_box: list[int] = []
         self._pending_timed_target = target_int
         try:
-            written = await self._async_move(direction, pre_stopped=True)
+            written = await self._async_move(
+                direction,
+                pre_stopped=True,
+                expected_run_duration=run_duration,
+                _gen_out=gen_box,
+            )
         finally:
             self._pending_timed_target = None
-        if self._is_promoted_native():
+        if self._is_promoted_native() or not gen_box or self._run_generation != gen_box[0]:
             return
         self._timed_target_position = target_int
-        generation = self._run_generation
+        generation = gen_box[0]
 
         async def _auto_stop() -> None:
             try:
@@ -2967,8 +3411,13 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     def _begin_stop(self, *, scope_where: str | None = None) -> None:
         """Cancel any settle/auto-stop task and open the echo window for an outgoing stop."""
         self._cancel_stop_task()
+        self._cancel_unconfirmed_move_timer()
         # HA asked for the stop: its status is never the end stop, whenever it arrives.
         self._full_run_to_end = False
+        self._probing_p2p_direction = None
+        if scope_where is None:
+            self._scope_run_started_at = None
+            self._scope_run_active_until = None
         if self._is_tilting:
             return
         if self._advanced:
@@ -2984,8 +3433,15 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """Track a stop frame's delivery and freeze immediately when no Future is returned."""
         self._track_write(written)
         if not isinstance(written, asyncio.Future):
-            self._freeze_position(time.monotonic() + MOTOR_STOP_DELAY)
-            self._motor_started.set()
+            if (
+                (self._attr_is_opening or self._attr_is_closing)
+                and not self._move_confirmed
+                and self._has_lock_tracking()
+            ):
+                self._settle_unconfirmed_stop()
+            else:
+                self._freeze_position(time.monotonic() + MOTOR_STOP_DELAY)
+                self._motor_started.set()
 
     def _follow_scope_stop(self, written: Any) -> None:
         """A scope stop frame just queued halts this member as well (#770)."""
@@ -3004,7 +3460,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         written = await self._gateway_handler.send(cmd)
         if self._calibrating or self.calibration_hub.is_calibrating:
             _record_calibration_frame(self._gateway_handler, "tx", str(cmd), action="stop", entity_id=self.entity_id)
-        if not self._advanced and not was_tilting:
+        if not self._advanced and not was_tilting and generation == self._run_generation:
             self._track_stop_write(written)
         elif was_tilting and generation == self._run_generation:
             # A pulse started while this stop was being queued is not ours to settle.
@@ -3116,6 +3572,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """Forget a tilt pulse that never reached the bus; the tilt angle stays as it was."""
         self._end_echo_window()
         self._is_tilting = False
+        self._move_confirmed = False
         self._tilt_start_time = None
         self._tilt_direction = None
         self._tilt_follows = None
@@ -3172,6 +3629,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         # The pulse is over: a direction frame from now on is a keypad press, not its echo.
         self._end_echo_window()
         self._is_tilting = False
+        self._move_confirmed = False
         self._tilt_start_time = None
         self._tilt_direction = None
         self._tilt_follows = None
@@ -3233,6 +3691,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._tilt_direction = direction
         self._tilt_start_time = None
         self._tilt_follows = leader
+        self._move_confirmed = False
         self._is_tilting = True
         # The relayed stop status before the direction status belongs to the pulse.
         self._begin_command(direction)
@@ -3395,16 +3854,21 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._tilt_direction = direction
         self._tilt_start_time = None
 
+        gen_box: list[int] = []
         try:
-            written = await self._async_move(direction, is_tilting=True)
+            written = await self._async_move(direction, is_tilting=True, _gen_out=gen_box)
         except Exception:
-            self._abort_tilt()
+            if not gen_box or self._run_generation == gen_box[0]:
+                self._abort_tilt()
             raise
+
+        if not gen_box or self._run_generation != gen_box[0]:
+            return
 
         # _tilt_start_time stays None (no slat travel counted) until the frame is
         # written: on a busy queue the motor is still idle for a while.
         self._pulse_written = written
-        self._start_pulse_auto_stop(written, self._run_generation, self._motor_started)
+        self._start_pulse_auto_stop(written, gen_box[0], self._motor_started)
         if self.hass is not None:
             self.async_write_ha_state()
 
@@ -3438,6 +3902,19 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     write_ts = float(write_ts) if isinstance(write_ts, (int, float)) else None
                 if generation != self._run_generation:
                     return
+                if self._is_scope_excluded() and not motor_started.is_set():
+                    deadline = (write_ts if write_ts is not None else time.monotonic()) + ECHO_WINDOW
+                    wait_locked = deadline - time.monotonic()
+                    if wait_locked > 0:
+                        try:
+                            await asyncio.wait_for(motor_started.wait(), wait_locked)
+                        except TimeoutError:
+                            pass
+                    if generation != self._run_generation:
+                        return
+                    if not motor_started.is_set():
+                        self._abort_tilt()
+                        return
                 # The motor starts well after the write (MOTOR_START_DELAY), and a
                 # pulse timed from the write would lose that much slat travel:
                 # time it from the direction status (_handle_echo sets the start),
@@ -3519,14 +3996,87 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         raw_where = getattr(message, "where", None)
         if not isinstance(raw_where, (str, int)) or isinstance(raw_where, bool):
             return False
+        raw_str = str(raw_where)
+        if not raw_str or raw_str == "0" or raw_str.startswith("#"):
+            return False
         own_where = str(self._where)
         if own_where.startswith(f"{self._who}-"):
             own_where = own_where[len(f"{self._who}-") :]
+        msg_canon = canonical_point_spelling(normalize_where(raw_str) or raw_str)
+        own_canon = canonical_point_spelling(normalize_where(own_where) or own_where)
         return (
-            str(raw_where) == own_where
+            msg_canon == own_canon
             and _normalize_bus_interface(getattr(message, "interface", None))
             == _normalize_bus_interface(self._interface)
         )
+
+    def _cover_poll_targets_self(self, sent: Any) -> bool:
+        """Return True when a WHO=2 status/dimension query ``sent`` addresses this cover."""
+        if getattr(sent, "who", None) != 2 or not (
+            getattr(sent, "is_status_request", False) is True
+            or getattr(sent, "is_dimension_request", False) is True
+        ):
+            return False
+        if self._is_own_point_message(sent):
+            return True
+        if not (
+            getattr(sent, "is_general", False) is True
+            or getattr(sent, "is_area", False) is True
+            or getattr(sent, "is_group", False) is True
+        ):
+            return False
+        from .cover_scope import CoverScope
+
+        raw_full = expose_message_where(sent)
+        sent_base, sep, sent_iface_str = raw_full.rpartition("#4#")
+        sent_where = sent_base if sep else raw_full
+        sent_iface = _normalize_bus_interface(
+            sent_iface_str if sep else getattr(sent, "interface", None)
+        )
+        sent_scope = CoverScope.of(sent_where, sent_iface)
+        if sent_scope is None:
+            return False
+        if sent_scope.kind == "group":
+            return (
+                self._family is not None
+                and self._device_id in self._family.keys_moved_by(sent_scope.where, sent_iface)
+            )
+        return sent_scope.contains(self)
+
+    def _is_from_cover_poll(self, message: Any) -> bool:
+        """Return True when ``message`` is a reply to a WHO=2 status/dimension poll or sweep."""
+        if getattr(message, "_from_status_request", False) is True:
+            return True
+        now = time.monotonic()
+        gw = self._gateway_handler
+        pri_fn = getattr(gw, "_get_primary_gateway", None)
+        pri_gw = (
+            pri_fn()
+            if callable(pri_fn) and getattr(gw, "is_follower", False) is True
+            else None
+        )
+        root = pri_gw if pri_gw is not None else gw
+        sec_fn = getattr(root, "_get_secondary_for_who", None)
+        stb_fn = getattr(root, "_get_standby_gateway", None)
+        for h in (
+            gw,
+            pri_gw,
+            sec_fn(2) if callable(sec_fn) else None,
+            stb_fn() if callable(stb_fn) else None,
+        ):
+            if h is None:
+                continue
+            if getattr(h, "sweep_active", False) is True:
+                return True
+            pool = getattr(h, "_command_pool", None)
+            for sent in tuple(getattr(pool, "_in_flight_messages", ())):
+                if self._cover_poll_targets_self(sent):
+                    return True
+            for ts, sent in tuple(getattr(pool, "_recent_who2_polls", ())):
+                min_ts = self._scope_run_started_at if self._scope_run_started_at is not None else 0.0
+                if ts >= min_ts and now - ts <= 1.0 and self._cover_poll_targets_self(sent):
+                    return True
+        return False
 
     def _handle_echo(self, message: OWNMessage, now: float) -> bool:
         """Consume frames the gateway relays for our own in-flight command.
@@ -3540,10 +4090,25 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         is_closing = bool(getattr(message, "is_closing", False))
         is_stop = not is_opening and not is_closing
         if self._pending_cmd in ("open", "close"):
+            if (
+                self.scope is None
+                and not self._following_scope
+                and self._tilt_follows is None
+                and not self._is_own_point_message(message)
+            ):
+                return False
             matches = (is_opening and self._pending_cmd == "open") or (
                 is_closing and self._pending_cmd == "close"
             )
             if matches:
+                self._move_confirmed = True
+                self._actuation_unconfirmed = False
+                if self.actuator_locked is True:
+                    self._clear_actuator_lock()
+                self._attr_is_opening = self._pending_cmd == "open"
+                self._attr_is_closing = self._pending_cmd == "close"
+                if not self._is_tilting:
+                    self._attr_is_closed = False
                 # The relayed direction status marks the real motor start.
                 if self._is_tilting:
                     if self._tilt_follows is None:
@@ -3595,16 +4160,30 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 return True
             self._stop_translation_seen = True
             if not self._motor_started.is_set() and not self._is_tilting:
-                self._freeze_position(now + MOTOR_STOP_DELAY)
-                self._motor_started.set()
+                if (
+                    (self._attr_is_opening or self._attr_is_closing)
+                    and not self._move_confirmed
+                    and self._has_lock_tracking()
+                ):
+                    self._settle_unconfirmed_stop()
+                else:
+                    self._freeze_position(now + MOTOR_STOP_DELAY)
+                    self._motor_started.set()
             self._last_stop_at = now
             self._stopped_event.set()
             return True
         if matches_own_stop:
             self._clear_relay_hold()
             if not self._motor_started.is_set():
-                self._freeze_position(now)
-                self._motor_started.set()
+                if (
+                    (self._attr_is_opening or self._attr_is_closing)
+                    and not self._move_confirmed
+                    and self._has_lock_tracking()
+                ):
+                    self._settle_unconfirmed_stop()
+                else:
+                    self._freeze_position(now)
+                    self._motor_started.set()
             self._end_echo_window()
             self._auto_stop_duration = None
             self._last_stop_at = now
@@ -3620,9 +4199,16 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             # *2*0*<member>## still re-anchors to the actuator's own stop time (#770).
             self._clear_relay_hold()
             if not self._motor_started.is_set():
-                stopped_at = now + MOTOR_STOP_DELAY
-                self._freeze_position(stopped_at)
-                self._motor_started.set()
+                if (
+                    (self._attr_is_opening or self._attr_is_closing)
+                    and not self._move_confirmed
+                    and self._has_lock_tracking()
+                ):
+                    self._settle_unconfirmed_stop()
+                else:
+                    stopped_at = now + MOTOR_STOP_DELAY
+                    self._freeze_position(stopped_at)
+                    self._motor_started.set()
             self._last_stop_at = now
             self._stopped_event.set()
             return True
@@ -3641,6 +4227,21 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         subsequent reversals after promotion increment `_run_generation` as an
         external takeover.
         """
+        own_point = self._is_own_point_message(message)
+        if not own_point and self._is_scope_excluded():
+            if (
+                self._actuation_unconfirmed
+                and getattr(message, "is_translation", None) is not True
+                and (
+                    bool(getattr(message, "is_opening", False))
+                    or bool(getattr(message, "is_closing", False))
+                )
+            ):
+                self._note_scope_run_for_unconfirmed(
+                    time.monotonic(), bool(getattr(message, "is_opening", False))
+                )
+            return
+
         is_translation = getattr(message, "is_translation", None) is True
         if is_translation:
             effective_what = getattr(message, "effective_what", None)
@@ -3719,7 +4320,6 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         # Physical shutters only report Dimension 10 on their own point-to-point WHERE,
         # never on a general, area, or group scope address (which relay_general /
         # relay_scope fan out to every member).
-        own_point = self._is_own_point_message(message)
         promoted = False
         if own_point and (position is not None or position_unknown):
             self._dim10_seen = True
@@ -3736,6 +4336,76 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         )
         now = time.monotonic()
         moving = bool(is_opening or is_closing)
+        if own_point and not is_translation:
+            dim10_info = automation_dim10_info(message)
+            if (
+                self._is_tilting
+                and position is not None
+                and self._attr_current_cover_position is not None
+                and position != self._attr_current_cover_position
+                and (position > self._attr_current_cover_position)
+                == (self._tilt_direction == "open")
+            ):
+                self._move_confirmed = True
+            if dim10_info in (12, 13):
+                if (mgr := actuator_locks_of(self._gateway_handler)) is not None:
+                    mgr.set_point_lock(self._where, self._interface, True, observed=True)
+                else:
+                    self.handle_actuator_lock(True)
+            elif dim10_info in (0, 15):
+                if (mgr := actuator_locks_of(self._gateway_handler)) is not None:
+                    mgr.set_point_lock(self._where, self._interface, False, observed=True)
+                else:
+                    self.handle_actuator_lock(False)
+            elif (
+                dim10_info == 14
+                and (self._attr_is_opening or self._attr_is_closing or self._is_tilting)
+                and not self._move_confirmed
+            ):
+                if self._is_tilting:
+                    self._cancel_stop_task()
+                    self._run_generation += 1
+                    self._abort_tilt()
+                else:
+                    self._run_generation += 1
+                    self._abort_motion()
+                if position is not None:
+                    self._attr_current_cover_position = position
+                    if not self._advanced:
+                        self._start_position = position
+                        if not self._calibrating:
+                            self._position_drift_bound = 0.0
+                    if (is_closed := getattr(message, "is_closed", None)) is not None:
+                        self._attr_is_closed = bool(is_closed)
+                    else:
+                        self._attr_is_closed = position == 0
+                elif position_unknown and self._advanced:
+                    self._attr_current_cover_position = None
+                    self._attr_is_closed = None
+                self._finish_handle_event(promoted)
+                return
+            if moving:
+                self._actuation_unconfirmed = False
+                self._scope_run_started_at = None
+                self._scope_run_active_until = None
+                if self.actuator_locked is True and dim10_info not in (12, 13):
+                    self._clear_actuator_lock()
+            elif (
+                self._actuation_unconfirmed
+                and self._scope_run_active_until is not None
+                and not (self._attr_is_opening or self._attr_is_closing)
+                and not (self._pending_cmd == "stop" and self._in_echo_window(now))
+                and getattr(message, "_what", getattr(message, "what", None)) in (0, 10, "0", "10")
+                and not self._is_from_cover_poll(message)
+            ):
+                if (
+                    self._scope_run_started_at is not None
+                    and now - self._scope_run_started_at >= ECHO_WINDOW
+                ):
+                    if now <= self._scope_run_active_until:
+                        self._actuation_unconfirmed = False
+                    self._scope_run_started_at = None
+                    self._scope_run_active_until = None
         if moving and position is not None:
             # While the motor runs the actuator repeats the level it started from
             # (*#2*0112*10*12*25*…## until *#2*0112*10*10*0*…##): the status
@@ -3846,8 +4516,12 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             else:
                 self._attr_is_closed = (self._attr_current_cover_position == 0)
         elif is_opening:
-            if self._is_tilting and self._tilt_direction == "open":
+            if not own_point and self._opposite_relay_energized_for_scope(now, incoming_opening=True):
+                self._apply_scope_interlock_stop(now)
+            elif self._is_tilting and self._tilt_direction == "open":
                 # Movement frame caused by our tilt pulse: preserve tilt state, do not anchor linear travel
+                self._move_confirmed = True
+                self._motor_started.set()
                 self._attr_is_opening = True
                 self._attr_is_closing = False
             else:
@@ -3862,21 +4536,34 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     self._cancel_stop_task()
                     if not promoted:
                         self._run_generation += 1
-                if not self._advanced and not self._attr_is_opening:
+                in_flight_own_open = bool(self._attr_is_opening) or (
+                    own_point
+                    and not self._move_confirmed
+                    and self._probing_p2p_direction == "open"
+                )
+                if not self._advanced and not in_flight_own_open:
                     self._start_position = self.current_cover_position
                 if was_closing:
                     self._turn_slats_for_run(now, self._run_started_at, False, True)
                     self._end_run_on_reversal(now)
                     self._run_started_at = now
-                was_already_opening = bool(self._attr_is_opening)
                 self._attr_is_opening = True
                 self._attr_is_closing = False
                 self._attr_is_closed = False
-                if not self._advanced:
-                    self._arm_relay_hold(now, opening=True)
-                if not was_already_opening:
+                if in_flight_own_open:
+                    if (
+                        not self._move_confirmed
+                        and (own_point or self.scope is not None or self._following_scope)
+                    ):
+                        self._move_confirmed = True
+                        self._motor_started.set()
+                else:
+                    self._move_confirmed = True
                     if not was_closing and not self._is_tilting and not self._advanced and not promoted:
                         self._run_generation += 1
+                if not self._advanced and self._move_confirmed:
+                    self._arm_relay_hold(now, opening=True)
+                if not in_flight_own_open:
                     if self._run_started_at is None:
                         self._run_started_at = now
                     if self._advanced:
@@ -3890,8 +4577,12 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                         self._anchor_run(now)
                         self._arm_wall_settle(True)
         elif is_closing:
-            if self._is_tilting and self._tilt_direction == "close":
+            if not own_point and self._opposite_relay_energized_for_scope(now, incoming_opening=False):
+                self._apply_scope_interlock_stop(now)
+            elif self._is_tilting and self._tilt_direction == "close":
                 # Movement frame caused by our tilt pulse: preserve tilt state, do not anchor linear travel
+                self._move_confirmed = True
+                self._motor_started.set()
                 self._attr_is_opening = False
                 self._attr_is_closing = True
             else:
@@ -3906,21 +4597,34 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     self._cancel_stop_task()
                     if not promoted:
                         self._run_generation += 1
-                if not self._advanced and not self._attr_is_closing:
+                in_flight_own_close = bool(self._attr_is_closing) or (
+                    own_point
+                    and not self._move_confirmed
+                    and self._probing_p2p_direction == "close"
+                )
+                if not self._advanced and not in_flight_own_close:
                     self._start_position = self.current_cover_position
                 if was_opening:
                     self._turn_slats_for_run(now, self._run_started_at, True, False)
                     self._end_run_on_reversal(now)
                     self._run_started_at = now
-                was_already_closing = bool(self._attr_is_closing)
                 self._attr_is_opening = False
                 self._attr_is_closing = True
                 self._attr_is_closed = False
-                if not self._advanced:
-                    self._arm_relay_hold(now, opening=False)
-                if not was_already_closing:
+                if in_flight_own_close:
+                    if (
+                        not self._move_confirmed
+                        and (own_point or self.scope is not None or self._following_scope)
+                    ):
+                        self._move_confirmed = True
+                        self._motor_started.set()
+                else:
+                    self._move_confirmed = True
                     if not was_opening and not self._is_tilting and not self._advanced and not promoted:
                         self._run_generation += 1
+                if not self._advanced and self._move_confirmed:
+                    self._arm_relay_hold(now, opening=False)
+                if not in_flight_own_close:
                     if self._run_started_at is None:
                         self._run_started_at = now
                     if self._advanced:
@@ -3940,6 +4644,22 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             was_tilting = self._is_tilting
             was_opening = bool(self._attr_is_opening)
             was_closing = bool(self._attr_is_closing)
+            if (
+                (was_opening or was_closing)
+                and not was_tilting
+                and not self._move_confirmed
+                and not self._advanced
+                and self._has_lock_tracking()
+                and self.scope is None
+                and not self._following_scope
+            ):
+                if not is_translation and not self._run_may_finish_in_echo_window():
+                    self._actuation_unconfirmed = True
+                self._run_generation += 1
+                self._last_stop_at = now
+                self._stopped_event.set()
+                self._abort_motion()
+                return
             if (
                 not is_translation
                 and not was_tilting
@@ -4095,6 +4815,8 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
     """
 
     _poll_on_add = False
+    _locked_pulse_intent: tuple[Intent, float] | None = None
+    _locked_pulse_echo: asyncio.Event | None = None
 
     def __init__(
         self,
@@ -4129,7 +4851,16 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
             entity_name=entity_name,
         )
         self._interface = interface
-        self._full_where = f"{self._where}#4#{self._interface}" if self._interface is not None else self._where
+        pt_canon, iface_canon = split_point_key(self._where, self._interface)
+        self._full_where = (
+            f"{pt_canon}#4#{iface_canon}"
+            if pt_canon and iface_canon is not None
+            else pt_canon
+            if pt_canon
+            else f"{self._where}#4#{self._interface}"
+            if self._interface is not None
+            else self._where
+        )
         self._attr_device_class = device_class
         self._travel_time = travel_time
         self._pulse_duration = pulse_duration
@@ -4203,16 +4934,22 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         """Static attributes plus the access policy state when enabled (never a PIN or nonce)."""
-        if self._access is None:
-            return self._attr_extra_state_attributes
-        return {**self._attr_extra_state_attributes, **self._access.attributes()}
+        attrs = dict(getattr(self, "_attr_extra_state_attributes", None) or {})
+        if self._access is not None:
+            attrs.update(self._access.attributes())
+        if self._actuator_locked is not None:
+            attrs["actuator_locked"] = self._actuator_locked
+        return attrs
 
     @property
     def extra_restore_state_data(self) -> ExtraStoredData | None:
-        """Keep a latched watchdog fault across a restart saved while unavailable."""
+        """Keep a latched watchdog fault and actuator lock across a restart saved while unavailable."""
+        data: dict[str, Any] = {}
         if self._access is not None and self._access.fault_reason:
-            return RestoredExtraData({"fault_reason": self._access.fault_reason})
-        return None
+            data["fault_reason"] = self._access.fault_reason
+        if self._actuator_locked is not None:
+            data["actuator_locked"] = self._actuator_locked
+        return RestoredExtraData(data) if data else None
 
     async def async_added_to_hass(self) -> None:
         """Register listeners when added to Home Assistant."""
@@ -4588,17 +5325,8 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
         )
         return False
 
-    async def _async_pulse(self, intent: Intent, effect: Effect) -> PulseOutcome:
-        """Pulse the relay for an approved request and show the expected motion.
-
-        The motion shown is an estimate for the dashboard only; the access
-        policy decides on the state sensor, never on this estimate. Nothing is shown
-        for a pulse that was not confirmed: whether the door moves is not known.
-        """
-        del effect  # the policy already decided; the display follows the request
-        outcome = await self._async_send_impulse(intent)
-        if outcome is not PulseOutcome.CONFIRMED:
-            return outcome
+    def _start_impulse_motion(self, intent: Intent) -> None:
+        """Show expected motion for a confirmed impulse and arm the travel timer."""
         self._cancel_travel_timer()
         self._attr_is_opening = intent is Intent.OPEN
         self._attr_is_closing = intent is Intent.CLOSE
@@ -4617,6 +5345,42 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
                 self._publish_state()
 
             self._travel_timer_cancel = async_call_later(self.hass, self._travel_time, _finish)
+
+    async def _async_pulse(self, intent: Intent, effect: Effect) -> PulseOutcome:
+        """Pulse the relay for an approved request and show the expected motion.
+
+        The motion shown is an estimate for the dashboard only; the access
+        policy decides on the state sensor, never on this estimate. Nothing is shown
+        for a pulse that was not confirmed: whether the door moves is not known.
+        """
+        del effect  # the policy already decided; the display follows the request
+        outcome = await self._async_send_impulse(intent)
+        if outcome is not PulseOutcome.CONFIRMED:
+            return outcome
+        if self.actuator_locked is True:
+            if self._access is None:
+                if intent is Intent.STOP:
+                    self._last_pulse_intent = None
+                self._locked_pulse_intent = (intent, time.monotonic() + ECHO_WINDOW)
+                return PulseOutcome.CONFIRMED
+            echo_ev = asyncio.Event()
+            self._locked_pulse_echo = echo_ev
+            self._locked_pulse_intent = (intent, time.monotonic() + ECHO_WINDOW)
+            try:
+                await asyncio.wait_for(echo_ev.wait(), ECHO_WINDOW)
+            except TimeoutError:
+                self._locked_pulse_intent = None
+                self._last_pulse_time = -1e9
+                self._last_pulse_intent = None
+                if intent is Intent.STOP:
+                    return PulseOutcome.NOT_SENT
+                raise AccessDenied(f"{self._display_name}: actuator is locked (WHO=14)") from None
+            finally:
+                if self._locked_pulse_echo is echo_ev:
+                    self._locked_pulse_echo = None
+            return PulseOutcome.CONFIRMED
+        self._locked_pulse_intent = None
+        self._start_impulse_motion(intent)
         return outcome
 
     def _pulse_failed(self, outcome: PulseOutcome) -> HomeAssistantError:
@@ -4758,6 +5522,28 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
         raise ServiceValidationError(f"{self._display_name}: reset_cover_travel_time is only supported on WHO=2 shutters")
 
     @callback
+    def handle_actuator_lock(self, locked: bool) -> None:
+        """Apply WHO=14 lock state to this impulse cover."""
+        if not locked and self._actuator_locked is True:
+            self._last_pulse_time = -1e9
+            self._last_pulse_intent = None
+        self._locked_pulse_intent = None
+        super().handle_actuator_lock(locked)
+
+    def _is_own_impulse_event(self, message: Any) -> bool:
+        """Return True when ``message`` addresses this impulse cover point-to-point."""
+        if (
+            getattr(message, "is_general", False) is True
+            or getattr(message, "is_area", False) is True
+            or getattr(message, "is_group", False) is True
+        ):
+            return False
+        own_key = split_point_key(self._where, self._interface)
+        msg_where = expose_message_where(message)
+        msg_iface = None if "#4#" in msg_where else getattr(message, "interface", None)
+        return bool(own_key[0]) and split_point_key(msg_where, msg_iface) == own_key
+
+    @callback
     def handle_event(self, message: Any) -> None:
         """Handle incoming WHO=1 relay frames for this impulse cover.
 
@@ -4770,13 +5556,30 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
             return
         what_pub = getattr(message, "what", None)
         what = what_pub if isinstance(what_pub, (int, str)) else getattr(message, "_what", None)
+        if what in (30, 31, "30", "31"):
+            return
         is_on = getattr(message, "is_on", False) or what in (1, 18)
         if not is_on:
             return  # Ignore *1*0*... release frames (such as the 5-minute delayed hardware timer)
 
+        own_point = self._is_own_impulse_event(message)
+        if not own_point and self.actuator_locked is True:
+            return
+        now = time.monotonic()
+        if own_point and self.actuator_locked is True:
+            self._clear_actuator_lock()
+            if self._locked_pulse_echo is not None:
+                self._locked_pulse_echo.set()
+            pending_intent = self._locked_pulse_intent
+            self._locked_pulse_intent = None
+            if pending_intent is not None and now <= pending_intent[1]:
+                self._last_pulse_intent = pending_intent[0]
+                self._start_impulse_motion(pending_intent[0])
+                return
+            self._publish_state()
+
         # Echo window: ignore frames arriving while our own command is on its way, or
         # while the relay that command closed (or may have closed) can still be closed.
-        now = time.monotonic()
         echo_window = max(IMPULSE_ECHO_MIN, self._pulse_duration + IMPULSE_ECHO_MARGIN)
         if self._pulse_in_flight or now - self._last_handover < echo_window:
             return

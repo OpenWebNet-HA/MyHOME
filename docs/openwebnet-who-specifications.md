@@ -29,7 +29,7 @@ If you are a **certified BTicino / Legrand installer**, **system integrator**, o
     - **`WHO = 3`**: Load control legacy central unit (F421) (Seeking newer official PDF than 2006).
     - **`WHO = 6`**: Dedicated audio door entry call frames (Seeking standalone document beyond WHO 7 / Intro).
     - **`WHO = 9`**: Auxiliary channels (AUX 1–9) (Seeking newer official PDF than 2006).
-    - *(Note: **`WHO = 14`** Actuator Lock is fully reverse-engineered and documented below; Legrand never published a public standalone PDF).*
+    - *(Note: **`WHO = 14`** Actuator Lock has no separate `WHO_14.pdf` file because it is published inside `WHO_1.pdf` — `Who = 1 LIGHTING` v1.1.0, Chapter 4 "WHO 14", §4.2, p. 21 & §5.1, p. 22 — and cross-verified below against gateway firmwares and live hardware).*
 
 3. **Software Tooling & Dictionaries (MyHOME_Suite / TiMyHome)**:
     - Command definitions or exported XML dictionaries from Legrand/BTicino configuration software (**MyHOME_Suite**, **TiMyHome**, **Virtual Configurator**, **MyHOME_Up**).
@@ -61,7 +61,7 @@ The table below catalogs every known OpenWebNet function family (`WHO`), its off
 | **8** | **Video Door Entry / Intercom** | *Internal / Installer Spec* (`bt_vct`) | — | 🟡 | `myhome_doorbell_event` | Entrance panel video doorbell notifications (`*8*1#<1..4>#<mm>*<WHERE>##`) on gateways connected to the door-entry riser (`F454`, `F459`, etc.). |
 | **9** | **Auxiliary (Comandi Ausiliari)** | `OpenWebNet_Community_Auxiliary` / `WHO_9.pdf` | v1.0.0 (2006) | 🟡 | `binary_sensor`, `switch` | Auxiliary channels (AUX 0 to AUX 9, declared in `myhome.yaml`) and per-device **Invert state** configuration switches. |
 | **13** | **Gateway Management** | `OpenWebNet_Community_2_device_v1_0_0_EN` / `WHO_13.pdf` | **v1.0.0 (2006-06-13)** | 🟢 | — (Core diagnostics, `myhome.sync_time`) | Date/time synchronization (`*#13**#0*...`), firmware version query, IP configuration, MAC address, device model probing. Contributed by GianlucaCh. |
-| **14** | **Actuators Lock (Light & Shutters)** | `Light & Shutter Actuators Lock` *(No Public PDF)* | v1.0.0 (2008) | 🟢 | `button` | Physical endpoint lock/unlock. Lock (`*14*0*<WHERE>##`), Unlock (`*14*1*<WHERE>##`), Status query (`*#14*<WHERE>##`). Disables/enables physical wall button input. Legrand never distributed a public standalone PDF (internal diagnostic spec). |
+| **14** | **Actuators Lock (Light & Shutters)** | `Who = 1 LIGHTING` / `WHO_1.pdf` *(Chapter 4, §4.2 p. 21 & §5.1 p. 22)* | **v1.1.0 (2014-11-17)** | 🟢 | `button` | Physical endpoint lock/unlock: Lock (`*14*0*<WHERE>##`) and Unlock (`*14*1*<WHERE>##`); `*#14*<WHERE>##` status queries are NACKed on tested gateways (write/event-only, tracked via `actuator_locked`). Disables/enables physical wall buttons and bus actuation. Documented in `WHO_1.pdf` Chapter 4 rather than a separate `WHO_14.pdf`. |
 | **15** | **CEN Scenario Control (Scheduler)** | `CEN Frames for Scenario Scheduler` / `WHO_15-25.pdf` | **v1.0.0 (2010-10-01)** | 🟢 | `myhome_cen_event`, device triggers | Pushbutton scenario events for Scenario Scheduler (MH200, MH200N, Legrand 03565): Virtual/physical pressure, short release, extended pressure, release after extended pressure. Contributed by GianlucaCh. |
 | **16** | **Sound Distribution (Zone/Amp Control)** | `OpenWebNet_Community_4_soundsystem` / `WHO_16.pdf` | **v1.0.1 (2011-11-24)** | 🟢 | `media_player`, `number`, `button` | Multi-room audio matrix & zone control: Amplifier ON/OFF, volume control (step & %), audio input source selection (RDS tuner, RCA/aux, network decoders), station presets (F441, F441M, F500, F500N, F450, 3487). |
 | **17** | **Scenario Programmer (Scenes)** | `Who = 17 SCENES` / `WHO_17.pdf` | **v1.0.0 (2015-04-09)** | 🟢 | — (not implemented; `myhome_scene_event` only) | MH200 / MH200N / MH202 scenario programmer lifecycle telemetry (`myhome_scene_event` on start/stop/enable/disable). Contributed by GianlucaCh. |
@@ -127,17 +127,36 @@ A common source of confusion in the OpenWebNet ecosystem stems from the shared `
 
 ### 3. Actuator Diagnostics & Endpoint Safety Locks (`WHO = 14`)
 
-BTicino and Legrand never distributed a standalone `WHO_14.pdf` in their public developer distributions, retaining it as an internal/installer diagnostic function. However, the protocol grammar is fully reverse-engineered and verified across live systems:
+`WHO = 14` is published inside `WHO_1.pdf` (`Who = 1 LIGHTING`, v1.1.0, 2014-11-17, Chapter 4 *"WHO 14"*, §4.2 *"WHERE Table"*, p. 21 and §5.1 *"Command session - Special Commands"*, p. 22) rather than as a standalone `WHO_14.pdf`. Its frame grammar, gateway translation rules, and per-generation actuator behaviour have been cross-verified across the QEMU Firmware Oracle and live hardware captures (`F461` `2.0.11`, `MH200N` `1.1.8`, `MH201` `3.3.6` & `3.6.44`, `F454` `2.0.51`, `MH202` `1.0.24`):
 
-- **Protocol Function**: Inhibits physical wall buttons (rocker switches, CEN pushbuttons) and remote actuation for safety, maintenance, or child locking on lighting and cover/shutter actuators (F411, F411U2, F418, LN4672M2).
-- **Lock Actuator (Disable Controls)**: `*14*0*<WHERE>##`
-    - Freezes the relay in its current position and disables physical switch inputs.
-- **Unlock Actuator (Enable Controls)**: `*14*1*<WHERE>##`
-    - Restores normal operation and re-enables physical wall buttons and bus commands.
-- **Status Query**: `*#14*<WHERE>##`
-    - Returns `*14*0*<WHERE>##` (Locked) or `*14*1*<WHERE>##` (Unlocked).
-- **Home Assistant Integration**: Represented via configuration button entities (`DisableCommandButtonEntity` and `EnableCommandButtonEntity`) under each actuator device.
-- **Gateway Support**: Supported on modern gateways (F454, MyHomeServer1). Older gateways (e.g. early F455 firmware) return NACK (`*#*0##`).
+- **Protocol Function**: Inhibits physical wall pushbuttons and remote OpenWebNet/SCS actuation on `WHO = 1` lighting and `WHO = 2` shutter actuators for safety, maintenance, window-contact interlocks, or child locking. Lock state lives in volatile actuator RAM and clears on a mains bus power cycle.
+- **Lock Actuator (Disable Controls)**: `*14*0*<WHERE>##` (SCS opcode `11 00`) — freezes lighting outputs (or immediately opens motorized shutter relays) and blocks physical switch inputs and bus actuation writes.
+- **Unlock Actuator (Enable Controls)**: `*14*1*<WHERE>##` (SCS opcode `10 00`) — restores normal wall-button and bus operation.
+- **Published `WHERE` Scopes (`WHO_1.pdf` §4.2, p. 21 & §2.3, p. 7)**: Point-to-point (`<A><PL>`), Environment/Area (`00`, `1`–`9`, `100`), and General (`0`) per `WHO_1.pdf` §4.2, plus `F422` local-bus interfaces (`<WHERE>#4#<Int>`, `#4#01`–`#4#09` and `#4#11`–`#4#15` per `WHO_1.pdf` §2.3, verified across all 13 emulated gateways on `*14*0*31#4#01##` / `*14*0*31#4#02##` in the firmware oracle `interface-routing` suite and on live `F461` / `MH200` + `F422` hardware). *(Note: `WHO_1.pdf` §4.2 does not publish `#1`–`#255` group addresses for `WHO = 14`, and group `WHO = 14` frames have not been replayed in the firmware oracle; Home Assistant resolves configured `#G` groups defensively if seen. `WHO = 14` is SCS-only and does not apply to `#9` ZigBee endpoints.)*
+- **No Status Query (`*#14*<WHERE>##` Rejected on Live Gateways)**: Although `*#14*<WHERE>##` matches generic OpenWebNet `*#WHO*WHERE##` syntax (`WHO_1.pdf` §5.1 notes no monitor-session answer for point `A;PL`, and `*#14*<WHERE>##` has not yet been replayed in the firmware oracle), **every live gateway tested rejects `*#14*<WHERE>##` with `*#*0##` NACK and transmits zero SCS bus traffic** (`50–52 ms` on `F461` `2.0.11`, immediate `NACK` on `MH200` `2.1.0` and `MH201` `3.3.6` / `3.6.44`). `WHO = 14` is strictly write/event-only on SCS.
+- **Home Assistant Integration**: Exposed via per-device configuration buttons (`DisableCommandButtonEntity` / `EnableCommandButtonEntity`: `button.<name>_lock` and `button.<name>_unlock`) and tracked bidirectionally via the `actuator_locked` state attribute across inbound `*99*1##` events, `*#*1##`-acknowledged outbound `WHO = 14` commands, and `WHO = 2` `Dimension 10` `SHUTTER_INFO` telemetry ([#976](https://github.com/OpenWebNet-HA/MyHOME/issues/976)).
+
+#### Gateway `WHO = 14` Command & Event-Session Matrix
+
+Event-session (`*99*1##`) echoing of `*14*0*<WHERE>##` / `*14*1*<WHERE>##` is a **two-factor product** of gateway firmware and whether the physical actuator or `F422` local-bus interface transmits SCS `B8 <addr> 11/10 00` back onto the main bus:
+
+| Gateway Family | Command Session (`*14*0/1*<WHERE>##`) | Status Query (`*#14*<WHERE>##`) | Event Session (`*99*1##`) Echo of `*14*0/1*<WHERE>##` |
+| :--- | :--- | :--- | :--- |
+| **`MH202`** (`1.0.24`, `coso`) | Immediate `*#*1##` ACK in empty-bus emulation | `*#*0##` NACK *(not yet replayed in oracle)* | **Always echoed** — synthesized locally by `coso` even on an empty bus (including `#4#<Int>` local-bus frames). |
+| **`F460`, `F461` (`2.0.11`), `MyHomeServer1`, `3488`** (`bt_luci` + `empty_bus_txack`) | `*#*1##` ACK in `~90–127 ms` when populated; **`*#*0##` NACK after `~2.05 s`** (`3×` retry) on unpopulated addresses | `*#*0##` NACK (`50–52 ms` on live `F461`, zero SCS traffic) | **Actuator / local-bus dependent** — echoed only when the target emits SCS `B8 <addr> 11/10 00` (echoed on `F411/2`, `F411/4`, General `0`; **omitted** behind `F422` `#4#II` local-bus interfaces and on 1st-gen actuators). |
+| **`F453`, `F453AV`, `F454` (`2.0.51`), `F459`, `H4684`, `MH200` (`2.1.0`), `MH200N` (`1.1.8`)** (`bt_luci` `pic_ack`) | `*#*1##` ACK via PIC bus controller (`pic_ack` in empty-bus emulation; mediated by PIC TX-ACK on physical SCS) | `*#*0##` NACK (verified live on `MH200` `2.1.0`) | **Actuator / local-bus dependent** — echoed when the actuator emits `B8 <addr> 11/10 00` (e.g. `F418U2` / dimmer `55`), **omitted** on 1st-gen `L4671/2`, legacy `MH200` / `MH200N` relays, and `#4#II` local-bus interfaces. |
+| **`MH201`** (`3.3.6` & `3.6.44`, `OPEN_SERVICE`) | Immediate `*#*1##` ACK (locks/unlocks actuator on SCS) | `*#*0##` NACK (verified live) | **Never echoed** — `OPEN_SERVICE` never relays `WHO = 14` onto `*99*1##`. |
+| **`F450`** (`2.0.10`, thermo/BACnet) / **`F455`** (`1.0.76`) | **`*#*0##` NACK** (`F450` drops `WHO = 14` silently) | `*#*0##` NACK | Never echoed. |
+
+#### Actuator Hardware Generations While Locked
+
+Physical BTicino / Legrand actuators implement SCS lock (`11 00`) across three distinct hardware generations:
+
+| Generation & Representative Hardware | Lock Entry Bus Behaviour (`*14*0*<WHERE>##`) | Behaviour While Locked on Actuation Writes (`WHO = 1` / `WHO = 2` / Scopes) | Behaviour While Locked on Status Queries (`*#1*<WHERE>##` / `*#2*<WHERE>##`) |
+| :--- | :--- | :--- | :--- |
+| **1st-Gen (Transceiver-Level Lock)**: `L4671/2`, `H4671/2`, `AM5851/2` (`Object 7`), legacy relays | Opens motor relay immediately and emits `*2*0*<WHERE>##`; **omits** `B8 <addr> 11 00` (`*14*0*<WHERE>##`). | **Silent on point & `#G` group writes; stationary `*2*0*<WHERE>##` on Area** — stays physically still; emits zero bus frames on point-to-point and `#1` group commands, and answers Area commands immediately with stationary `*2*0*<WHERE>##` (verified on `MH201` `3.6.44` + `L4671/2` `64`). | **100 % silent on SCS** — ignores `*#2*<WHERE>##` (`*#*0##` NACK on `MH201` / `MH200N` / `F461` / `MyHomeServer1` / `F453`; bare `*#*1##` ACK with zero frames on `F454` / `F459` / `MH202`). |
+| **2nd-Gen (Output-Stage Lock)**: `F411/2`, `F411/4`, `F418U2` / `F414` dimmers | Emits `B8 <addr> 11/10 00` (`*14*0/1*<WHERE>##` on `bt_luci`); `F411/2` shutters also emit `*2*0*<WHERE>##` (`+54 ms`). | **Ignores writes** (`WHO = 1`, `WHO = 2`, `Dimension 1`, `#1` / Area / General); only the gateway's own `*2*1000#0/1/2*` command translations appear on `F454` / `F461` / `MyHomeServer1`. | **Answers with frozen state** — `*#2*<WHERE>##` returns `*2*0*<WHERE>##`; `*#1*<WHERE>##` and `*#1*<WHERE>*1##` return frozen `on`/`off` and brightness. |
+| **3rd-Gen Positioned Shutters (`Object 218`)**: `F401`, `K4672M2S`, `H4661M2` / `LN4661M2` | Halts motor and transitions `Object 218` (*Shutter actuator*) to disabled state. | Blocks `*2*1/2*<WHERE>##` and `Dimension 11` (`GoToLevel`); reports `Dimension 10` `SHUTTER_INFO = 14` (*command not executed*) or `12` / `13`. | Answers `*#2*<WHERE>*10##` (`*#2*W*10*STATUS*LEVEL*PRIO*INFO##`) with **`SHUTTER_INFO = 12`** (*PUL + disabled*) or **`13`** (*disabled*), and **`0`** (*normal*) / **`15`** (*PUL*) when unlocked. |
 
 ---
 

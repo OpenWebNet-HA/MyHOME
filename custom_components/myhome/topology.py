@@ -36,6 +36,7 @@ from .const import (
 if TYPE_CHECKING:
     from OWNd.message import OWNCommand
 
+    from .actuator_lock import ActuatorLockManager
     from .device_health import DeviceHealth
     from .gateway import MyHOMEGatewayHandler
 
@@ -552,6 +553,7 @@ class GatewayTopologyMixin:
     _failover_active: bool
     _setup_at: float
     device_health: DeviceHealth
+    _actuator_locks: ActuatorLockManager
 
     if TYPE_CHECKING:
         @property
@@ -584,6 +586,8 @@ class GatewayTopologyMixin:
             return True
         standby = self._get_standby_gateway()
         if standby is not None and standby.available:
+            if who_int == 14:
+                return standby._profile_supports_who(1) or standby._profile_supports_who(2)
             return standby._profile_supports_who(who_int)
         return False
 
@@ -706,6 +710,19 @@ class GatewayTopologyMixin:
                 return None
             return primary_gw.device_health
         return self.device_health
+
+    def actuator_lock_owner(self) -> ActuatorLockManager | None:
+        """The tracker that owns WHO=14 actuator lock state for this gateway's bus."""
+        if self.is_standby:
+            primary_gw = self._get_primary_gateway()
+            if primary_gw is None or primary_gw.is_connected or primary_gw._get_standby_gateway() is not self:
+                return None
+            return getattr(primary_gw, "_actuator_locks", None)
+        if self.is_secondary:
+            primary_gw = self._get_primary_gateway()
+            if primary_gw is not None:
+                return getattr(primary_gw, "_actuator_locks", None)
+        return getattr(self, "_actuator_locks", None)
 
     @property
     def ignored_addresses(self) -> Any:
@@ -831,12 +848,26 @@ class GatewayTopologyMixin:
     def _delegated_target(self, message: OWNCommand) -> MyHOMEGatewayHandler | None:
         """The connected secondary gateway that owns the delegated WHO subsystem."""
         msg_who = getattr(message, "who", getattr(message, "_who", None))
-        if msg_who in (13, 1013) or msg_who is None or msg_who not in self.delegated_away_whos:
+        if msg_who in (13, 1013) or msg_who is None:
             return None
-        sec = self._get_secondary_for_who(msg_who)
-        if sec is None or not sec.is_connected or not peer_handles_who(sec, int(msg_who)):
+        who_int = int(msg_who)
+        if who_int == 14 and (
+            not (self._profile_supports_who(1) or self._profile_supports_who(2))
+            or {1, 2}.issubset(self.delegated_away_whos)
+        ):
+            for cand_who in (1, 2):
+                if cand_who in self.delegated_away_whos:
+                    sec_lock = self._get_secondary_for_who(cand_who)
+                    if sec_lock is not None and sec_lock.is_connected and peer_handles_who(sec_lock, cand_who):
+                        LOGGER.debug("%s Subsystem WHO=14 routed through WHO=%s secondary gateway %s.", self.log_id, cand_who, sec_lock.log_id)
+                        return sec_lock
             return None
-        LOGGER.debug("%s Subsystem WHO=%s is delegated; sending `%s` through secondary gateway %s.", self.log_id, msg_who, message, sec.log_id)
+        if who_int not in self.delegated_away_whos:
+            return None
+        sec = self._get_secondary_for_who(who_int)
+        if sec is None or not sec.is_connected or not peer_handles_who(sec, who_int):
+            return None
+        LOGGER.debug("%s Subsystem WHO=%s is delegated; sending `%s` through secondary gateway %s.", self.log_id, who_int, message, sec.log_id)
         return sec
 
     def _failover_target(self, message: OWNCommand) -> MyHOMEGatewayHandler | None:
@@ -847,8 +878,15 @@ class GatewayTopologyMixin:
         standby = self._get_standby_gateway()
         if standby is None or not standby.is_connected:
             return None
-        if msg_who is not None and not standby._profile_supports_who(int(msg_who)):
-            return None
+        if msg_who is not None:
+            who_int = int(msg_who)
+            supports = (
+                standby._profile_supports_who(1) or standby._profile_supports_who(2)
+                if who_int == 14
+                else standby._profile_supports_who(who_int)
+            )
+            if not supports:
+                return None
         LOGGER.debug("%s Primary gateway is disconnected; sending `%s` through standby gateway %s.", self.log_id, message, standby.log_id)
         self._evaluate_failover()
         return standby

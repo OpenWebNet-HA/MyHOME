@@ -30,6 +30,7 @@ from homeassistant.helpers.dispatcher import (
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.entity_registry import RegistryEntry
+from homeassistant.helpers.restore_state import ExtraStoredData, RestoredExtraData
 from OWNd.message import (
     OWNCommand,
     OWNHeatingCommand,
@@ -83,6 +84,8 @@ from .services import async_register_turn_on_timed_service
 from .thermo_switch import has_thermo_switch_subentry, load_thermo_switch_subentries
 from .typing_compat import device_info_to_dict
 from .where_grammar import (
+    canonical_point_spelling,
+    expose_message_where,
     is_central_thermo_where,
     parse_thermo_actuator_where,
     thermo_dim19_status,
@@ -597,6 +600,8 @@ class MyHOMESwitch(MyHOMEEntity, SwitchEntity):
         }
         if self._interface is not None:
             self._attr_extra_state_attributes["Int"] = self._interface
+        if self._actuator_locked is not None:
+            self._attr_extra_state_attributes["actuator_locked"] = self._actuator_locked
 
         self._attr_device_class = (
             SwitchDeviceClass.OUTLET
@@ -611,6 +616,42 @@ class MyHOMESwitch(MyHOMEEntity, SwitchEntity):
             self._attr_icon = self._off_icon
 
         self._attr_is_on = None
+
+    @property
+    def extra_restore_state_data(self) -> ExtraStoredData | None:
+        """Persist ``actuator_locked`` across restarts saved while ``unavailable``."""
+        if self._actuator_locked is not None:
+            return RestoredExtraData({"actuator_locked": self._actuator_locked})
+        return None
+
+    def _is_own_point_event(self, message: Any) -> bool:
+        """Return True if ``message`` is a point-to-point WHO=1 event for this switch's address."""
+        if (
+            getattr(message, "is_general", False) is True
+            or getattr(message, "is_area", False) is True
+            or getattr(message, "is_group", False) is True
+        ):
+            return False
+        msg_where = expose_message_where(message)
+        if not msg_where or msg_where.startswith("#"):
+            return False
+        msg_base, msg_sep, msg_iface = msg_where.rpartition("#4#")
+        if msg_sep:
+            if self._interface is None:
+                return False
+            if msg_iface.isdigit() and str(self._interface).isdigit():
+                if int(msg_iface) != int(str(self._interface)):
+                    return False
+            elif msg_iface != str(self._interface):
+                return False
+            target_pt = msg_base
+        else:
+            if self._interface is not None:
+                return False
+            target_pt = msg_where
+        own_canon = canonical_point_spelling(normalize_where(self._where) or self._where)
+        msg_canon = canonical_point_spelling(normalize_where(target_pt) or target_pt)
+        return bool(own_canon) and msg_canon == own_canon
 
     async def async_update(self) -> None:
         """Update the entity.
@@ -637,8 +678,6 @@ class MyHOMESwitch(MyHOMEEntity, SwitchEntity):
             seconds=seconds,
         )
         await self._gateway_handler.send(cmd)
-        self._attr_is_on = True
-        self.async_write_ha_state()
 
     async def async_turn_on(self, **kwargs: Any) -> None:  # pylint: disable=unused-argument
         """Turn the device on."""
@@ -652,6 +691,14 @@ class MyHOMESwitch(MyHOMEEntity, SwitchEntity):
     def handle_event(self, message: OWNLightingEvent) -> None:
         """Handle an event message."""
         if getattr(message, "is_translation", None) is True:
+            return
+        if getattr(message, "what", None) in (30, 31, "30", "31"):
+            return
+        if self._actuator_locked is True and (
+            getattr(message, "is_general", False) is True
+            or getattr(message, "is_area", False) is True
+            or getattr(message, "is_group", False) is True
+        ):
             return
         if self._attr_device_class == SwitchDeviceClass.SWITCH:
             LOGGER.debug(
@@ -671,8 +718,18 @@ class MyHOMESwitch(MyHOMEEntity, SwitchEntity):
                 self._gateway_handler.log_id,
                 message.human_readable_log,
             )
+        prev_is_on = self._attr_is_on
         if message.is_on is not None:
             self._attr_is_on = message.is_on
+            self._bus_state_complete = True
+        if (
+            self._actuator_locked is True
+            and self._is_own_point_event(message)
+            and prev_is_on is not None
+            and self._attr_is_on is not None
+            and self._attr_is_on != prev_is_on
+        ):
+            self._clear_actuator_lock()
         if self._off_icon is not None and self._on_icon is not None:
             self._attr_icon = self._on_icon if self._attr_is_on else self._off_icon
         self._publish_state()

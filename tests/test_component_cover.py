@@ -1078,20 +1078,26 @@ class TestMyHOMECoverEntity:
         await basic_cover.async_added_to_hass()
         assert basic_cover.current_cover_position == 50
 
-        # 3. Advanced cover does not restore stale state and requests live hardware status
+        # 3. Advanced cover does not restore stale position and requests live hardware status,
+        # while still soft-restoring WHO=14 actuator_locked state.
         advanced_cover._attr_current_cover_position = 50
         advanced_cover.async_get_last_state = AsyncMock(
-            return_value=State("cover.advanced_shutter", "open", {ATTR_CURRENT_POSITION: 80})
+            return_value=State(
+                "cover.advanced_shutter",
+                "open",
+                {ATTR_CURRENT_POSITION: 80, "actuator_locked": True},
+            )
         )
         advanced_cover._gateway_handler.send_status_request.reset_mock()
         await advanced_cover.async_added_to_hass()
-        advanced_cover.async_get_last_state.assert_not_called()
+        advanced_cover.async_get_last_state.assert_awaited_once()
         advanced_cover._gateway_handler.send_status_request.assert_awaited_once()
         assert (
             str(advanced_cover._gateway_handler.send_status_request.call_args[0][0])
             == "*#2*22#4#02*10##"
         )
         assert advanced_cover._attr_current_cover_position == 50
+        assert advanced_cover.actuator_locked is True
 
     def test_cover_slat_tilt_attributes_and_features(self, tilt_cover):
         """Test slat tilt attributes, device class, and supported features."""

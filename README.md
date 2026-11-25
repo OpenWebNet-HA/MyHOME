@@ -207,7 +207,7 @@ _Self-audit of [`quality_scale.yaml`](custom_components/myhome/quality_scale.yam
 
 ### Code Coverage
 
-The integration maintains 7038 automated unit tests (100% line coverage across all modules) verified in CI on every pull request.
+The integration maintains 7985 automated unit tests (100% line coverage across all modules) verified in CI on every pull request.
 
 <details>
 <summary><strong>📊 Per-Module Coverage Breakdown (100% across all integration modules)</strong></summary>
@@ -218,6 +218,7 @@ The integration maintains 7038 automated unit tests (100% line coverage across a
 |---|:---:|---|
 | [`__init__.py`](custom_components/myhome/__init__.py) | **100%** | Setup/unload lifecycle, static Lovelace card registration & cleanup, and migrations |
 | [`access_policy.py`](custom_components/myhome/access_policy.py) | **100%** | Human-in-the-loop approval, pre-warning, and watchdog policy for impulse gates/doors |
+| [`actuator_lock.py`](custom_components/myhome/actuator_lock.py) | **100%** | Bidirectional WHO=14 and WHO=2 Dimension 10 actuator lock state tracker with scope resolution |
 | [`alarm_control_panel.py`](custom_components/myhome/alarm_control_panel.py) | **100%** | Read-only WHO=5 burglar alarm central unit status (3485/3486) and broadcast sync |
 | [`binary_sensor.py`](custom_components/myhome/binary_sensor.py) | **100%** | WHO=1 PIR motion, WHO=9 AUX channels, and WHO=25 dry contacts with state inversion |
 | [`bus_monitor.py`](custom_components/myhome/bus_monitor.py) | **100%** | In-band 500-frame circular ring buffer tap (0 extra gateway sockets) |

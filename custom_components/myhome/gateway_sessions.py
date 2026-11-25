@@ -21,6 +21,7 @@ from OWNd.connection import OWNCommandSession, OWNEventSession, OWNGateway
 from OWNd.exceptions import OWNAuthError
 from OWNd.message import OWNCommand, OWNGatewayEvent, OWNMessage
 
+from .actuator_lock import actuator_locks_of
 from .const import LOGGER, area_of_where, is_apl_address
 from .expose import is_exposed_on_bus
 from .gateway_confirm import echo_watchdog_of
@@ -1427,6 +1428,7 @@ class CommandWorkerPool:
         self.sending_workers: list[asyncio.Task[None]] = []
         self._active_worker_loops: int = 0
         self._in_flight_messages: list[Any] = []
+        self._recent_who2_polls: collections.deque[tuple[float, Any]] = collections.deque(maxlen=16)
         # Set once the gateway refused the password: nothing is queued any more.
         self._auth_refused: bool = False
         self._auth_refused_reason: str | None = None
@@ -1801,6 +1803,7 @@ class CommandWorkerPool:
                         )
                     sent_to_session = True
                     self._in_flight_messages.append(task["message"])
+                    collected: Any = None
                     try:
                         collected = await _command_session.send(
                             message=task["message"],
@@ -1809,6 +1812,16 @@ class CommandWorkerPool:
                     finally:
                         with contextlib.suppress(ValueError):
                             self._in_flight_messages.remove(task["message"])
+                        sent_msg = task["message"]
+                        if (
+                            collected is True
+                            and getattr(sent_msg, "who", None) == 2
+                            and (
+                                getattr(sent_msg, "is_status_request", False) is True
+                                or getattr(sent_msg, "is_dimension_request", False) is True
+                            )
+                        ):
+                            self._recent_who2_polls.append((time.monotonic(), sent_msg))
                     last_error = getattr(_command_session, "last_error", None)
                     if collected is None and isinstance(last_error, OWNAuthError):
                         # OWNd reopened the socket inside send() and the gateway refused the
@@ -1886,6 +1899,20 @@ class CommandWorkerPool:
                             # read back, on every gateway model (measured on an F455, which
                             # leaves statuses out of a burst).
                             echo_watchdog.command_acknowledged(task["message"], written_at)
+                        if not task["is_status_request"] and not is_exposed:
+                            actuator_locks = actuator_locks_of(self.handler)
+                            if (
+                                actuator_locks is None
+                                and getattr(self.handler, "is_standby", False) is True
+                            ):
+                                pri_gw = self.handler._get_primary_gateway()
+                                if (
+                                    pri_gw is not None
+                                    and pri_gw._get_standby_gateway() is self.handler
+                                ):
+                                    actuator_locks = actuator_locks_of(pri_gw)
+                            if actuator_locks is not None:
+                                actuator_locks.observe(task["message"])
                     responses_to_dispatch: Any = collected
                     if responses_to_dispatch is None and task["is_status_request"]:
                         # A standalone zone status request (*#4*Z##) that answers only some of
@@ -1909,6 +1936,8 @@ class CommandWorkerPool:
                                 parsed=resp if isinstance(resp, OWNMessage) else None,
                             )
                             if not getattr(frame, "is_duplicate", False) and isinstance(resp, OWNMessage):
+                                if task["is_status_request"]:
+                                    setattr(resp, "_from_status_request", True)
                                 if isinstance(resp, OWNGatewayEvent):
                                     self.handler._handle_gateway_diagnostics(resp)
                                 elif (
@@ -1929,11 +1958,11 @@ class CommandWorkerPool:
                                 )
                                 if isinstance(events, GatewayEventDispatcher):
                                     events.tell_central_unit(resp, *central)
+                                # A reply to a request sent for an offline primary
+                                self.handler._bridge_to_primary(resp)
                                 echo_watchdog = echo_watchdog_of(self.handler)
                                 if echo_watchdog is not None:
                                     echo_watchdog.status_seen(resp)
-                                # A reply to a request sent for an offline primary
-                                self.handler._bridge_to_primary(resp)
                 except asyncio.CancelledError:
                     _cancel_written(task, not_written=not sent_to_session)
                     raise
@@ -2031,6 +2060,7 @@ class CommandWorkerPool:
             self.send_buffer._in_flight_status = 0
             self.send_buffer.clear_status_pause()
         self._in_flight_messages.clear()
+        self._recent_who2_polls.clear()
 
         for _ in range(max(1, len(self.sending_workers))):
             try:

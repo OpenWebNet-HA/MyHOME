@@ -6,7 +6,7 @@ MyHOMESwitch.async_turn_on_timed, and kwarg interception in async_turn_on.
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from OWNd.message import OWNLightingCommand
+from OWNd.message import OWNEvent, OWNLightingCommand
 
 from custom_components.myhome.const import (
     DOMAIN,
@@ -192,26 +192,32 @@ class TestLightTimedTurnOn:
         return light
 
     async def test_async_turn_on_timed_preset(self, dimmable_light, mock_gateway):
-        """Test direct async_turn_on_timed with preset duration."""
+        """Test direct async_turn_on_timed with preset duration waits for bus echo."""
         await dimmable_light.async_turn_on_timed(duration=60)
 
         mock_gateway.send.assert_called_once()
         sent_cmd = mock_gateway.send.call_args[0][0]
         assert str(sent_cmd) == "*1*11*21##"
+        assert dimmable_light.is_on is None
+        dimmable_light.async_write_ha_state.assert_not_called()
+
+        dimmable_light.handle_event(OWNEvent.parse("*1*1*21##"))
         assert dimmable_light.is_on is True
-        dimmable_light.async_write_ha_state.assert_called_once()
 
     async def test_async_turn_on_timed_custom(self, dimmable_light, mock_gateway):
-        """Test direct async_turn_on_timed with custom duration."""
+        """Test direct async_turn_on_timed with custom duration waits for bus echo."""
         await dimmable_light.async_turn_on_timed(duration=45)
 
         mock_gateway.send.assert_called_once()
         sent_cmd = mock_gateway.send.call_args[0][0]
         assert str(sent_cmd) == "*#1*21*#2*0*0*45##"
+        assert dimmable_light.is_on is None
+
+        dimmable_light.handle_event(OWNEvent.parse("*1*1*21##"))
         assert dimmable_light.is_on is True
 
     async def test_async_turn_on_timed_with_brightness(self, dimmable_light, mock_gateway):
-        """Test async_turn_on_timed with explicit brightness level."""
+        """Test async_turn_on_timed with explicit brightness level waits for bus echo."""
         await dimmable_light.async_turn_on_timed(duration=120, brightness=128)
 
         assert mock_gateway.send.call_count == 2
@@ -220,6 +226,10 @@ class TestLightTimedTurnOn:
         # 128 / 255 -> 50%
         assert str(first_cmd) == "*#1*21*#1*150*0##"
         assert str(second_cmd) == "*1*12*21##"
+        assert dimmable_light.is_on is None
+        assert dimmable_light.brightness is None
+
+        dimmable_light.handle_event(OWNEvent.parse("*#1*21*1*150*0##"))
         assert dimmable_light.brightness == 128
         assert dimmable_light.is_on is True
 
@@ -233,6 +243,9 @@ class TestLightTimedTurnOn:
         # 1 / 255 -> rounds to 0%, but clamped to 1% -> *#1*21*#1*101*0##
         assert str(first_cmd) == "*#1*21*#1*101*0##"
         assert str(second_cmd) == "*1*12*21##"
+        assert dimmable_light.is_on is None
+
+        dimmable_light.handle_event(OWNEvent.parse("*#1*21*1*101*0##"))
         # 1% -> 3 / 255
         assert dimmable_light.brightness == 3
         assert dimmable_light.is_on is True
@@ -247,6 +260,9 @@ class TestLightTimedTurnOn:
 
         assert str(first_cmd) == "*#1*21*#1*175*0##"
         assert str(second_cmd) == "*1*17*21##"
+        assert dimmable_light.is_on is None
+
+        dimmable_light.handle_event(OWNEvent.parse("*#1*21*1*175*0##"))
         assert dimmable_light.is_on is True
 
     async def test_async_turn_on_timed_non_dimmable_ignores_brightness(self, non_dimmable_light, mock_gateway):
@@ -256,6 +272,9 @@ class TestLightTimedTurnOn:
         assert mock_gateway.send.call_count == 1
         sent_cmd = mock_gateway.send.call_args[0][0]
         assert str(sent_cmd) == "*1*11*22##"
+        assert non_dimmable_light.is_on is None
+
+        non_dimmable_light.handle_event(OWNEvent.parse("*1*1*22##"))
         assert non_dimmable_light.is_on is True
 
     async def test_async_turn_on_timed_5min_preset(self, dimmable_light, mock_gateway):
@@ -265,6 +284,9 @@ class TestLightTimedTurnOn:
         mock_gateway.send.assert_called_once()
         sent_cmd = mock_gateway.send.call_args[0][0]
         assert str(sent_cmd) == "*1*15*21##"
+        assert dimmable_light.is_on is None
+
+        dimmable_light.handle_event(OWNEvent.parse("*1*1*21##"))
         assert dimmable_light.is_on is True
 
     async def test_async_turn_on_timed_3min_preset(self, dimmable_light, mock_gateway):
@@ -274,6 +296,9 @@ class TestLightTimedTurnOn:
         mock_gateway.send.assert_called_once()
         sent_cmd = mock_gateway.send.call_args[0][0]
         assert str(sent_cmd) == "*1*13*21##"
+        assert dimmable_light.is_on is None
+
+        dimmable_light.handle_event(OWNEvent.parse("*1*1*21##"))
         assert dimmable_light.is_on is True
 
     async def test_async_turn_on_timed_custom_duration_and_brightness(self, dimmable_light, mock_gateway):
@@ -324,12 +349,16 @@ class TestSwitchTimedTurnOn:
         return switch
 
     async def test_switch_async_turn_on_timed_preset(self, test_switch, mock_gateway):
-        """Test direct async_turn_on_timed on switch with preset."""
+        """Test direct async_turn_on_timed on switch with preset waits for bus echo."""
         await test_switch.async_turn_on_timed(duration=900)
 
         mock_gateway.send.assert_called_once()
         sent_cmd = mock_gateway.send.call_args[0][0]
         assert str(sent_cmd) == "*1*16*31##"
+        assert test_switch.is_on is None
+        test_switch.async_write_ha_state.assert_not_called()
+
+        test_switch.handle_event(OWNEvent.parse("*1*1*31##"))
         assert test_switch.is_on is True
 
     async def test_switch_async_turn_on_timed_custom(self, test_switch, mock_gateway):
@@ -339,6 +368,9 @@ class TestSwitchTimedTurnOn:
         mock_gateway.send.assert_called_once()
         sent_cmd = mock_gateway.send.call_args[0][0]
         assert str(sent_cmd) == "*#1*31*#2*1*30*0##"
+        assert test_switch.is_on is None
+
+        test_switch.handle_event(OWNEvent.parse("*1*1*31##"))
         assert test_switch.is_on is True
 
     async def test_switch_async_turn_on_timed_1min_preset(self, test_switch, mock_gateway):
@@ -348,6 +380,9 @@ class TestSwitchTimedTurnOn:
         mock_gateway.send.assert_called_once()
         sent_cmd = mock_gateway.send.call_args[0][0]
         assert str(sent_cmd) == "*1*11*31##"
+        assert test_switch.is_on is None
+
+        test_switch.handle_event(OWNEvent.parse("*1*1*31##"))
         assert test_switch.is_on is True
 
     async def test_switch_async_turn_on_timed_duration_custom(self, test_switch, mock_gateway):
@@ -357,6 +392,9 @@ class TestSwitchTimedTurnOn:
         mock_gateway.send.assert_called_once()
         sent_cmd = mock_gateway.send.call_args[0][0]
         assert str(sent_cmd) == "*#1*31*#2*0*0*45##"
+        assert test_switch.is_on is None
+
+        test_switch.handle_event(OWNEvent.parse("*1*1*31##"))
         assert test_switch.is_on is True
 
     async def test_switch_async_turn_on_normal(self, test_switch, mock_gateway):
