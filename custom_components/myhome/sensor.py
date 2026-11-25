@@ -193,11 +193,15 @@ def _sensor_address(who: str | int, where: str | int) -> tuple[str, str]:
 
 
 def _spellings(where: str, who: str | None = None) -> list[str]:
-    """``0021`` may also appear as ``21``, a legacy ``1-0021`` as either, and WHO=4 ``0105`` as ``105``."""
+    """``0021`` may also appear as ``21``, a legacy ``1-0021`` as either, WHO=4 ``0105`` as ``105`` and ``01``..``09`` as ``1``..``9``."""
     clean = where.split("-")[-1]
     items = [where, normalize_where(where), clean, normalize_where(clean)]
     if who == "4":
         items.extend((_canonical_temperature_where(where), _canonical_temperature_where(clean)))
+        for candidate in (where, clean):
+            base, sep, rest = candidate.partition("#")
+            if base.isascii() and base.isdigit() and len(base) <= 2 and 1 <= int(base) <= 99:
+                items.append(f"{int(base)}{sep}{rest}")
     return [k for k in items if k]
 
 
@@ -548,12 +552,12 @@ async def async_setup_entry(
             or isinstance(getattr(message, "illuminance", None), (int, float))
         ):
             return None
-        if getattr(message, "is_general", False) is True or str(getattr(message, "where", "")) in ("0", "00"):
+        where = str(getattr(message, "where", "") or "").strip()
+        if getattr(message, "is_general", False) is True or not where or where in ("0", "00"):
             return None
         valid_iface, interface = bus_interface_from_message(message)
         if not valid_iface:
             return None
-        where = str(message.where)
         return Address(normalize_where(where) or where, interface)
 
     def build_illuminance(ctx: DeviceContext) -> MyHOMEIlluminanceSensor | None:
@@ -590,6 +594,12 @@ async def async_setup_entry(
         where = str(message.where)
         if is_broadcast_where(where):
             return None
+        # Reject foreign ``#`` suffixes (e.g. ``105#1``) and out-of-range interfaces (e.g. ``105#4#99``).
+        if "#" in where and BUS_ROUTING not in where:
+            return None
+        valid_iface, interface = bus_interface_from_message(message)
+        if not valid_iface:
+            return None
         clean = where.split("-")[-1].split("#")[0]
         if not is_probe(clean):
             return None
@@ -600,7 +610,9 @@ async def async_setup_entry(
         if dimension in (11, 12, 13, 14, 19, 20) or not (is_probe_reading or is_probe_main):
             return None
         addr = Address.from_device_id(_canonical_temperature_where(where))
-        return Address(addr.where, thermo_event_interface(message) or addr.interface)
+        if "#" in addr.where:
+            return None
+        return Address(addr.where, interface or addr.interface)
 
     temperature_yaml_or_registry_accept = yaml_class(SensorDeviceClass.TEMPERATURE)
 

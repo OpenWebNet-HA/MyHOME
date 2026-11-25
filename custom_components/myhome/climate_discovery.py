@@ -739,8 +739,10 @@ class ZoneDiscovery:
             return False
         if time.monotonic() - self._candidates[zone_pair][0] <= CANDIDATE_MAX_AGE:
             self._candidates.pop(zone_pair, None)
+            self._candidates_unanswered.discard(zone_pair)
             return True
         self._candidates.pop(zone_pair, None)
+        self._candidates_unanswered.discard(zone_pair)
         self._drop_candidate_held(zone_pair)
         return False
 

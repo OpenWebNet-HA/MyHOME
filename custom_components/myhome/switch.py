@@ -847,23 +847,28 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
                 if isinstance(raw_aggregate, (list, tuple))
                 else set()
             )
+            live_aggregate = bool(self._aggregate_actuators) and self._attr_is_on is not None
             for act, val in raw_actuators.items():
                 act = str(act)
-                # A live report is never overwritten; one shown only from an aggregate report is.
+                # A live per-actuator report is never overwritten.
                 if act in self._actuator_states and act not in self._aggregate_actuators:
                     continue
-                if val in ("on", True):
-                    self._actuator_states[act] = True
-                    if act in aggregate:
-                        self._aggregate_actuators.add(act)
-                    else:
+                if val not in ("on", True, "off", False):
+                    continue
+                restored_on = val in ("on", True)
+                if act in self._aggregate_actuators:
+                    # Preserve the live aggregate state (both ON and OFF); only recover
+                    # a proven non-aggregate actuator number from the saved state.
+                    if act not in aggregate:
                         self._aggregate_actuators.discard(act)
-                elif val in ("off", False):
-                    self._actuator_states[act] = False
-                    if act in aggregate:
-                        self._aggregate_actuators.add(act)
-                    else:
-                        self._aggregate_actuators.discard(act)
+                    continue
+                self._actuator_states[act] = (
+                    False if (live_aggregate and self._attr_is_on is False) else restored_on
+                )
+                if act in aggregate:
+                    self._aggregate_actuators.add(act)
+                else:
+                    self._aggregate_actuators.discard(act)
         if (
             self._attr_is_on is not None
             and self._off_icon is not None

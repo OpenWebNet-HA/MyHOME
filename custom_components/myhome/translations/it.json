@@ -812,6 +812,9 @@
     },
     "send_message_refused_frame": {
       "message": "Invio di \"{message}\" rifiutato: questo frame è bloccato per precauzione di sicurezza; non è stato inviato nulla"
+    },
+    "sync_time_unsupported_offset": {
+      "message": "Impossibile sincronizzare l'orologio del gateway per il fuso orario \"{timezone}\": {error}. OpenWebNet supporta solo offset UTC di ore intere."
     }
   },
   "entity": {

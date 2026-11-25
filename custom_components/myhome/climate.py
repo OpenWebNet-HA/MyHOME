@@ -3054,14 +3054,15 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         """A zone found on the bus cools once its valve status shows a conditioning actuator.
 
         ``*#4*Z*19*CV*HV##``: ``CV`` is the conditioning side (WHO 4 document, 1.5.7). A zone
-        with no actuator on that side reports 0 there and nothing else: live 2026-11-18, the
-        heating-only zone 3 behind an F461 and an F455 ``*#4*3*19*0*1##``, the 29 heating-only
-        zones behind a 3488 and a MyHomeServer1 ``*#4*49*19*0*0##``, while the zones with a
-        cooling fan coil report its state, ``*#4*4*19*5*1##``, ``*#4*2*19*8*5##``,
-        ``*#4*47*19*5*0##``. In tests/fixtures every zone with a dimension 19 frame has 0 or
-        a fan coil state (5, 7, 8) on that side, none a plain valve state (counted by trace
-        folder and zone when this was written: 86 zones, 24 with a fan coil state, 62 with 0).
-        A cooling valve that is off reads 0 as well, so such a zone cools from the
+        with no actuator on that side reports 0 there and nothing else: live 2026-11-18, the 29
+        heating-only zones behind a 3488 and a MyHomeServer1 ``*#4*49*19*0*0##``, while the
+        zones with a cooling fan coil report its state, ``*#4*4*19*5*1##``,
+        ``*#4*2*19*8*5##``, ``*#4*47*19*5*0##``. In tests/fixtures every zone with a dimension
+        19 frame has 0 or a fan coil state (5, 7, 8) on that side, none a plain valve state
+        (counted by trace folder and zone when this was written: 86 zones, 24 with a fan coil
+        state, 62 with 0). A cooling side that is currently off/idle reads 0 as well (for
+        example, live 2026-11-18, heat+cool zone 3 behind an F461 and an F455 reported
+        ``*#4*3*19*0*1##`` while its cooling side was idle), so such a zone cools from the
         first time its valve is seen in any other state; ``cool: true`` in ``myhome.yaml``
         says it at once. Never unlearned: 0 is also a valve that is off.
         """
@@ -3966,6 +3967,14 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             return
         prev_mode = self._attr_hvac_mode
         mode = _ZONE_CONTEXT_MODES.get(getattr(message, "zone_context", None) or "")
+        if (
+            mode == HVACMode.COOL
+            and not self._cooling_configured
+            and not self._cooling
+            and not self._central
+        ):
+            self._cooling = True
+            self._refresh_hvac_modes()
         if mode is not None and mode in self._attr_hvac_modes:
             self._attr_hvac_mode = mode
             self._hvac_mode_restored = False  # the zone reported the mode it runs in
