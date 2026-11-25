@@ -2469,3 +2469,236 @@ async def test_premerge_audit_light_switch_fade_unavailable_and_unsent_token_gua
         await t_ct
     assert dali28._pending_cmd_brightness_pct is not None
     assert dali28._pending_cmd_brightness_pct[0] == 80
+
+
+async def test_lock_on_relay_and_pending_dim1_and_who1_scope_polls(
+    hass: HomeAssistant,
+) -> None:
+    """Verify locking ON relays/dimmers preserves brightness, task-safe CT fade abort, and WHO=1 scope polls."""
+    entry, handler = _make_gateway(
+        hass,
+        model="F461",
+        options={CONF_TRANSITION_MODE: TRANSITION_MODE_SOFTWARE},
+    )
+    handler._event_session_ready.set()
+
+    def _done_fut(_cmd: Any = None) -> asyncio.Future[float]:
+        fut = hass.loop.create_future()
+        fut.set_result(time.monotonic())
+        return fut
+
+    handler.send = AsyncMock(side_effect=_done_fut)
+    handler.send_fade_step = AsyncMock(side_effect=_done_fut)
+
+    # 1a. Locking an ON ColorMode.ONOFF relay (F411) keeps brightness=None (zero 255 corruption)
+    relay_05 = MyHOMELight(
+        hass=hass,
+        name="Relay 05",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="05",
+        who="1",
+        where="05",
+        interface=None,
+        dimmable=False,
+        manufacturer="BTicino",
+        model="F411/4",
+        gateway=handler,
+    )
+    relay_05._poll_on_add = False
+    relay_05._probe_dimmer_on_add = False
+    ev_relay = _attach_live_entity(hass, relay_05, "light.relay_05")
+
+    relay_05.handle_event(OWNEvent.parse("*1*1*05##"))
+    assert relay_05.is_on is True
+    assert relay_05.brightness is None
+    assert relay_05._attr_brightness_pct is None
+
+    ev_relay.clear()
+    assert handler._actuator_locks.observe(OWNCommand.parse("*14*0*05##")) is True
+    assert relay_05.actuator_locked is True
+    assert relay_05.brightness is None
+    assert relay_05._attr_brightness_pct is None
+    assert len(ev_relay) == 1
+    # Direct defensive call also ignores non-dimmer color modes
+    relay_05._restore_combined_ct_brightness_on_abort()
+    assert relay_05.brightness is None
+
+    # 1b. Locking an ON dimmer (F418) before initial Dim 1 arrives keeps brightness=None,
+    #     and the subsequent initial Dim 1 reply (20%) does NOT clear actuator_locked!
+    dim_06 = MyHOMELight(
+        hass=hass,
+        name="Dimmer 06",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="06",
+        who="1",
+        where="06",
+        interface=None,
+        dimmable=True,
+        manufacturer="BTicino",
+        model="F418",
+        gateway=handler,
+    )
+    dim_06._poll_on_add = False
+    dim_06._probe_dimmer_on_add = False
+    _attach_live_entity(hass, dim_06, "light.dim_06")
+
+    dim_06.handle_event(OWNEvent.parse("*1*1*06##"))
+    assert dim_06.is_on is True
+    assert dim_06.brightness is None
+    assert dim_06._attr_brightness_pct is None
+
+    assert handler._actuator_locks.observe(OWNCommand.parse("*14*0*06##")) is True
+    assert dim_06.actuator_locked is True
+    assert dim_06.brightness is None
+    assert dim_06._attr_brightness_pct is None
+
+    dim_06.handle_event(OWNEvent.parse("*#1*06*1*120*2##"))
+    assert dim_06._attr_brightness_pct == 20
+    assert dim_06.actuator_locked is True
+
+    # 1c. Task-scoped _combined_ct_fade_task survives stale done_callback when a combined fade is re-triggered
+    dali_25 = MyHOMELight(
+        hass=hass,
+        name="DALI 25",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="25#4#02",
+        who="1",
+        where="25",
+        interface="02",
+        dimmable=True,
+        manufacturer="BTicino",
+        model="F429",
+        gateway=handler,
+        color_temp=True,
+    )
+    dali_25._poll_on_add = False
+    dali_25._probe_dimmer_on_add = False
+    _attach_live_entity(hass, dali_25, "light.dali_25_task_guard")
+    dali_25._attr_is_on = False
+    dali_25._attr_brightness_pct = 0
+    dali_25._last_brightness_pct = 77
+    dali_25._fade_engine.first_echo_timeout = 5.0
+
+    await dali_25.async_turn_on(
+        **{ATTR_COLOR_TEMP_KELVIN: 4000, ATTR_BRIGHTNESS_PCT: 40, ATTR_TRANSITION: 2.0}
+    )
+    fade_1 = dali_25._combined_ct_fade_task
+    assert fade_1 is not None
+    # Cancel fade_1 synchronously and start fade_2 on the same tick before fade_1's done_callback runs
+    dali_25._cancel_fade_if_active()
+    fade_2 = dali_25._fade_engine.start_fade(0, 60, 2.0)
+    dali_25._combined_ct_fade_task = fade_2
+    fade_2.add_done_callback(dali_25._restore_combined_ct_brightness_on_abort)
+    await asyncio.gather(fade_1, return_exceptions=True)
+    await asyncio.sleep(0)
+    # fade_1's stale done_callback did NOT clobber fade_2!
+    assert dali_25._combined_ct_fade_task is fade_2
+    dali_25.handle_event(OWNEvent.parse("*#1*25#4#02*14*250##"))
+    assert dali_25.is_on is True
+    assert dali_25._attr_brightness_pct == 0
+    dali_25.handle_actuator_lock(True)
+    assert dali_25._attr_brightness_pct == 77
+    assert dali_25._combined_ct_fade_task is None
+    await asyncio.gather(fade_2, return_exceptions=True)
+    dali_25.handle_actuator_lock(False)
+
+    # 2. WHO=1 scope polls in _poll_targets_self / _is_from_poll:
+    #    - Unrouted General '0' (*#1*0*14##, *#1*0##) covers BOTH main-bus AND #4#02 DALI lights
+    #      (per WHO_1.pdf §2.3 & F461 capture tests/fixtures/plants/issue_288_f461_dali_dt8:50-56)!
+    #    - Routed General '0#4#02' covers only #4#02 (isolating main bus and #4#01).
+    #    - Area ('00', '1'..'9', '100', '2#4#02') and '#G' group ('#3#4#02' & resync_manager '#4') polls match!
+    lt_10 = MyHOMELight(
+        hass=hass,
+        name="Point 10",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="10",
+        who="1",
+        where="10",
+        interface=None,
+        dimmable=True,
+        manufacturer="BTicino",
+        model="F418",
+        gateway=handler,
+    )
+    lt_1001 = MyHOMELight(
+        hass=hass,
+        name="Point 1001",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="1001",
+        who="1",
+        where="1001",
+        interface=None,
+        dimmable=True,
+        manufacturer="BTicino",
+        model="F418",
+        gateway=handler,
+    )
+
+    assert entry.runtime_data is not None
+    entry.runtime_data.platforms["light"] = {
+        "grp3_dali": {"where": "#3#4#02", "members": ["25"]},
+    }
+    handler._resync_manager.register_group_members("#4#4#02", ["25"])
+    handler._resync_manager.register_group_members("#4", ["06"])
+
+    # Empty-WHERE diagnostic query -> False
+    empty_diag = SimpleNamespace(who=1, is_dimension_request=True, dimension=14, where="")
+    assert dali_25._poll_targets_self(empty_diag) is False
+
+    # Own point -> True; unrelated point on same and different bus -> False
+    assert dali_25._poll_targets_self(OWNCommand.parse("*#1*25#4#02*14##")) is True
+    assert dali_25._poll_targets_self(OWNCommand.parse("*#1*99#4#02*14##")) is False
+    assert dim_06._poll_targets_self(OWNCommand.parse("*#1*99##")) is False
+    assert dali_25._poll_targets_self(OWNCommand.parse("*#1*99*14##")) is False
+
+    # Unrouted system-wide General '0' covers BOTH main-bus dim_06 AND #4#02 dali_25!
+    assert dim_06._poll_targets_self(OWNCommand.parse("*#1*0##")) is True
+    assert dali_25._poll_targets_self(OWNCommand.parse("*#1*0*14##")) is True
+
+    # End-to-end: in-flight *#1*0*14## on cold-boot OFF DALI 25#4#02 keeps is_on=False & preserves pending CT!
+    dali_25._attr_is_on = False
+    dali_25._attr_color_temp = None
+    f_pending_ct = hass.loop.create_future()
+    handler.send = AsyncMock(return_value=f_pending_ct)
+    await dali_25.async_turn_on(**{ATTR_COLOR_TEMP_KELVIN: 4000})
+    handler._command_pool._in_flight_messages.append(OWNCommand.parse("*#1*0*14##"))
+    try:
+        dali_25.handle_event(OWNEvent.parse("*#1*25#4#02*14*250##"))
+    finally:
+        handler._command_pool._in_flight_messages.clear()
+    assert dali_25.is_on is False
+    assert dali_25._pending_cmd_color_temp is not None
+    f_pending_ct.cancel()
+    await asyncio.sleep(0)
+
+    # Routed General '0#4#II' isolates local buses cleanly
+    assert dali_25._poll_targets_self(OWNCommand.parse("*#1*0#4#02*14##")) is True
+    assert dim_06._poll_targets_self(OWNCommand.parse("*#1*0#4#02##")) is False
+    assert dali_25._poll_targets_self(OWNCommand.parse("*#1*0#4#01*14##")) is False
+    assert dali_25._poll_targets_self(SimpleNamespace(who=1, is_status_request=True, where="0#4#99")) is False
+
+    # Area polls: '00', '1'..'9', '100', and routed '2#4#02' (with PL=0 '10' vs Area 10 '100' isolation)
+    assert dim_06._poll_targets_self(OWNCommand.parse("*#1*00##")) is True
+    assert dim_06._poll_targets_self(OWNCommand.parse("*#1*1##")) is False
+    assert lt_10._poll_targets_self(OWNCommand.parse("*#1*1##")) is True
+    assert lt_10._poll_targets_self(OWNCommand.parse("*#1*100##")) is False
+    assert lt_1001._poll_targets_self(OWNCommand.parse("*#1*100##")) is True
+    assert dali_25._poll_targets_self(OWNCommand.parse("*#1*2*14##")) is False
+    assert dali_25._poll_targets_self(OWNCommand.parse("*#1*2#4#02*14##")) is True
+    assert dali_25._poll_targets_self(OWNCommand.parse("*#1*3#4#02*14##")) is False
+
+    # #G group polls: resolved via ActuatorLockManager (#3#4#02) and resync_manager (#4#4#02, #4)
+    assert dali_25._poll_targets_self(OWNCommand.parse("*#1*#3#4#02*14##")) is True
+    assert dali_25._poll_targets_self(OWNCommand.parse("*#1*#4#4#02*14##")) is True
+    assert dim_06._poll_targets_self(OWNCommand.parse("*#1*#4##")) is True
+    assert dali_25._poll_targets_self(OWNCommand.parse("*#1*#9#4#02*14##")) is False

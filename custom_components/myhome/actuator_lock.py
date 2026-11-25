@@ -23,14 +23,21 @@ if TYPE_CHECKING:
     from .myhome_device import MyHOMEEntity
 
 __all__ = [
+    "AREA_WHERES",
     "ActuatorLockManager",
     "actuator_locks_of",
     "apply_actuator_lock_state",
+    "entity_key",
     "is_lockable_entity",
+    "is_valid_point_where",
+    "normalize_iface",
+    "parse_hash_group",
+    "point_area",
     "split_point_key",
 ]
 
 _AREA_WHERES = frozenset({"00", "1", "2", "3", "4", "5", "6", "7", "8", "9", "100"})
+AREA_WHERES = _AREA_WHERES
 _LOCKABLE_PLATFORMS = frozenset({"light", "switch", "cover"})
 _LOCK_SEQ = itertools.count(1)
 
@@ -130,6 +137,13 @@ def _parse_hash_group(raw: Any) -> str | None:
     return f"#{int(body)}"
 
 
+entity_key = _entity_key
+is_valid_point_where = _is_valid_point_where
+normalize_iface = _normalize_iface
+parse_hash_group = _parse_hash_group
+point_area = _point_area
+
+
 def _parse_group_ref(raw: Any) -> str | None:
     """Parse a group item (``1``, ``"1"``, ``"#1"``) from a device's ``groups`` list into ``#G``."""
     if raw is None or isinstance(raw, bool):
@@ -221,7 +235,7 @@ class ActuatorLockManager:
                 self._entities.pop(key, None)
 
     def _bus_config_entries(self) -> list[Any]:
-        """Return config entries sharing this manager's physical SCS bus (primary + secondaries)."""
+        """Return config entries sharing this manager's physical SCS bus (primary + followers)."""
         entries: list[Any] = []
         seen_entries: set[int] = set()
         own_entry = getattr(self.handler, "config_entry", None)
@@ -238,7 +252,11 @@ class ActuatorLockManager:
                 gw = getattr(rt, "gateway", None) if rt is not None else None
                 if (
                     gw is not None
-                    and getattr(gw, "is_secondary", False) is True
+                    and (
+                        getattr(gw, "is_follower", False) is True
+                        or getattr(gw, "is_secondary", False) is True
+                        or getattr(gw, "is_standby", False) is True
+                    )
                     and getattr(gw, "primary_gateway_mac", None) == my_mac
                 ):
                     seen_entries.add(id(entry))
@@ -405,22 +423,41 @@ class ActuatorLockManager:
                 plat_cfgs = runtime.platforms.get(plat_name)
                 if not plat_cfgs:
                     continue
-                for dev_cfg in plat_cfgs.values():
+                for dev_id, dev_cfg in plat_cfgs.items():
+                    cfg_where = str(dev_cfg.get(CONF_WHERE) or dev_id or "").strip()
                     raw_cfg_iface = dev_cfg.get(CONF_BUS_INTERFACE)
-                    if raw_cfg_iface is None:
+                    if raw_cfg_iface is None or str(raw_cfg_iface).strip() == "":
                         raw_cfg_iface = dev_cfg.get("bus_interface")
-                    cfg_iface = _normalize_iface(raw_cfg_iface)
+                    has_explicit_iface = (
+                        raw_cfg_iface is not None and str(raw_cfg_iface).strip() != ""
+                    )
+                    base_where, has_inline_iface, inline_iface = cfg_where.rpartition("#4#")
+                    if has_inline_iface:
+                        inline_norm = _normalize_iface(inline_iface)
+                        if inline_norm is None or (
+                            has_explicit_iface and _normalize_iface(raw_cfg_iface) != inline_norm
+                        ):
+                            continue
+                        cfg_iface: str | None = inline_norm
+                        clean_where = base_where.strip()
+                    elif has_explicit_iface:
+                        cfg_iface = _normalize_iface(raw_cfg_iface)
+                        if cfg_iface is None:
+                            continue
+                        clean_where = cfg_where
+                    else:
+                        cfg_iface = None
+                        clean_where = cfg_where
                     if cfg_iface != iface:
                         continue
-                    cfg_where = str(dev_cfg.get(CONF_WHERE) or "").strip()
-                    if _parse_hash_group(cfg_where) == group_where:
+                    if _parse_hash_group(clean_where) == group_where:
                         for m_raw in dev_cfg.get(CONF_MEMBERS) or ():
                             _add_key(_split_point_key(m_raw, iface))
                     groups_cfg = dev_cfg.get("groups")
                     if isinstance(groups_cfg, (list, tuple, set, frozenset)) and any(
                         _parse_group_ref(g) == group_where for g in groups_cfg
                     ):
-                        _add_key(_split_point_key(cfg_where, iface))
+                        _add_key(_split_point_key(clean_where, iface))
 
         for cand in candidates:
             scope = getattr(cand, "scope", None)

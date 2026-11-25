@@ -43,6 +43,15 @@ from OWNd.message import (
     OWNLightingEvent,
 )
 
+from .actuator_lock import (
+    AREA_WHERES,
+    actuator_locks_of,
+    entity_key,
+    is_valid_point_where,
+    normalize_iface,
+    parse_hash_group,
+    point_area,
+)
 from .const import (
     BUS_ROUTING,
     COARSE_PRESET_TO_PERCENT,
@@ -524,6 +533,7 @@ def _pending_cmd_written(pending: _PendingCmdToken | None) -> bool:
 class MyHOMELight(MyHOMEEntity, LightEntity):
     _pending_cmd_brightness_pct: _PendingCmdToken | None = None
     _pending_cmd_color_temp: _PendingCmdToken | None = None
+    _combined_ct_fade_task: asyncio.Task[None] | None = None
     _brightness_restored: bool = False
 
     def __init__(
@@ -671,6 +681,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         # Whether the last "on" status is one that confirms (plain on or lowest preset) and can be
         # the hidden answer of a check (no off status just before it).
         self._status_confirms = False
+        # Active software fade task started by a combined CT + brightness call, if any.
+        self._combined_ct_fade_task: asyncio.Task[None] | None = None
 
     @property
     def color_temp(self) -> int | None:
@@ -1009,6 +1021,51 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             if h is not None
         )
 
+    def _poll_targets_self(self, sent: Any) -> bool:
+        """Return True if a WHO=1 status/dimension poll ``sent`` covers this light (point or scope)."""
+        if self._is_own_point_event(sent):
+            return True
+        raw_where = expose_message_where(sent)
+        if not raw_where:
+            return False
+        # Unrouted General '0' addresses the complete Lighting system (main bus + #4#II local buses;
+        # WHO_1.pdf §2.3 & F461 DALI capture tests/fixtures/plants/issue_288_f461_dali_dt8).
+        if raw_where == "0":
+            return True
+        base, sep, sent_iface_raw = raw_where.rpartition("#4#")
+        own_iface = normalize_iface(self._interface)
+        if sep:
+            sent_iface = normalize_iface(sent_iface_raw)
+            if sent_iface is None or self._interface is None or sent_iface != own_iface:
+                return False
+            scope_where = base.strip()
+        else:
+            if self._interface is not None:
+                return False
+            sent_iface = None
+            scope_where = raw_where
+        if scope_where == "0":
+            return True
+        if scope_where in AREA_WHERES:
+            own_canon = canonical_point_spelling(normalize_where(self._where) or self._where)
+            return is_valid_point_where(own_canon) and point_area(own_canon) == scope_where
+        grp = parse_hash_group(scope_where)
+        if grp is not None:
+            mgr = actuator_locks_of(self._gateway_handler)
+            if mgr is not None and entity_key(self) in mgr._resolve_group_keys(grp, sent_iface):
+                return True
+            grp_key = f"{grp}#4#{sent_iface}" if sent_iface is not None else grp
+            own_canon = canonical_point_spelling(normalize_where(self._where) or self._where)
+            own_ptp = f"{own_canon}#4#{own_iface}" if own_iface is not None else own_canon
+            return any(
+                own_ptp
+                in (getattr(getattr(h, "_resync_manager", None), "group_members", None) or {}).get(
+                    grp_key, ()
+                )
+                for h in self._bus_gateways_for_who1()
+            )
+        return False
+
     def _is_from_poll(self, message: Any, dimension: int) -> bool:
         """Return True when ``message`` is a reply to a status/dimension poll or sweep."""
         if getattr(message, "_from_status_request", False) is True:
@@ -1026,7 +1083,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                         or getattr(sent, "is_status_request", False) is True
                     )
                     and getattr(sent, "dimension", None) in allowed_dims
-                    and self._is_own_point_event(sent)
+                    and self._poll_targets_self(sent)
                 ):
                     return True
         return False
@@ -1038,7 +1095,10 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         prev_locked = self._actuator_locked
         if lock_state:
             self._fade_engine.cancel_fade_if_active()
-            if self._pending_cmd_brightness_pct is None:
+            if (
+                self._pending_cmd_brightness_pct is None
+                and self._combined_ct_fade_task is not None
+            ):
                 self._restore_combined_ct_brightness_on_abort()
         super().handle_actuator_lock(lock_state)
         if not lock_state and prev_locked is True and not self._bus_state_complete:
@@ -1138,10 +1198,20 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         else:
             supersede()
 
-    def _restore_combined_ct_brightness_on_abort(self) -> None:
+    def _restore_combined_ct_brightness_on_abort(
+        self, task: asyncio.Task[None] | None = None
+    ) -> None:
         """Restore ``_last_brightness_pct`` if a combined CT write turned the light ON without Dim 1."""
+        if task is not None and self._combined_ct_fade_task is not task:
+            return
+        self._combined_ct_fade_task = None
+        has_dimmer_mode = bool(
+            set(self._attr_supported_color_modes or ())
+            - {ColorMode.ONOFF, ColorMode.UNKNOWN}
+        )
         if (
-            self._attr_is_on is True
+            has_dimmer_mode
+            and self._attr_is_on is True
             and not self._attr_brightness_pct
             and self._last_brightness_pct
         ):
@@ -1450,9 +1520,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                         self._pending_cmd_brightness_pct = None
                     fade_task = self._fade_engine.start_fade(start_pct, clamped_target, transition)
                     if combined_ct_brightness:
-                        fade_task.add_done_callback(
-                            lambda _t: self._restore_combined_ct_brightness_on_abort()
-                        )
+                        self._combined_ct_fade_task = fade_task
+                        fade_task.add_done_callback(self._restore_combined_ct_brightness_on_abort)
                     return
 
                 # native path (echo-confirmed)

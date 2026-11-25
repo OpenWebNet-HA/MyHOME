@@ -1147,3 +1147,89 @@ async def test_f422_cover_scope_members_and_multi_gateway_lifecycle_failover_and
             for w in (sec_worker, stb_worker):
                 with pytest.raises(asyncio.CancelledError):
                     await w
+
+
+async def test_warm_standby_follower_bus_entries_and_inline_f422_yaml_group_resolution(
+    hass: HomeAssistant,
+) -> None:
+    """Verify Primary+Warm-Standby-only reload/adoption via is_follower and inline #4#II YAML group guards."""
+    p_mac = "00:03:50:dd:00:01"
+    st_mac = "00:03:50:dd:00:02"
+
+    # 1. Warm Standby sets up BEFORE Primary (no Secondary on the bus at all)
+    stb_entry, stb_gw = _make_gateway(
+        hass,
+        mac=st_mac,
+        model="F461",
+        options={
+            CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED,
+            CONF_GATEWAY_ROLE: ROLE_STANDBY,
+            CONF_PRIMARY_GATEWAY: p_mac,
+        },
+    )
+    stb_gw.is_connected = True
+    stb_gw._available = True
+    assert stb_gw.is_secondary is False
+    assert stb_gw.is_follower is True
+
+    # Pre-seed lock state and a group config on Warm Standby before Primary loads
+    assert stb_gw._actuator_locks.observe(OWNActuatorLockEvent.parse("*14*0*22##")) is True
+    stb_entry.runtime_data.platforms["light"] = {
+        "stb_grp_5": {CONF_WHERE: "#5", CONF_MEMBERS: ["23"]},
+    }
+
+    pri_entry, pri_gw = _make_gateway(
+        hass,
+        mac=p_mac,
+        model="F461",
+        options={CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED, CONF_GATEWAY_ROLE: ROLE_PRIMARY},
+    )
+    pri_gw.is_connected = True
+    pri_gw._available = True
+
+    # Primary adopts Warm Standby's queued lock state and resolves groups hosted on Standby
+    assert actuator_locks_of(pri_gw) is pri_gw._actuator_locks
+    assert pri_gw._actuator_locks.is_locked("22") is True
+    assert pri_gw._actuator_locks.observe(OWNActuatorLockCommand.parse("*14*0*#5##")) is True
+    assert pri_gw._actuator_locks.is_locked("23") is True
+
+    # Primary reload on a Primary + Warm-Standby-only bus evacuates locks to Standby and re-adopts them
+    await pri_gw.close_listener()
+    assert stb_gw._actuator_locks.is_locked("22") is True
+    assert stb_gw._actuator_locks.is_locked("23") is True
+
+    pri_gw_reloaded = MyHOMEGatewayHandler(hass, pri_entry)
+    pri_gw_reloaded.is_connected = True
+    pri_entry.runtime_data = MyHOMERuntimeData(gateway=pri_gw_reloaded)
+    assert actuator_locks_of(pri_gw_reloaded) is pri_gw_reloaded._actuator_locks
+    assert pri_gw_reloaded._actuator_locks.is_locked("22") is True
+    assert pri_gw_reloaded._actuator_locks.is_locked("23") is True
+
+    # 2. Inline #4#II YAML group/member resolution, dev_id fallback, empty interface, & conflict rejection
+    pri_entry.runtime_data.platforms["light"] = {
+        # Inline #4#II in where without interface key
+        "grp_inline": {CONF_WHERE: "#6#4#01", CONF_MEMBERS: ["09#4#01", "11"]},
+        "pt_inline": {CONF_WHERE: "12#4#1", "groups": ["#6"]},
+        # Address carried by YAML dict key (dev_id) + empty-string interface fallback
+        "#7#4#02": {CONF_MEMBERS: ["14"]},
+        "15#4#02": {CONF_BUS_INTERFACE: "", "groups": [7]},
+        # Conflicting inline #4#01 vs explicit interface "02" -> MUST be rejected on both 01 and 02!
+        "conflict_pt": {CONF_WHERE: "16#4#01", CONF_BUS_INTERFACE: "02", "groups": [6, 7]},
+        # Out-of-range inline (#4#99) and explicit ("99") interfaces -> MUST be rejected (even for main bus)!
+        "bad_inline_grp": {CONF_WHERE: "#8#4#99", CONF_MEMBERS: ["17"]},
+        "bad_explicit_grp": {CONF_WHERE: "#8", CONF_BUS_INTERFACE: "99", CONF_MEMBERS: ["18"]},
+    }
+
+    mgr = pri_gw_reloaded._actuator_locks
+    assert set(mgr._resolve_group_keys("#6", "01")) == {
+        ("09", "01"),
+        ("11", "01"),
+        ("12", "01"),
+    }
+    assert set(mgr._resolve_group_keys("#7", "02")) == {
+        ("14", "02"),
+        ("15", "02"),
+    }
+    assert ("16", "01") not in mgr._resolve_group_keys("#6", "01")
+    assert ("16", "02") not in mgr._resolve_group_keys("#7", "02")
+    assert mgr._resolve_group_keys("#8", None) == []

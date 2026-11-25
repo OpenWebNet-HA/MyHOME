@@ -181,7 +181,7 @@ class LightingResyncManager:
     def register_group_members(self, group_where: str, members: list[str] | set[str]) -> None:
         """Register the point-to-point member WHERE addresses belonging to a group."""
         key = self._normalize_group_key(group_where)
-        grp_iface = key.partition(BUS_ROUTING)[2] or None
+        grp_iface = key.lstrip("#").partition(BUS_ROUTING)[2] or None
         cleaned = {self._normalize_ptp_where(m, grp_iface) for m in members if str(m).strip()}
         if cleaned:
             self._group_members[key] = cleaned
@@ -249,7 +249,7 @@ class LightingResyncManager:
             if members is not None:
                 if ptp_where not in members:
                     continue
-            elif g.partition(BUS_ROUTING)[2] != ptp_where.partition(BUS_ROUTING)[2]:
+            elif g.lstrip("#").partition(BUS_ROUTING)[2] != ptp_where.partition(BUS_ROUTING)[2]:
                 continue
             echoed_grp = self._resync_echoed_members.setdefault(g, set())
             echoed_grp.add(ptp_where)
@@ -484,7 +484,7 @@ class LightingResyncManager:
                 if members is not None:
                     if ptp_w not in members:
                         continue
-                elif group_key.partition(BUS_ROUTING)[2] != ptp_w.partition(BUS_ROUTING)[2]:
+                elif group_key.lstrip("#").partition(BUS_ROUTING)[2] != ptp_w.partition(BUS_ROUTING)[2]:
                     continue
                 latest_grp_pol[ptp_w] = self._ptp_polarities.get((t, str(w)))
             matching_wheres = {
