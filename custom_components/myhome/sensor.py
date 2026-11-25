@@ -2492,7 +2492,10 @@ class MyHOMEActuatorOutputSensor(MyHOMEEntity, SensorEntity):
         """Whether zone mode follows standalone ``Z`` addressing rather than a central unit."""
         if self._standalone_config is not None:
             return self._standalone_config
-        if getattr(self._gateway_handler, "has_central_unit", False) is not True:
+        if (
+            self._interface is not None
+            or getattr(self._gateway_handler, "has_central_unit", False) is not True
+        ):
             return True
         # A zone the climate entity found not to be run by the central unit (by a setpoint
         # only the direct form changed, or by its season): the central unit's off is not its.
@@ -2720,6 +2723,8 @@ class _MyHOMEClimateZoneSensor(MyHOMESensorEntity):
         """Remove a companion zone sensor superseded by unified ``#0#N``."""
         if self.platform is not None and entity_id in self.platform.entities:
             await self.async_remove(force_remove=True)
+        elif target_hass.states.get(entity_id) is not None:
+            target_hass.states.async_remove(entity_id)
         registry = er.async_get(target_hass)
         if (entry := registry.async_get(entity_id)) is not None:
             prune_entity(target_hass, registry, entry, entry.config_entry_id or "")
@@ -2748,6 +2753,13 @@ class _MyHOMEClimateZoneSensor(MyHOMESensorEntity):
                 )
             return
         await super().async_added_to_hass()
+        if getattr(self, "_superseded_by_central", False):
+            if target_hass is not None and self.entity_id:
+                target_hass.async_create_task(
+                    self._async_prune_superseded(target_hass, self.entity_id),
+                    eager_start=False,
+                )
+            return
 
     async def async_update(self) -> None:
         """Strictly passive: readings arrive via climate zone bus frames."""

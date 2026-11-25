@@ -1028,6 +1028,9 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
             await asyncio.wait(
                 [future for _frame, future in written], timeout=DIRECT_WRITE_DELIVERY_TIMEOUT
             )
+            for _frame, future in written:
+                if future.done() and not future.cancelled():
+                    future.exception()
         return [
             frame
             for frame, future in written

@@ -212,7 +212,7 @@ async def test_central_unit_cu4_polls_status_without_poll_health(hass):
     central, gateway = _zone(hass, where="#0#1", central=True, name="Centrale 4 zone")
     for _ in range(5):
         await central.async_update()
-    assert [str(call.args[0]) for call in gateway.send_status_request.await_args_list] == ["*#4*#0#1##"] * 5
+    assert [str(call.args[0]) for call in gateway.send_status_request.await_args_list] == ["*#4*#0#1##", "*#4*1*0##"] * 5
     assert "failed_polls" not in central.extra_state_attributes
     assert "unresponsive_since" not in central.extra_state_attributes
     assert _issue(hass, central) is None
@@ -247,7 +247,7 @@ async def test_four_zone_central_unit_exempt_from_poll_health(hass):
     """Four-zone central units (#0#1) poll *#4*#0#1## cleanly while staying exempt from PollHealth (#582, #994)."""
     cu4, gateway = _zone(hass, where="#0#1", central=True, name="Central Unit 4-Zone")
     await cu4.async_update()
-    assert [str(call.args[0]) for call in gateway.send_status_request.await_args_list] == ["*#4*#0#1##"]
+    assert [str(call.args[0]) for call in gateway.send_status_request.await_args_list] == ["*#4*#0#1##", "*#4*1*0##"]
     assert "failed_polls" not in cu4.extra_state_attributes
     assert _issue(hass, cu4) is None
 

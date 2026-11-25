@@ -639,6 +639,15 @@
     "alarm_read_only": {
       "message": "{name} è di sola lettura: inserisci e disinserisci l'allarme con i comandi AUX programmati sulla centrale"
     },
+    "central_command_not_written": {
+      "message": "{name}: il gateway non ha scritto {frame} entro 15 secondi; il comando è stato annullato"
+    },
+    "central_command_refused": {
+      "message": "{name}: il gateway ha rifiutato {frame}"
+    },
+    "central_command_unconfirmed": {
+      "message": "{name}: il gateway non ha confermato {frame}; potrebbe comunque aver raggiunto la centrale"
+    },
     "fan_speed_zone_only": {
       "message": "{name} non ha una velocità del ventilatore propria: solo una zona (1-99) può averne una"
     },

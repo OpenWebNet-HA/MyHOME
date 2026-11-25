@@ -283,7 +283,7 @@ async def test_p4_central_unit_4695_four_zone(hass: HomeAssistant):
 
     # Status update sends canonical *#4*#0#1## status query (never *#4*#0#1*14##, #582 / #994)
     await cu4.async_update()
-    assert [str(call.args[0]) for call in gateway.send_status_request.await_args_list] == ["*#4*#0#1##"]
+    assert [str(call.args[0]) for call in gateway.send_status_request.await_args_list] == ["*#4*#0#1##", "*#4*1*0##"]
 
 
 @pytest.mark.asyncio

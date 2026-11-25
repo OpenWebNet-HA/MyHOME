@@ -29,7 +29,7 @@ from typing import Any
 
 from homeassistant.components.climate.const import HVACMode
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform
+from homeassistant.const import CONF_NAME, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -40,6 +40,8 @@ from .const import (
     BUS_ROUTING,
     CONF_BUS_INTERFACE,
     CONF_CENTRAL,
+    CONF_DEVICE_MODEL,
+    CONF_MANUFACTURER,
     CONF_STANDALONE_ZONES,
     CONF_WHERE,
     CONF_WHO,
@@ -94,7 +96,13 @@ CANDIDATE_MAX_AGE = 3600.0
 # ``0``, zero-padded ``01``..``09``, ``#1``..``#99``, or with the prefix already (``#0#0`` ->
 # ``#0##0#0``, ``#0#1`` -> ``#0##0#1``, ``01`` -> ``#0#01``, ``#1`` -> ``#0##1``).
 _SAVED_CENTRAL_DOUBLED = re.compile(
-    r"(.+-4-)(#0#(?:#?0+|#0#\d{1,2}|0[1-9]|#0?[1-9]\d?))((?:#4#\d{1,2})?)"
+    r"(.+-4-)(?:"
+    r"(#0#(?:#?0+|#0#\d{1,2}|0[1-9]|#0?[1-9]\d?))((?:#4#\d{1,2})?)"
+    r"|(#0(?:#[1-9]\d?)?)(#4#\d)"
+    r")"
+)
+_ACTUATOR_OUTPUT_SUFFIX_RE = re.compile(
+    r"^4-([1-9][0-9]?)#[1-9](?:#4#([0-9]{1,2}))?-output-level$"
 )
 
 _REAL_HVAC_STATES = frozenset(
@@ -565,6 +573,7 @@ class ZoneDiscovery:
         target: Any = None,
         *,
         source_device_id: str | None = None,
+        hand_over_settings: bool = False,
     ) -> None:
         """Move any 0-10 V actuator output sensors from a superseded Zone N device onto ``#0#N``."""
         routing = f"{BUS_ROUTING}{pair[1]}" if pair[1] else ""
@@ -574,9 +583,17 @@ class ZoneDiscovery:
             if pair[1]
             else f"Central Unit {pair[0].zfill(2)}"
         )
-        cu_name = str(getattr(target, "_device_name", "") or default_name)
-        cu_mfg = str(getattr(target, "_manufacturer", "") or "BTicino")
-        cu_model = str(getattr(target, "_model", "") or "Central Unit (4695)")
+        cu_cfg: dict[str, Any] = {}
+        if target is None:
+            cu_addr = Address(f"#0#{pair[0]}", pair[1])
+            cu_cfg = _zone_config(self._configured, cu_addr, cu_addr.key)
+        cu_name = str(getattr(target, "_device_name", "") or cu_cfg.get(CONF_NAME) or default_name)
+        cu_mfg = str(
+            getattr(target, "_manufacturer", "") or cu_cfg.get(CONF_MANUFACTURER) or "BTicino"
+        )
+        cu_model = str(
+            getattr(target, "_model", "") or cu_cfg.get(CONF_DEVICE_MODEL) or "Central Unit (4695)"
+        )
         live_sensors = getattr(self._runtime, "entities", {}).get(Platform.SENSOR)
         if isinstance(live_sensors, dict):
             for sensor in list(live_sensors.values()):
@@ -593,42 +610,69 @@ class ZoneDiscovery:
                         central_where=f"#0#{pair[0]}",
                     )
         devices = dr.async_get(self._hass)
-        zone_dev = devices.async_get(source_device_id) if source_device_id else None
-        if zone_dev is None:
-            zone_ident = (DOMAIN, f"{self._gateway.mac}-4-{pair[0]}{routing}")
-            zone_dev = next(
-                (
-                    d
-                    for d in dr.async_entries_for_config_entry(devices, self._config_entry.entry_id)
-                    if zone_ident in d.identifiers
-                ),
-                None,
-            )
-        if zone_dev is None:
-            return
-        output_entries = [
-            e
-            for e in er.async_entries_for_device(
-                registry, zone_dev.id, include_disabled_entities=True
-            )
-            if e.domain == Platform.SENSOR
-            and e.config_entry_id == self._config_entry.entry_id
-            and (e.unique_id or "").endswith("-output-level")
-        ]
-        if not output_entries:
-            return
         cu_uid = f"{self._gateway.mac}-4-{cu_dev_id}"
-        cu_device = devices.async_get_or_create(
-            config_entry_id=self._config_entry.entry_id,
-            identifiers={(DOMAIN, cu_uid)},
-            name=cu_name,
-            manufacturer=cu_mfg,
-            model=cu_model,
+        gw_mac = str(self._gateway.mac)
+        macs = {m for m in (self._runtime_mac, gw_mac) if m}
+        output_entries: list[er.RegistryEntry] = []
+        source_device_ids: set[str] = set()
+        if source_device_id:
+            source_device_ids.add(source_device_id)
+        for cand in er.async_entries_for_config_entry(registry, self._config_entry.entry_id):
+            uid = cand.unique_id or ""
+            if cand.domain != Platform.SENSOR or not uid.endswith("-output-level"):
+                continue
+            after_mac = next(
+                (uid[len(m) + 1 :] for m in macs if uid.startswith(f"{m}-")),
+                "",
+            )
+            match = _ACTUATOR_OUTPUT_SUFFIX_RE.fullmatch(after_mac)
+            if match is None:
+                continue
+            m_zone, m_iface = match.groups()
+            norm_iface = m_iface.zfill(2) if m_iface is not None else None
+            if (m_zone, norm_iface) == pair:
+                output_entries.append(cand)
+                if cand.device_id:
+                    source_device_ids.add(cand.device_id)
+        source_dev = devices.async_get(source_device_id) if source_device_id else None
+        needs_handover = bool(
+            hand_over_settings
+            and source_dev is not None
+            and (source_dev.name_by_user or source_dev.area_id)
         )
+        if not output_entries and not needs_handover:
+            return
+        via_id = getattr(self._gateway, "device_registry_id", None)
+        cu_device = (
+            devices.async_get_or_create(
+                config_entry_id=self._config_entry.entry_id,
+                identifiers={(DOMAIN, cu_uid)},
+                name=cu_name,
+                manufacturer=cu_mfg,
+                model=cu_model,
+                via_device_id=via_id,
+            )
+            if via_id
+            else devices.async_get_or_create(
+                config_entry_id=self._config_entry.entry_id,
+                identifiers={(DOMAIN, cu_uid)},
+                name=cu_name,
+                manufacturer=cu_mfg,
+                model=cu_model,
+            )
+        )
+        if needs_handover and source_device_id:
+            self._hand_over_device_settings(source_device_id, cu_device.id)
         for out_ent in output_entries:
-            registry.async_update_entity(out_ent.entity_id, device_id=cu_device.id)
-        if not er.async_entries_for_device(registry, zone_dev.id, include_disabled_entities=True):
-            devices.async_remove_device(zone_dev.id)
+            if out_ent.device_id != cu_device.id:
+                registry.async_update_entity(out_ent.entity_id, device_id=cu_device.id)
+        for src_dev_id in source_device_ids:
+            if src_dev_id == cu_device.id:
+                continue
+            if devices.async_get(src_dev_id) is not None and not er.async_entries_for_device(
+                registry, src_dev_id, include_disabled_entities=True
+            ):
+                devices.async_remove_device(src_dev_id)
 
     def _prune_superseded_master_zone(self, pair: ZonePair, target: Any = None) -> None:
         """Remove an existing unconfigured master zone entity once unified Central Unit 0N arrives."""
@@ -666,7 +710,11 @@ class ZoneDiscovery:
             if _own_entry(addr, cfg or {}):
                 continue
             self._rehome_master_output_sensors(
-                registry, pair, target=target, source_device_id=entry.device_id
+                registry,
+                pair,
+                target=target,
+                source_device_id=entry.device_id,
+                hand_over_settings=True,
             )
             LOGGER.info(
                 "climate: pruning live master zone %s unified into 4-zone central unit #0#%s (#994)",
@@ -852,23 +900,36 @@ class ZoneDiscovery:
         configured = {Address.from_config(key, cfg).key for key, cfg in self._configured.items() if isinstance(cfg, dict)}
         for entry in entries:
             match = _SAVED_CENTRAL_DOUBLED.fullmatch(str(entry.unique_id))
-            if entry.domain != Platform.CLIMATE or match is None or f"{match[2]}{match[3]}" in configured:
+            if entry.domain != Platform.CLIMATE or match is None:
                 continue
-            fixed_addr = canonical_central_zone(f"{match[2]}{match[3]}")
-            corrected = f"{match[1]}{fixed_addr}"
+            prefix = match[1]
+            raw_addr = f"{match[2]}{match[3]}" if match[2] is not None else f"{match[4]}{match[5]}"
+            if raw_addr in configured:
+                continue
+            fixed_addr = canonical_central_zone(raw_addr)
+            corrected = f"{prefix}{fixed_addr}"
+            if corrected == str(entry.unique_id):
+                continue
             if kept := registry.async_get_entity_id(entry.domain, entry.platform, corrected):
-                self._hand_over_device_settings(entry.device_id, getattr(registry.async_get(kept), "device_id", None))
+                removed_device_id = entry.device_id
+                self._hand_over_device_settings(removed_device_id, getattr(registry.async_get(kept), "device_id", None))
                 registry.async_remove(entry.entity_id)
+                if removed_device_id:
+                    devices = dr.async_get(self._hass)
+                    if devices.async_get(removed_device_id) is not None and not er.async_entries_for_device(
+                        registry, removed_device_id, include_disabled_entities=True
+                    ):
+                        devices.async_remove_device(removed_device_id)
                 LOGGER.info(
                     "climate: %s was saved as central unit %s next to the central unit %s; removed",
-                    entry.entity_id, f"{match[2]}{match[3]}", fixed_addr,
+                    entry.entity_id, raw_addr, fixed_addr,
                 )
             else:
                 registry.async_update_entity(entry.entity_id, new_unique_id=corrected)
                 self._move_device_identifier(entry.device_id, str(entry.unique_id), corrected)
                 LOGGER.info(
                     "climate: %s was saved as central unit %s; it is the central unit %s",
-                    entry.entity_id, f"{match[2]}{match[3]}", fixed_addr,
+                    entry.entity_id, raw_addr, fixed_addr,
                 )
 
     def _hand_over_device_settings(self, removed_id: str | None, kept_id: str | None) -> None:
@@ -919,7 +980,10 @@ class ZoneDiscovery:
             and pair in self._four_zone_central_pairs()
         ):
             self._rehome_master_output_sensors(
-                er.async_get(self._hass), pair, source_device_id=entry.device_id
+                er.async_get(self._hass),
+                pair,
+                source_device_id=entry.device_id,
+                hand_over_settings=True,
             )
             LOGGER.info(
                 "climate: pruning master zone %s unified into 4-zone central unit #0#%s (#994)",

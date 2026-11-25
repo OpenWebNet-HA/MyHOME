@@ -263,7 +263,7 @@ def is_actuator_where(where: str) -> bool:
     """
     clean = (where or "").strip().removeprefix("4-")
     base, routing, iface = clean.rpartition("#4#")
-    if routing and iface.isdigit() and 1 <= len(iface) <= 2:
+    if routing and _is_f422_interface(iface):
         clean = base
     if is_four_zone_central_where(clean):
         return False
@@ -304,7 +304,7 @@ def canonical_central_zone(zone: str) -> str:
     to the same address.
     """
     base, routing, interface = str(zone).rpartition("#4#")
-    if routing and base and interface.isascii() and interface.isdigit() and 1 <= len(interface) <= 2:
+    if routing and base and _is_f422_interface(interface):
         suffix = f"#4#{interface.zfill(2)}"
     else:
         base, suffix = str(zone), ""
@@ -322,7 +322,7 @@ def canonical_central_zone(zone: str) -> str:
 def split_zone_routing(zone: str, routing: str) -> tuple[str, str]:
     """Separate an inline ``#4#II`` F422 routing suffix from ``zone``."""
     base, sep, iface = zone.rpartition("#4#")
-    if sep and base and iface.isascii() and iface.isdigit() and 1 <= len(iface) <= 2:
+    if sep and base and _is_f422_interface(iface):
         return base, routing or f"#4#{iface.zfill(2)}"
     return zone, routing
 
@@ -463,6 +463,11 @@ def _where_params(message: Any) -> list[str]:
     return [str(param) for param in params] if isinstance(params, (list, tuple)) else []
 
 
+def _is_f422_interface(value: str) -> bool:
+    """Whether ``value`` is a valid F422 bus interface number (``0``..``15`` / ``00``..``15``)."""
+    return _is_ascii_uint(value) and 1 <= len(value) <= 2 and int(value) <= 15
+
+
 def four_zone_central_zone(where: str) -> str | None:
     """Return master zone ``"1"``..``"99"`` for a 4-zone central unit WHERE (``#0#N`` / ``#0#N#4#II``), else ``None``.
 
@@ -472,7 +477,7 @@ def four_zone_central_zone(where: str) -> str | None:
     """
     clean = (where or "").strip().removeprefix("4-")
     base, routing, iface = clean.rpartition("#4#")
-    if routing and _is_ascii_uint(iface) and 1 <= len(iface) <= 2:
+    if routing and _is_f422_interface(iface):
         clean = base
     if not clean.startswith("#0#"):
         return None
@@ -498,7 +503,7 @@ def four_zone_central_where(message: Any) -> str | None:
     if str(getattr(message, "where", None)) != "#0":
         return None
     params = _where_params(message)
-    if len(params) == 3 and params[1] == "4" and _is_ascii_uint(params[2]) and 1 <= len(params[2]) <= 2:
+    if len(params) == 3 and params[1] == "4" and _is_f422_interface(params[2]):
         params = params[:1]
     if len(params) == 1 and _is_ascii_uint(params[0]) and 1 <= int(params[0]) <= 99:
         return f"#0#{int(params[0])}"
@@ -517,7 +522,7 @@ def central_unit_where(message: Any) -> str | None:
     params = _where_params(message)
     if not params:
         return "#0"
-    if len(params) == 2 and params[0] == "4" and _is_ascii_uint(params[1]) and len(params[1]) <= 2:
+    if len(params) == 2 and params[0] == "4" and _is_f422_interface(params[1]):
         return f"#0#4#{params[1].zfill(2)}"
     return None
 
@@ -577,7 +582,16 @@ def is_central_unit_report(message: Any) -> bool:
         return False
     raw = str(getattr(message, "where", None) or "").strip().removeprefix("4-")
     if raw.removeprefix("#").split("#", 1)[0] == "0":
-        return True
+        return (
+            central_unit_where(message) is not None
+            or four_zone_central_where(message) is not None
+        )
+    params = _where_params(message)
+    if params and not (
+        (len(params) == 2 and params[0] == "4" and _is_f422_interface(params[1]))
+        or is_four_zone_controlled_zone_where(message)
+    ):
+        return False
     frame = str(message)
     if not frame.startswith("*4*"):
         return True
@@ -609,16 +623,23 @@ def is_four_zone_controlled_zone_where(message: Any) -> bool:
     ``#Z#C`` / ``#Z`` writes (``plant-cu4695.tsv:27,35-36``), so a ``#Z#C`` report must never
     flip ``has_central_unit`` or mark zone ``Z`` as controlled by a 99-zone central unit (#994).
     """
+    return four_zone_controlled_zone(message) is not None
+
+
+def four_zone_controlled_zone(message: Any) -> str | None:
+    """Return canonical zone ``"1"``..``"99"`` for a ``#Z#C`` / ``#Z#C#4#II`` frame, else ``None``."""
     raw = str(getattr(message, "where", None) or "").strip().removeprefix("4-")
     if not raw.startswith("#"):
-        return False
+        return None
     zone_digits = raw[1:]
     if not (_is_ascii_uint(zone_digits) and 1 <= int(zone_digits) <= 99):
-        return False
+        return None
     params = _where_params(message)
-    if len(params) == 3 and params[1] == "4" and _is_ascii_uint(params[2]) and 1 <= len(params[2]) <= 2:
+    if len(params) == 3 and params[1] == "4" and _is_f422_interface(params[2]):
         params = params[:1]
-    return len(params) == 1 and _is_ascii_uint(params[0]) and 1 <= int(params[0]) <= 99
+    if len(params) == 1 and _is_ascii_uint(params[0]) and 1 <= int(params[0]) <= 99:
+        return str(int(zone_digits))
+    return None
 
 
 def central_report_zone(message: Any) -> str | None:
@@ -925,7 +946,7 @@ def parse_thermo_actuator_where(
 def thermo_event_interface(message: Any) -> str | None:
     """Return normalized 2-digit F422 interface from a WHO=4 event, or ``None``."""
     raw_if = getattr(message, "interface", None)
-    if not raw_if:
+    if not isinstance(raw_if, (str, int)) or isinstance(raw_if, bool) or not str(raw_if):
         return None
     if_str = str(raw_if)
     return if_str.zfill(2) if if_str.isdigit() else if_str

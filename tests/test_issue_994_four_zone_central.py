@@ -2449,3 +2449,157 @@ def test_legacy_yaml_duplicate_central_drop_and_central_false_persisted(
     assert canon_flag["climate"]["#0#1"]["central"] is True
     assert rewritten_flag == ["climate: #0#1 central -> True"]
 
+
+async def test_review_6054026044_four_zone_hardening(hass: HomeAssistant) -> None:
+    """Verify PR #1000 review 6054026044 fixes: 35C cap, guards, season nominal clear,
+    Dim 12/daily holiday/cold-start bursts, restore, F422 bounds, dual-central, and exception safety.
+    """
+    import asyncio
+    from unittest.mock import patch
+
+    from homeassistant.core import State
+
+    from custom_components.myhome.where_grammar import (
+        central_report_zone,
+        central_unit_where,
+        four_zone_central_where,
+        four_zone_central_zone,
+        is_central_unit_report,
+        is_four_zone_controlled_zone_where,
+    )
+    from tests.test_climate_mode_state_2026_11_08 import _climate
+
+    # [P1-1] 4695 35.0 C ceiling + clamping in _write_central_setpoint.
+    gw = _gateway(has_central_unit=False)
+    cu = _climate(gw, "#0#1", standalone=None, central=True)
+    assert cu.max_temp == 35
+    await cu.async_set_temperature(temperature=38.0)
+    assert _sent(gw)[-1] == "*#4*#0#1*#14*0350*3##"
+
+    # [P1-3] Foreign central frames (#1, #1#2, #0#2) and plain *4*20*1## never mutate #0#1.
+    cu.handle_event(OWNHeatingEvent("*4*103*#0#1##"))
+    cu.handle_event(OWNHeatingEvent("*4*110#0210*#1##"))
+    cu.handle_event(OWNHeatingEvent("*4*110#0210*#1#2##"))
+    cu.handle_event(OWNHeatingEvent("*4*20*1##"))
+    cu.handle_event(OWNHeatingEvent("*4*20*#1##"))
+    assert cu.hvac_mode == HVACMode.OFF
+    assert cu._remote_control is None
+
+    # [P1-4] Cross-season nominal setpoint clears on season switch & cross-season restore.
+    gw.send.reset_mock()
+    cu.handle_event(OWNHeatingEvent("*4*210#0260*#0#1##"))
+    assert cu._season == "conditioning" and cu.target_temperature == 26.0
+    cu.handle_event(OWNHeatingEvent("*4*102*#0#1##"))
+    assert cu._season == "heating" and cu._target_temperature is None
+    await cu.async_set_hvac_mode(HVACMode.HEAT)
+    assert _sent(gw) == ["*4*3100*#0#1##"]
+
+    cu_r = _climate(_gateway(has_central_unit=False), "#0#1", standalone=None, central=True)
+    cu_r.handle_event(OWNHeatingEvent("*4*102*#0#1##"))
+    await cu_r.async_restore_last_state(
+        State(
+            "climate.central_unit_01",
+            "cool",
+            {"temperature": 26.0, "nominal_temperature": 26.0, "season": "conditioning"},
+        )
+    )
+    assert cu_r._target_temperature is None
+
+    # [P1-5] Dedicated _master_dim12_at survives Dim 0 / Dim 13, and cold-start Dim 12 -> 1101 -> *4*1*1## keeps target.
+    cu_p = _climate(_gateway(has_central_unit=False), "#0#1", standalone=None, central=True)
+    cu_p.handle_event(OWNHeatingEvent("*4*1101*#0#1##"))
+    cu_p.handle_event(OWNHeatingEvent("*#4*1*12*0210*3##"))
+    cu_p.handle_event(OWNHeatingEvent("*4*1*1##"))
+    cu_p.handle_event(OWNHeatingEvent("*#4*1*0*0195##"))
+    cu_p.handle_event(OWNHeatingEvent("*#4*1*13*00##"))
+    cu_p.handle_event(OWNHeatingEvent("*4*1103*#0#1##"))
+    assert cu_p.target_temperature == 21.0
+
+    cu_cold = _climate(_gateway(has_central_unit=False), "#0#1", standalone=None, central=True)
+    cu_cold.handle_event(OWNHeatingEvent("*#4*1*12*0195*3##"))
+    cu_cold.handle_event(OWNHeatingEvent("*4*1101*#0#1##"))
+    cu_cold.handle_event(OWNHeatingEvent("*4*1*1##"))
+    assert cu_cold.target_temperature == 19.5
+    assert cu_cold._target_temperature == 19.5
+
+    # [P1-6] Daily holiday 115#1101 <-> 1101 triggers schedule_changed and clears stale setpoint.
+    cu_dh = _climate(_gateway(has_central_unit=False), "#0#1", standalone=None, central=True)
+    cu_dh.handle_event(OWNHeatingEvent("*4*115#1101*#0#1##"))
+    assert cu_dh.extra_state_attributes["daily_holiday"] is True
+    cu_dh.handle_event(OWNHeatingEvent("*#4*1*12*0165*3##"))
+    assert cu_dh.target_temperature == 16.5
+    cu_dh.handle_event(OWNHeatingEvent("*4*1101*#0#1##"))
+    assert "daily_holiday" not in cu_dh.extra_state_attributes
+    assert cu_dh.target_temperature is None
+
+    # [P2-2] & [P2-7] _write_central_setpoint handles Future.exception() and async_set_temperature(no temp) is safe.
+    gw_err = _gateway(has_central_unit=False)
+    err_fut: asyncio.Future[float] = asyncio.get_running_loop().create_future()
+    err_fut.set_exception(RuntimeError("boom"))
+    gw_err.send = AsyncMock(return_value=err_fut)
+    cu_err = _climate(gw_err, "#0#1", standalone=None, central=True)
+    assert await cu_err._write_central_setpoint(20.0) is False
+    await cu_err.async_set_temperature(hvac_mode=HVACMode.HEAT)
+
+    # [P2-3] Optimistic OFF marks actuators off so next temp frame keeps hvac_action=OFF.
+    cu_off = _climate(_gateway(has_central_unit=False), "#0#1", standalone=None, central=True)
+    cu_off.handle_event(OWNHeatingEvent("*4*110#0200*#0#1##"))
+    cu_off.handle_event(OWNHeatingEvent("*#4*1#1*20*1##"))
+    assert cu_off.hvac_action == HVACAction.HEATING
+    await cu_off.async_set_hvac_mode(HVACMode.OFF)
+    assert cu_off.hvac_action == HVACAction.OFF
+    cu_off.handle_event(OWNHeatingEvent("*#4*1*0*0195##"))
+    assert cu_off.hvac_action == HVACAction.OFF
+
+    # [P2-4] Restore AUTO -> _nominal_from_dim12=True; coerced unavailable still allows pre-report *4*1*1##.
+    cu_auto = _climate(_gateway(has_central_unit=False), "#0#1", standalone=None, central=True)
+    await cu_auto.async_restore_last_state(
+        State("climate.central_unit_01", "auto", {"temperature": 19.0, "season": "heating"})
+    )
+    assert cu_auto._nominal_from_dim12 is True
+    cu_unavail = _climate(_gateway(has_central_unit=False), "#0#1", standalone=None, central=True)
+    await cu_unavail.async_restore_last_state(State("climate.central_unit_01", "unavailable", {}))
+    cu_unavail.handle_event(OWNHeatingEvent("*4*1*1##"))
+    assert cu_unavail.hvac_mode == HVACMode.HEAT
+
+    # [P2-5] Protection restore window on #0#N is 5.0 s and _reconcile_local_target subtracts master knob.
+    cu_win = _climate(_gateway(has_central_unit=False), "#0#1", standalone=None, central=True)
+    clock = [100.0]
+    with patch("custom_components.myhome.climate.time.monotonic", side_effect=lambda: clock[0]):
+        cu_win.handle_event(OWNHeatingEvent("*4*110#0200*#0#1##"))
+        cu_win.handle_event(OWNHeatingEvent("*4*1101*#0#1##"))
+        cu_win.handle_event(OWNHeatingEvent("*#4*1*13*02##"))
+        cu_win.handle_event(OWNHeatingEvent("*#4*1*12*0220*3##"))
+        assert cu_win._target_temperature == 20.0
+        cu_win.handle_event(OWNHeatingEvent("*#4*1*12*0070*3##"))
+        clock[0] = 103.5
+        cu_win.handle_event(OWNHeatingEvent("*4*102*#0#1##"))
+    assert cu_win._target_temperature == 20.0
+
+    # [P2-8] F422 sub-bus zone ignores local has_central_unit (advertises AUTO and is
+    # safely gated by _write_blocked_by_interface rather than raising auto_standalone_zone);
+    # #3#1 marks zone standalone on dual-central bus.
+    gw_dual = _gateway(has_central_unit=True)
+    z_sub = _climate(gw_dual, "3#4#01", standalone=None, central=False)
+    assert z_sub._interface == "01"
+    assert z_sub._standalone is True
+    assert HVACMode.AUTO in z_sub.hvac_modes
+    z_sub._target_temperature = 21.0
+    z_sub._nominal_temperature = 21.0
+    await z_sub.async_set_hvac_mode(HVACMode.AUTO)
+    assert _sent(gw_dual) == []
+    z_dual = _climate(gw_dual, "3", standalone=None, central=False)
+    assert z_dual._standalone is False
+    z_dual.handle_event(OWNHeatingEvent("*4*110*#3#1##"))
+    assert z_dual._standalone is True
+
+    # [P2-9] F422 interface bound (<=15) and malformed #0#0 / #0#100 / #3#0 rejections.
+    assert four_zone_central_zone("#0#1#4#15") == "1"
+    assert four_zone_central_zone("#0#1#4#20") is None
+    assert four_zone_central_where(OWNHeatingEvent("*4*103*#0#1#4#20##")) is None
+    assert central_unit_where(OWNHeatingEvent("*4*103*#0#4#20##")) is None
+    assert is_four_zone_controlled_zone_where(OWNHeatingEvent("*4*110*#3#1#4#20##")) is False
+    assert is_central_unit_report(OWNHeatingEvent("*4*110#0160*#0#0##")) is False
+    assert is_central_unit_report(OWNHeatingEvent("*4*110#0160*#0#100##")) is False
+    assert is_central_unit_report(OWNHeatingEvent("*4*110*#3#0##")) is False
+    assert central_report_zone(OWNHeatingEvent("*4*110*#3#0##")) is None

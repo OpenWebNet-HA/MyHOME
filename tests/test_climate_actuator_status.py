@@ -1464,9 +1464,7 @@ async def test_four_zone_central_channels_1_to_4_are_central_and_poll_own_status
         sent = [str(call.args[0]) for call in handler.send_status_request.await_args_list]
         assert f"*#4*{clean}*14##" not in sent
         assert f"*#4*{clean}*20##" not in sent
-        expected = [f"*#4*{clean}##"]
-        if handler.general_zone_request_refused:
-            expected.append(f"*#4*{master}*0##")
+        expected = [f"*#4*{clean}##", f"*#4*{master}*0##"]
         if model == "F461":
             expected.append("*#4*0#0*20##")
         elif not handler.actuator_request_refused and not handler.zone_actuator_request_refused:
