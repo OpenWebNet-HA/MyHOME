@@ -365,24 +365,31 @@ class MyHOMEScopeCover(MyHOMECover):
                 follower_gens.append((member, member._run_generation))
             else:
                 member._cancel_stop_task()
-        try:
-            written = await self._async_stop(**kwargs)
-        except Exception:
-            for member, m_gen in follower_gens:
-                if member._run_generation == m_gen:
-                    member._end_echo_window()
-            raise
-        stop_gen = self._last_stop_generation
-        for member, m_gen in follower_gens:
-            if member._run_generation == m_gen and not member._advanced:
-                member._follow_scope_stop(written)
-        not_before = max(at, queued_at) if at is not None else queued_at
         for leader, leader_gen in tilting_leaders:
-            if leader._is_tilting and leader_gen == leader._run_generation:
-                if isinstance(written, asyncio.Future) and not written.done():
-                    leader._pulse_stop_written = written
-                leader._settle_pulse_on_write(written, leader_gen, not_before)
-        return written, stop_gen
+            leader._pulse_stop_inflight_gen = leader_gen
+        try:
+            try:
+                written = await self._async_stop(**kwargs)
+            except Exception:
+                for member, m_gen in follower_gens:
+                    if member._run_generation == m_gen:
+                        member._end_echo_window()
+                raise
+            stop_gen = self._last_stop_generation
+            for member, m_gen in follower_gens:
+                if member._run_generation == m_gen and not member._advanced:
+                    member._follow_scope_stop(written)
+            not_before = max(at, queued_at) if at is not None else queued_at
+            for leader, leader_gen in tilting_leaders:
+                if leader._is_tilting and leader_gen == leader._run_generation:
+                    if isinstance(written, asyncio.Future) and not written.done():
+                        leader._pulse_stop_written = written
+                    leader._settle_pulse_on_write(written, leader_gen, not_before)
+            return written, stop_gen
+        finally:
+            for leader, leader_gen in tilting_leaders:
+                if leader._pulse_stop_inflight_gen == leader_gen:
+                    leader._pulse_stop_inflight_gen = None
 
     async def _async_send_stop_for_pre_move(self) -> tuple[Any, int]:
         """Stop the local scope and its members ahead of a scope direction frame (#959)."""
