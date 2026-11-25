@@ -52,6 +52,7 @@ from custom_components.myhome.const import (
     ATTR_GATEWAY,
     ATTR_MESSAGE,
     CONF_BUS_TOPOLOGY,
+    CONF_CENTRAL,
     CONF_ENTITY,
     CONF_EXPOSE,
     CONF_FIRMWARE,
@@ -60,9 +61,12 @@ from custom_components.myhome.const import (
     CONF_PLATFORMS,
     CONF_PRIMARY_GATEWAY,
     CONF_SSDP_LOCATION,
+    CONF_STANDALONE,
+    CONF_STANDALONE_ZONES,
     CONF_UDN,
     CONF_WHERE,
     CONF_WHO,
+    CONF_ZONE,
     DOMAIN,
     ROLE_STANDBY,
     SUBENTRY_TYPE_EXPOSE,
@@ -72,6 +76,8 @@ from custom_components.myhome.discovery import (
     CLIMATE_COMPANION_SENSOR_SUFFIXES,
     PlatformDiscovery,
     _climate_zone_from_unique_id,
+    _four_zone_central_from_unique_id,
+    _four_zone_central_master,
     _has_active_yaml_zone_temperature,
     prune_entity,
 )
@@ -179,6 +185,7 @@ async def test_platform_discovery_ignoring_main_bus_14_preserves_f422_and_0014(
     reg = er.async_get(hass)
     e_main = reg.async_get_or_create("light", DOMAIN, f"{MAC}-1-14", config_entry=entry)
     e_0014 = reg.async_get_or_create("light", DOMAIN, f"{MAC}-1-0014", config_entry=entry)
+    reg.async_get_or_create("light", DOMAIN, f"{MAC}-0014", config_entry=entry)
     e_f422 = reg.async_get_or_create("light", DOMAIN, f"{MAC}-1-14#4#01", config_entry=entry)
 
     def _build(ctx: Any) -> MyHOMEEntity:
@@ -659,6 +666,291 @@ async def test_prune_climate_preserves_companions_when_sibling_climate_exists_an
     prune_entity(hass, ent_reg, c_central_1, bare_entry.entry_id)
     assert ent_reg.async_get(c_central_2.entity_id) is not None
     assert ent_reg.async_get(shared_hum.entity_id) is not None
+
+
+async def test_prune_climate_preserves_four_zone_central_output_sensors_and_cu_device(
+    hass: HomeAssistant,
+) -> None:
+    """[P0-1]: unifying Zone N into #0#N preserves -output-level & cu_device across all 4 timing states."""
+    dev_reg = dr.async_get(hass)
+    ent_reg = er.async_get(hass)
+
+    # Helper checks for #0#N master parser edge cases
+    assert _four_zone_central_master("#0##0#1") == "1"
+    assert _four_zone_central_master("#0#01") == "1"
+    assert _four_zone_central_master("#0#96") == "96"
+    assert _four_zone_central_master("#0") is None
+    assert _four_zone_central_master("#0#0") is None
+    assert _four_zone_central_master("#0#100") is None
+    assert _four_zone_central_master("#0#1#2") is None
+    assert _four_zone_central_master("0#1") is None
+    assert _four_zone_central_from_unique_id("", {MAC}) == (None, None)
+    assert _four_zone_central_from_unique_id(f"{MAC}-4-#0#1#4#01", {MAC}) == ("1", "01")
+
+    # (a) #0#N in entity_registry (even when its device_id is None during restore()/duplicate())
+    mac_a = "00:03:50:46:95:01"
+    entry_a = _setup_climate_entry(hass, mac=mac_a)
+    dev_z1_a = dev_reg.async_get_or_create(
+        config_entry_id=entry_a.entry_id,
+        identifiers={(DOMAIN, f"{mac_a}-4-1")},
+    )
+    cu_dev_a = dev_reg.async_get_or_create(
+        config_entry_id=entry_a.entry_id,
+        identifiers={(DOMAIN, f"{mac_a}-4-#0#1")},
+    )
+    # #0#1 registered without device_id yet
+    cu_clim_a = ent_reg.async_get_or_create(
+        "climate", DOMAIN, f"{mac_a}-4-#0#1", config_entry=entry_a
+    )
+    assert cu_clim_a.device_id is None
+    clim_a = ent_reg.async_get_or_create(
+        "climate", DOMAIN, f"{mac_a}-4-1", config_entry=entry_a, device_id=dev_z1_a.id
+    )
+    temp_a = ent_reg.async_get_or_create(
+        "sensor", DOMAIN, f"{mac_a}-4-1-temperature", config_entry=entry_a, device_id=cu_dev_a.id
+    )
+    hum_a = ent_reg.async_get_or_create(
+        "sensor", DOMAIN, f"{mac_a}-4-1-humidity", config_entry=entry_a, device_id=dev_z1_a.id
+    )
+    out_a = ent_reg.async_get_or_create(
+        "sensor", DOMAIN, f"{mac_a}-4-1#1-output-level", config_entry=entry_a, device_id=cu_dev_a.id
+    )
+    prune_entity(hass, ent_reg, clim_a, entry_a.entry_id)
+    assert ent_reg.async_get(clim_a.entity_id) is None
+    assert ent_reg.async_get(temp_a.entity_id) is None
+    assert ent_reg.async_get(hum_a.entity_id) is None
+    assert ent_reg.async_get(out_a.entity_id) is not None
+    assert dev_reg.async_get(dev_z1_a.id) is None
+    assert dev_reg.async_get(cu_dev_a.id) is not None
+
+    # Also verify empty cu_device survives when there is NO -output-level sensor yet
+    cu_dev_a2 = dev_reg.async_get_or_create(
+        config_entry_id=entry_a.entry_id,
+        identifiers={(DOMAIN, f"{mac_a}-4-#0#2")},
+    )
+    ent_reg.async_get_or_create("climate", DOMAIN, f"{mac_a}-4-#0#2", config_entry=entry_a)
+    clim_a2 = ent_reg.async_get_or_create(
+        "climate", DOMAIN, f"{mac_a}-4-2", config_entry=entry_a, device_id=cu_dev_a2.id
+    )
+    prune_entity(hass, ent_reg, clim_a2, entry_a.entry_id)
+    assert dev_reg.async_get(cu_dev_a2.id) is not None
+
+    # (b) #0#N in runtime.entities["climate"] during live reverse discovery before entity_registry add
+    mac_b = "00:03:50:46:95:02"
+    entry_b = _setup_climate_entry(hass, mac=mac_b)
+    entry_b.runtime_data.entities["climate"] = {
+        "ignored_sep": SimpleNamespace(_unified_master=False, unique_id=f"{mac_b}-4-#0#1"),
+        "cu_by_uid": SimpleNamespace(unique_id=f"{mac_b}-4-#0#1"),
+        "#0#2#4#01": SimpleNamespace(),
+    }
+    dev_z1_b = dev_reg.async_get_or_create(
+        config_entry_id=entry_b.entry_id,
+        identifiers={(DOMAIN, f"{mac_b}-4-1")},
+    )
+    cu_dev_b = dev_reg.async_get_or_create(
+        config_entry_id=entry_b.entry_id,
+        identifiers={(DOMAIN, f"{mac_b}-4-#0#1")},
+    )
+    clim_b = ent_reg.async_get_or_create(
+        "climate", DOMAIN, f"{mac_b}-4-1", config_entry=entry_b, device_id=dev_z1_b.id
+    )
+    temp_b = ent_reg.async_get_or_create(
+        "sensor", DOMAIN, f"{mac_b}-4-1-temperature", config_entry=entry_b, device_id=dev_z1_b.id
+    )
+    out_b = ent_reg.async_get_or_create(
+        "sensor", DOMAIN, f"{mac_b}-4-1#1-output-level", config_entry=entry_b, device_id=cu_dev_b.id
+    )
+    prune_entity(hass, ent_reg, clim_b, entry_b.entry_id)
+    assert ent_reg.async_get(temp_b.entity_id) is None
+    assert ent_reg.async_get(out_b.entity_id) is not None
+    assert dev_reg.async_get(dev_z1_b.id) is None
+    assert dev_reg.async_get(cu_dev_b.id) is not None
+
+    # Routed #0#2#4#01 in runtime.entities["climate"] preserves 2#1#4#01-output-level
+    cu_dev_b2 = dev_reg.async_get_or_create(
+        config_entry_id=entry_b.entry_id,
+        identifiers={(DOMAIN, f"{mac_b}-4-#0#2#4#01")},
+    )
+    clim_b2 = ent_reg.async_get_or_create(
+        "climate", DOMAIN, f"{mac_b}-4-2#4#01", config_entry=entry_b
+    )
+    out_b2 = ent_reg.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        f"{mac_b}-4-2#1#4#01-output-level",
+        config_entry=entry_b,
+        device_id=cu_dev_b2.id,
+    )
+    prune_entity(hass, ent_reg, clim_b2, entry_b.entry_id)
+    assert ent_reg.async_get(out_b2.entity_id) is not None
+    assert dev_reg.async_get(cu_dev_b2.id) is not None
+
+    # (c) #0#N in runtime.platforms["climate"] / runtime.config["climate"] (when N is not standalone)
+    mac_c = "00:03:50:46:95:03"
+    entry_c = _setup_climate_entry(
+        hass,
+        mac=mac_c,
+        options={CONF_STANDALONE_ZONES: ["3"]},
+    )
+    entry_c.runtime_data.platforms["climate"] = {
+        "invalid_str": "skip",  # type: ignore[dict-item]
+        "1": {CONF_ZONE: "#0#1"},
+        "cu2": {CONF_ZONE: "2", CONF_CENTRAL: True},
+        "cu3": {CONF_ZONE: "#0#3"},
+        "cu4": {CONF_ZONE: "#0#4"},
+        "z4_sep": {CONF_ZONE: "4", CONF_STANDALONE: True},
+    }
+    for z in ("1", "2"):
+        clim_c = ent_reg.async_get_or_create(
+            "climate", DOMAIN, f"{mac_c}-4-{z}", config_entry=entry_c
+        )
+        temp_c = ent_reg.async_get_or_create(
+            "sensor", DOMAIN, f"{mac_c}-4-{z}-temperature", config_entry=entry_c
+        )
+        out_c = ent_reg.async_get_or_create(
+            "sensor", DOMAIN, f"{mac_c}-4-{z}#1-output-level", config_entry=entry_c
+        )
+        prune_entity(hass, ent_reg, clim_c, entry_c.entry_id)
+        assert ent_reg.async_get(temp_c.entity_id) is None
+        assert ent_reg.async_get(out_c.entity_id) is not None
+
+    # Standalone master zones (in CONF_STANDALONE_ZONES or explicit YAML zone) are NOT unified:
+    # pruning standalone Zone 3 or Zone 4 removes its un-rehomed -output-level sensor.
+    for z in ("3", "4"):
+        clim_sep = ent_reg.async_get_or_create(
+            "climate", DOMAIN, f"{mac_c}-4-{z}", config_entry=entry_c
+        )
+        out_sep = ent_reg.async_get_or_create(
+            "sensor", DOMAIN, f"{mac_c}-4-{z}#1-output-level", config_entry=entry_c
+        )
+        prune_entity(hass, ent_reg, clim_sep, entry_c.entry_id)
+        assert ent_reg.async_get(out_sep.entity_id) is None
+
+    # runtime.config["climate"] fallback when runtime.platforms["climate"] is empty
+    mac_c2 = "00:03:50:46:95:04"
+    entry_c2 = _setup_climate_entry(hass, mac=mac_c2)
+    entry_c2.runtime_data.config = {"climate": {"bad": "x", "cu1": {CONF_ZONE: "#0#1"}}}  # type: ignore[attr-defined]
+    clim_c2 = ent_reg.async_get_or_create(
+        "climate", DOMAIN, f"{mac_c2}-4-1", config_entry=entry_c2
+    )
+    out_c2 = ent_reg.async_get_or_create(
+        "sensor", DOMAIN, f"{mac_c2}-4-1#1-output-level", config_entry=entry_c2
+    )
+    prune_entity(hass, ent_reg, clim_c2, entry_c2.entry_id)
+    assert ent_reg.async_get(out_c2.entity_id) is not None
+
+    # (d) cand.device_id already carrying (DOMAIN, "<mac>-4-#0#...") in device_registry
+    mac_d = "00:03:50:46:95:05"
+    bare_d = MockConfigEntry(domain=DOMAIN, data={CONF_MAC: mac_d})
+    bare_d.add_to_hass(hass)
+    dev_z1_d = dev_reg.async_get_or_create(
+        config_entry_id=bare_d.entry_id,
+        identifiers={(DOMAIN, f"{mac_d}-4-1")},
+    )
+    cu_dev_d = dev_reg.async_get_or_create(
+        config_entry_id=bare_d.entry_id,
+        identifiers={(DOMAIN, f"{mac_d}-4-#0#1")},
+    )
+    clim_d = ent_reg.async_get_or_create(
+        "climate", DOMAIN, f"{mac_d}-4-1", config_entry=bare_d, device_id=dev_z1_d.id
+    )
+    temp_d = ent_reg.async_get_or_create(
+        "sensor", DOMAIN, f"{mac_d}-4-1-temperature", config_entry=bare_d, device_id=dev_z1_d.id
+    )
+    out_d = ent_reg.async_get_or_create(
+        "sensor", DOMAIN, f"{mac_d}-4-1#1-output-level", config_entry=bare_d, device_id=cu_dev_d.id
+    )
+    prune_entity(hass, ent_reg, clim_d, bare_d.entry_id)
+    assert ent_reg.async_get(temp_d.entity_id) is None
+    assert ent_reg.async_get(out_d.entity_id) is not None
+    assert dev_reg.async_get(dev_z1_d.id) is None
+    assert dev_reg.async_get(cu_dev_d.id) is not None
+
+    # Pruning #0#1 itself (not Zone 1) cleans up its re-homed sensor and empty cu_device
+    cu_self = ent_reg.async_get_or_create(
+        "climate", DOMAIN, f"{mac_d}-4-#0#1", config_entry=bare_d, device_id=cu_dev_d.id
+    )
+    prune_entity(hass, ent_reg, cu_self, bare_d.entry_id)
+    assert ent_reg.async_get(out_d.entity_id) is None
+    assert dev_reg.async_get(cu_dev_d.id) is None
+
+
+async def test_yaml_zone_temperature_requires_explicit_class_and_legacy_climate_unique_ids(
+    hass: HomeAssistant,
+) -> None:
+    """#1016 Nits 2a & 2b: dev_cls must be 'temperature'; pre-v2 {mac}-1 / {mac}-01 unique IDs work."""
+    ent_reg = er.async_get(hass)
+
+    # Nit 2a: partial sensor dict without class/device_class='temperature' does NOT block pruning
+    mac_nit = "00:03:50:46:95:06"
+    entry_nit = _setup_climate_entry(
+        hass,
+        mac=mac_nit,
+        sensor_yaml={
+            "missing_class": {"who": "4", "where": "1"},
+            "wrong_who": {"who": "1", "where": "1", "class": "temperature"},
+        },
+    )
+    clim_nit = ent_reg.async_get_or_create(
+        "climate", DOMAIN, f"{mac_nit}-4-1", config_entry=entry_nit
+    )
+    temp_nit = ent_reg.async_get_or_create(
+        "sensor", DOMAIN, f"{mac_nit}-4-1-temperature", config_entry=entry_nit
+    )
+    prune_entity(hass, ent_reg, clim_nit, entry_nit.entry_id)
+    assert ent_reg.async_get(temp_nit.entity_id) is None
+
+    # Nit 2b: pre-v2 legacy climate unique IDs without "-4-"
+    assert _climate_zone_from_unique_id(f"{MAC}-1", MAC, MAC) == ("1", None, {MAC})
+    assert _climate_zone_from_unique_id(f"{MAC}-01", MAC, MAC) == ("1", None, {MAC})
+    assert _climate_zone_from_unique_id(f"{MAC}-#1", MAC, MAC) == ("1", None, {MAC})
+    assert _climate_zone_from_unique_id(f"{MAC}-01#4#1", MAC, MAC) == ("1", "01", {MAC})
+    assert _climate_zone_from_unique_id(f"{MAC.upper()}-01", MAC, MAC) == (
+        "1",
+        None,
+        {MAC, MAC.upper()},
+    )
+    # Reject central (#0 / #0#N), probes, actuators, 3-digit 001, companions, and foreign MACs
+    for invalid_uid in (
+        f"{MAC}-0",
+        f"{MAC}-#0",
+        f"{MAC}-#0#1",
+        f"{MAC}-105",
+        f"{MAC}-001",
+        f"{MAC}-1#1",
+        f"{MAC}-1-temperature",
+        f"{MAC}-4-1-temperature",
+        f"{MAC}-4-1#4#01-temperature",
+        f"{MAC}-4-1#1-output-level",
+        "ff:ee:dd:cc:bb:aa-1",
+        "-1",
+    ):
+        z, i, _ = _climate_zone_from_unique_id(invalid_uid, MAC, MAC)
+        assert (z, i) == (None, None), invalid_uid
+
+    # Pruning legacy {MAC}-01 cleans canonical -4-1-* companions unless sibling {MAC}-4-1 exists
+    mac_leg = "00:03:50:46:95:07"
+    entry_leg = _setup_climate_entry(hass, mac=mac_leg)
+    sib_modern = ent_reg.async_get_or_create(
+        "climate", DOMAIN, f"{mac_leg}-4-1", config_entry=entry_leg
+    )
+    leg_clim = ent_reg.async_get_or_create(
+        "climate", DOMAIN, f"{mac_leg.upper()}-01", config_entry=entry_leg
+    )
+    leg_temp = ent_reg.async_get_or_create(
+        "sensor", DOMAIN, f"{mac_leg}-4-1-temperature", config_entry=entry_leg
+    )
+    leg_out = ent_reg.async_get_or_create(
+        "sensor", DOMAIN, f"{mac_leg}-4-1#1-output-level", config_entry=entry_leg
+    )
+    # First prune modern sibling -> legacy {MAC}-01 acts as sibling_climate and preserves companions
+    prune_entity(hass, ent_reg, sib_modern, entry_leg.entry_id)
+    assert ent_reg.async_get(leg_temp.entity_id) is not None
+    assert ent_reg.async_get(leg_out.entity_id) is not None
+    # Now prune legacy {MAC}-01 -> companions are removed
+    prune_entity(hass, ent_reg, leg_clim, entry_leg.entry_id)
+    assert ent_reg.async_get(leg_temp.entity_id) is None
+    assert ent_reg.async_get(leg_out.entity_id) is None
 
 
 # ── M-19: ws_bus_monitor_send ASCII/read routing & per-gateway crash guards ──
