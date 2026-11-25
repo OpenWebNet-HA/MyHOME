@@ -8,10 +8,16 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_MAC
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import (
+    area_registry as ar,
+)
+from homeassistant.helpers import (
     device_registry as dr,
 )
 from homeassistant.helpers import (
     entity_registry as er,
+)
+from homeassistant.helpers import (
+    label_registry as lr,
 )
 
 from .const import (
@@ -349,6 +355,8 @@ def migrate_canonical_point_addresses(hass: HomeAssistant, entry: ConfigEntry) -
     """
     entity_registry = er.async_get(hass)
     device_registry = dr.async_get(hass)
+    area_registry = ar.async_get(hass)
+    label_registry = lr.async_get(hass)
     mac = dr.format_mac(entry.data[CONF_MAC])
     prefix = f"{mac}-"
 
@@ -447,15 +455,26 @@ def migrate_canonical_point_addresses(hass: HomeAssistant, entry: ConfigEntry) -
             continue
         for other in twins:
             # The twin's area, labels and user-given name survive on the configured device.
+            # Skip dangling area_id / label_id values whose area or label was deleted earlier
+            # (HA 2026.12+ _validate_area_and_labels rejects unknown IDs on update).
             carried: dict[str, Any] = {}
-            if device.area_id is None and other.area_id is not None:
+            if (
+                device.area_id is None
+                and other.area_id is not None
+                and area_registry.async_get_area(other.area_id) is not None
+            ):
                 carried["area_id"] = other.area_id
             if device.name_by_user is None and other.name_by_user is not None:
                 carried["name_by_user"] = other.name_by_user
-            if set(other.labels) - set(device.labels):
-                carried["labels"] = set(device.labels) | set(other.labels)
+            valid_new_labels = {
+                lid
+                for lid in set(other.labels) - set(device.labels)
+                if label_registry.async_get_label(lid) is not None
+            }
+            if valid_new_labels:
+                carried["labels"] = set(device.labels) | valid_new_labels
             if carried:
-                device_registry.async_update_device(device.id, **carried)
+                device = device_registry.async_update_device(device.id, **carried) or device
             LOGGER.info("Removed device %s, a duplicate of %s under the canonical address", other.id, device.id)
 
 
@@ -466,15 +485,27 @@ def _carry_entity_customisations(
     survivor = entity_registry.async_get(survivor_entity_id)
     if survivor is None:
         return
+    area_registry = ar.async_get(entity_registry.hass)
+    label_registry = lr.async_get(entity_registry.hass)
     carried: dict[str, Any] = {}
-    if survivor.area_id is None and removed.area_id is not None:
+    if (
+        survivor.area_id is None
+        and removed.area_id is not None
+        and area_registry.async_get_area(removed.area_id) is not None
+    ):
         carried["area_id"] = removed.area_id
     if survivor.icon is None and removed.icon is not None:
         carried["icon"] = removed.icon
     if survivor.name is None and removed.name is not None:
         carried["name"] = removed.name
     if not survivor.labels and removed.labels:
-        carried["labels"] = set(removed.labels)
+        valid_labels = {
+            lid
+            for lid in removed.labels
+            if label_registry.async_get_label(lid) is not None
+        }
+        if valid_labels:
+            carried["labels"] = valid_labels
     if carried:
         entity_registry.async_update_entity(survivor_entity_id, **carried)
 

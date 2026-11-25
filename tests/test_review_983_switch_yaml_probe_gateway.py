@@ -23,6 +23,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
@@ -720,6 +721,9 @@ async def test_the_name_and_area_of_the_removed_central_unit_go_to_the_one_that_
 ) -> None:
     entry = MockConfigEntry(domain=DOMAIN, data={"mac": DISCOVERY_MAC}, unique_id=DISCOVERY_MAC)
     entry.add_to_hass(hass)
+    areas = ar.async_get(hass)
+    for area_name in ("cellar", "attic"):
+        areas.async_create(area_name)
     devices, registry = dr.async_get(hass), er.async_get(hass)
     held = {}
     for where, name, area in (("#0#0", "Boiler room", "cellar"), ("#0", named_kept, area_kept)):
