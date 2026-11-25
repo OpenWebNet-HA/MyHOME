@@ -257,7 +257,7 @@ class ConfigFlowDiscoveryMixin:
         """
         from . import config_flow as _cf
 
-        _discovery_info = discovery_info.upnp
+        _discovery_info = dict(discovery_info.upnp)
         _discovery_info["ssdp_st"] = discovery_info.ssdp_st
         _discovery_info["ssdp_location"] = discovery_info.ssdp_location
         _discovery_info["address"] = discovery_info.ssdp_headers["_host"]
@@ -348,7 +348,7 @@ class ConfigFlowDiscoveryMixin:
             updates[CONF_FRIENDLY_NAME] = gateway.friendly_name
         if gateway.udn and not data.get(CONF_UDN):
             updates[CONF_UDN] = gateway.udn
-        if gateway.firmware and _no_stored_firmware(data.get(CONF_FIRMWARE)):
+        if not _no_stored_firmware(gateway.firmware) and _no_stored_firmware(data.get(CONF_FIRMWARE)):
             updates[CONF_FIRMWARE] = gateway.firmware
         return updates
 

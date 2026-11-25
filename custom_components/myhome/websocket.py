@@ -5,6 +5,7 @@ injection for the Lovelace bus monitor card.
 """
 from __future__ import annotations
 
+import inspect
 import logging
 from collections.abc import Mapping
 from typing import Any, Optional
@@ -38,7 +39,12 @@ from .const import (
     INTEGRATION_VERSION,
 )
 from .data import get_runtime_data
-from .services import destructive_frame_reason, is_refused_dimension_22
+from .services import (
+    destructive_frame_reason,
+    gateway_crash_frame_reason,
+    is_refused_dimension_22,
+    is_valid_ascii_own_frame,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -357,7 +363,7 @@ async def ws_bus_monitor_send(
         return
 
     frame_str = msg["frame"].strip()
-    if not (frame_str.startswith("*") and frame_str.endswith("##")):
+    if not is_valid_ascii_own_frame(frame_str):
         connection.send_error(
             msg["id"],
             ERR_INVALID_FORMAT,
@@ -380,7 +386,9 @@ async def ws_bus_monitor_send(
         )
         return
 
-    destructive_reason = destructive_frame_reason(frame_str)
+    destructive_reason = destructive_frame_reason(frame_str) or gateway_crash_frame_reason(
+        gateway, frame_str
+    )
     if destructive_reason is not None:
         connection.send_error(
             msg["id"],
@@ -400,7 +408,15 @@ async def ws_bus_monitor_send(
                 f"Invalid OpenWebNet frame format: {frame_str}",
             )
             return
-        await gateway.send(parsed)
+        is_read = bool(
+            getattr(parsed, "is_status_request", False)
+            or getattr(parsed, "is_dimension_request", False)
+        )
+        send_status = getattr(gateway, "send_status_request", None)
+        if is_read and inspect.iscoroutinefunction(send_status):
+            await send_status(parsed)
+        else:
+            await gateway.send(parsed)
     except Exception as ex:  # pylint: disable=broad-except
         _LOGGER.error("Failed to transmit frame %s via WebSocket: %s", frame_str, ex)
         connection.send_error(

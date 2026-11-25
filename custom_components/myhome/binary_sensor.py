@@ -585,12 +585,14 @@ def _motion_address(message) -> Address | None:  # type: ignore
         or getattr(message, "_state", None) == 34
         or is_motion_end(message)
     )
-    if not is_motion or getattr(message, "where", None) is None:
+    raw_where = getattr(message, "where", None)
+    where_str = str(raw_where).strip() if raw_where is not None else ""
+    if not is_motion or not where_str:
         return None
     valid_iface, interface = _bus_interface_from_message(message)
     if not valid_iface:
         return None
-    return Address(_primary(str(message.where)), interface)
+    return Address(_primary(where_str), interface)
 
 
 async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:  # type: ignore

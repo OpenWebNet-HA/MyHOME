@@ -4,13 +4,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any, cast
 
 import OWNd.connection.command_session as _ownd_command_session
 import OWNd.message as _ownd_message
 import voluptuous as vol
-from homeassistant.const import CONF_MAC
+from homeassistant.const import CONF_MAC, CONF_NAME
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
@@ -58,6 +58,21 @@ _ownd_destructive_frame_reason: Callable[[str], str | None] | None = getattr(
 )
 
 
+_ASCII_OWN_FRAME_RE = re.compile(r"\*[0-9*#]*##", re.ASCII)
+_MH202_ALL_PROBES_CRASH_RE = re.compile(
+    r"\*#4\*0(?:0[1-9]|[1-9][0-9])(?:[#*][0-9*#]*)?##", re.ASCII
+)
+_WHO4_DIMENSIONLESS_STATUS_RE = re.compile(r"\*#4\*([^*]+)##", re.ASCII)
+_WHO13_NETWORK_DIM_CRASH_RE = re.compile(
+    r"\*#13\*[^*]*\*#?1[012](?:\*[^#]*)?##", re.ASCII
+)
+
+
+def is_valid_ascii_own_frame(frame: str) -> bool:
+    """True when ``frame`` consists solely of ASCII ``0-9``, ``*`` and ``#``, bounded by ``*`` and ``##``."""
+    return _ASCII_OWN_FRAME_RE.fullmatch(frame) is not None
+
+
 def services_has_dimension_22_detector() -> bool:
     """True when the installed OWNd can tell the published split form from the crash forms."""
     return _is_dimension_22_crash_form is not None
@@ -77,6 +92,124 @@ def destructive_frame_reason(frame: str) -> str | None:
         return None
     reason = _ownd_destructive_frame_reason(str(frame).strip())
     return str(reason) if reason is not None else None
+
+
+_PLACEHOLDER_MODEL_KEYS: frozenset[str] = frozenset(
+    {
+        "",
+        "NONE",
+        "NULL",
+        "GENERIC",
+        "GENERICGATEWAY",
+        "GATEWAY",
+        "UNKNOWN",
+        "UNKNOWNMODEL",
+        "CUSTOMIPGATEWAY",
+    }
+)
+
+
+def _norm_model_token(value: object) -> str:
+    """Return the upper-case ASCII alphanumeric representation of ``value``."""
+    return "".join(ch for ch in str(value).upper() if ch.isalnum())
+
+
+def _handler_model_key(handler: Any) -> str:
+    """Return the normalized gateway model key (``MH202``, ``H4684``, ``MH200``, ...) or ``""``."""
+    from .gateway import _ZONE_REQUEST_MODELS, _resolve_model_key
+
+    direct = getattr(handler, "_model_key", None)
+    if isinstance(direct, str) and direct in _ZONE_REQUEST_MODELS:
+        return direct
+
+    raw_gw = getattr(handler, "gateway", None)
+    profile = getattr(raw_gw, "profile", None)
+    profile_model = getattr(profile, "model_name", None)
+    if not isinstance(profile_model, str):
+        profile = None
+        profile_model = None
+    cfg_entry = getattr(handler, "config_entry", None)
+    cfg_data = getattr(cfg_entry, "data", None)
+    cfg_name = cfg_data.get(CONF_NAME) if isinstance(cfg_data, Mapping) else None
+    cfg_title = getattr(cfg_entry, "title", None)
+    fallback_key = ""
+    for candidate, cand_profile in (
+        (direct, None),
+        (profile_model, profile),
+        (getattr(raw_gw, "model_name", None), None),
+        (getattr(raw_gw, "model", None), None),
+        (getattr(handler, "model", None), None),
+        (cfg_name, None),
+        (cfg_title, None),
+    ):
+        if isinstance(candidate, str) and candidate.strip():
+            resolved = _resolve_model_key(candidate, profile=cand_profile)
+            if _norm_model_token(resolved) in _PLACEHOLDER_MODEL_KEYS:
+                continue
+            if resolved in _ZONE_REQUEST_MODELS:
+                return resolved
+            if not fallback_key:
+                fallback_key = resolved
+    return fallback_key
+
+
+def _effective_who4_model_key(handler: Any, base_key: str) -> str:
+    """Model key of the gateway that will actually transmit a WHO 4 frame."""
+    who4_target_fn = getattr(handler, "_who4_target", None)
+    if callable(who4_target_fn):
+        target = who4_target_fn()
+        if target is not None and target is not handler:
+            return _handler_model_key(target)
+    return base_key
+
+
+def _is_mh202_who4_crash_frame(frame: str) -> bool:
+    """True when ``frame`` triggers a WHO 4 daemon crash on MH202 (010024).
+
+    Covers both confirmed oracle crash families:
+    1. ``*#4*001##`` / ``*#4*001*0##`` (3-digit ``001..099`` all-probes-in-zone forms,
+       ``own-firmware-oracle`` ``ownd-audit-frames.tsv:42-43``).
+    2. Dimensionless non-``#`` actuator / 3-token ``A#B#C`` status reads such as
+       ``*#4*2#1##`` and ``*#4*2#4#01##`` (``thermo-zone-requests.tsv:21,25``, where
+       ``libthermo.so`` classifies ``Z#C`` / ``A#B#C`` with ``C <= 9`` as an actuator
+       and ``libplug_thermo_tr.so`` dereferences a ``NULL`` ``GList *`` on ``STATE REQUEST``).
+    """
+    if _MH202_ALL_PROBES_CRASH_RE.fullmatch(frame) is not None:
+        return True
+    match = _WHO4_DIMENSIONLESS_STATUS_RE.fullmatch(frame)
+    if match is None:
+        return False
+    where = match.group(1)
+    if where.startswith("#") or "#" not in where:
+        return False
+    parts = where.split("#")
+    if not all(part.isascii() and part.isdigit() for part in parts):
+        return False
+    if len(parts) == 2:
+        return 0 <= int(parts[0]) <= 99 and 0 <= int(parts[1]) <= 9
+    if len(parts) == 3:
+        return 1 <= int(parts[1]) <= 99 and 0 <= int(parts[2]) <= 9
+    if len(parts) == 4:
+        return 1 <= int(parts[2]) <= 99 and 0 <= int(parts[3]) <= 9
+    return False
+
+
+def gateway_crash_frame_reason(handler: Any, frame: str) -> str | None:
+    """Return a refusal reason when ``frame`` crashes a daemon on ``handler``'s gateway model."""
+    clean = str(frame).strip()
+    model_key = _handler_model_key(handler)
+    if model_key in ("H4684", "MH200") and _WHO13_NETWORK_DIM_CRASH_RE.fullmatch(clean) is not None:
+        return (
+            f"WHO 13 network dimensions 10, 11 and 12 crash the gateway daemon on {model_key} "
+            "(own-firmware-oracle who13-identification)"
+        )
+    if clean.startswith("*#4*") and _effective_who4_model_key(handler, model_key) == "MH202":
+        if _is_mh202_who4_crash_frame(clean):
+            return (
+                "this WHO 4 frame crashes a gateway daemon on MH202 "
+                "(own-firmware-oracle ownd-audit-frames / thermo-zone-requests)"
+            )
+    return None
 
 
 SERVICE_SWEEP_BUS = "sweep_bus"
@@ -333,7 +466,9 @@ async def async_setup_services(hass: HomeAssistant) -> None:
                 translation_key="send_message_refused_frame",
                 translation_placeholders={"message": message},
             )
-        destructive_reason = destructive_frame_reason(message)
+        destructive_reason = destructive_frame_reason(message) or gateway_crash_frame_reason(
+            handler, message
+        )
         if destructive_reason is not None:
             _LOGGER.error(
                 "%s Refusing to send destructive frame `%s`: %s",
@@ -360,7 +495,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         # A frame is made of 0-9, * and # only, starts with * and ends with ##
         # (OpenWebNet introduction, "Syntax of an OPEN message"); checked as typed, nothing
         # stripped.
-        if re.fullmatch(r"\*[0-9*#]*##", message, re.ASCII) is None:
+        if not is_valid_ascii_own_frame(message):
             raise _invalid_frame()
         try:
             if isinstance(OWNMessage.parse(message), OWNSignaling):

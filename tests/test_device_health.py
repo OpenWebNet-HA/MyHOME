@@ -484,12 +484,15 @@ async def test_ignored_address_cleans_preexisting_issues_at_startup(hass):
     _ignored_health = _health(hass, ignored_addresses=["1/74"])
     assert _issue(hass) is None
 
-    # Pre-existing routed issue on 74#4#01 is cleaned by bare 1/74
+    # Pre-existing routed issue on 74#4#01 is isolated from bare 1/74, and cleaned by 1/74#4#1
     routed_issue_id = fault_issue_id(ENTRY_ID, FaultKind.UNMAPPED_STATUS, 1, "74#4#01")
     normal_health.observe(_frame("*1*99*74#4#01##"))
     assert _issue(hass, routed_issue_id) is not None
 
-    _ignored_routed = _health(hass, ignored_addresses=["1/74"])
+    _ignored_main_only = _health(hass, ignored_addresses=["1/74"])
+    assert _issue(hass, routed_issue_id) is not None
+
+    _ignored_routed = _health(hass, ignored_addresses=["1/74#4#1"])
     assert _issue(hass, routed_issue_id) is None
 
     # Pre-existing issue on 74 is cleaned by zero-padded 1/074

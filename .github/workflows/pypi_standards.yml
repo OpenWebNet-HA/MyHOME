@@ -2,9 +2,9 @@ name: PyPI Standards & Packaging
 
 on:
   push:
-    branches: [main, master, "v2-*"]
+    branches: [main, master, "v2-*", "chore/release-*"]
   pull_request:
-    branches: [main, master, "v2-*"]
+    branches: [main, master, "v2-*", "chore/release-*"]
 
 permissions:
   contents: read
@@ -104,12 +104,14 @@ jobs:
           }
           python -m pip install --upgrade pip
           if ! pip install ".[test]" homeassistant python-dateutil pytz pytest-socket; then
+            python -c 'import pathlib, sys, tomllib; p = tomllib.load(open("pyproject.toml", "rb"))["project"]; deps = [d for d in [*p.get("dependencies", ()), *p.get("optional-dependencies", {}).get("test", ())] if not d.lower().startswith("ownd")]; pathlib.Path(sys.argv[1]).write_text("\n".join(deps) + "\n", encoding="utf-8")' "$RUNNER_TEMP/test-reqs.txt"
+            pip install -r "$RUNNER_TEMP/test-reqs.txt" homeassistant python-dateutil pytz pytest-socket
             if has_paired_ownd_branch; then
               pip install --upgrade --force-reinstall "git+https://github.com/OpenWebNet-HA/OWNd.git@${OWND_REF}"
             else
               pip install --upgrade --force-reinstall "git+https://github.com/OpenWebNet-HA/OWNd.git@master"
             fi
-            pip install ".[test]" homeassistant python-dateutil pytz pytest-socket
+            pip install --no-deps .
           elif has_paired_ownd_branch; then
             pip install --upgrade --force-reinstall "git+https://github.com/OpenWebNet-HA/OWNd.git@${OWND_REF}"
           fi

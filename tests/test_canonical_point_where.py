@@ -9,8 +9,10 @@ import pytest
 from homeassistant.components.light import ColorMode
 from homeassistant.const import CONF_MAC, CONF_NAME
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import label_registry as lr
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from OWNd.message import OWNEvent
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -165,6 +167,12 @@ async def test_yaml_light_0004_follows_the_bus_frame_for_04(hass: HomeAssistant)
 
 @pytest.fixture
 def config_entry(hass: HomeAssistant) -> MockConfigEntry:
+    area_reg = ar.async_get(hass)
+    for area_name in ("kitchen", "hall"):
+        area_reg.async_create(area_name)
+    label_reg = lr.async_get(hass)
+    for label_name in ("ceiling", "yaml", "lamps", "mine", "pir", "lux", "hall", "a", "b"):
+        label_reg.async_create(label_name)
     entry = MockConfigEntry(domain=DOMAIN, title="GW", data={CONF_MAC: MAC}, unique_id=MAC, entry_id="e1")
     entry.add_to_hass(hass)
     return entry
@@ -975,3 +983,136 @@ def test_the_surviving_entity_keeps_its_own_customisations(hass: HomeAssistant, 
     assert moved.unique_id == f"{MAC}-1-04"
     assert (moved.area_id, moved.icon, moved.name, moved.labels) == ("hall", "mdi:lamp", "Mine", {"a"})
     assert all("area_id" not in call.kwargs for call in update.call_args_list)
+
+
+def test_dangling_storage_area_and_labels_are_skipped_during_canonical_carry_over(
+    hass: HomeAssistant, config_entry: MockConfigEntry, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Dangling area_id / labels left over in .storage do not crash HA 2026.12+ _validate_area_and_labels."""
+    ent_reg = er.async_get(hass)
+    dev_reg = dr.async_get(hass)
+    area_reg = ar.async_get(hass)
+    label_reg = lr.async_get(hass)
+
+    # Enforce HA 2026.12+ strict _validate_area_and_labels even when running against older HA releases.
+    real_update_device = dr.DeviceRegistry.async_update_device
+    real_update_entity = er.EntityRegistry.async_update_entity
+
+    def strict_update_device(self: dr.DeviceRegistry, device_id: str, **kwargs):
+        old = self.async_get(device_id)
+        old_labels = set(old.labels) if old is not None else set()
+        if "area_id" in kwargs and kwargs["area_id"] is not None:
+            if old is None or kwargs["area_id"] != old.area_id:
+                if area_reg.async_get_area(kwargs["area_id"]) is None:
+                    raise ValueError(f"Area '{kwargs['area_id']}' not found.")
+        if "labels" in kwargs and kwargs["labels"] is not None:
+            missing = {
+                lid for lid in set(kwargs["labels"]) - old_labels if label_reg.async_get_label(lid) is None
+            }
+            if missing:
+                raise ValueError(f"Labels not found: {', '.join(sorted(missing))}")
+        return real_update_device(self, device_id, **kwargs)
+
+    def strict_update_entity(self: er.EntityRegistry, entity_id: str, **kwargs):
+        old = self.async_get(entity_id)
+        old_labels = set(old.labels) if old is not None else set()
+        if "area_id" in kwargs and kwargs["area_id"] is not None:
+            if old is None or kwargs["area_id"] != old.area_id:
+                if area_reg.async_get_area(kwargs["area_id"]) is None:
+                    raise ValueError(f"Area '{kwargs['area_id']}' not found.")
+        if "labels" in kwargs and kwargs["labels"] is not None:
+            missing = {
+                lid for lid in set(kwargs["labels"]) - old_labels if label_reg.async_get_label(lid) is None
+            }
+            if missing:
+                raise ValueError(f"Labels not found: {', '.join(sorted(missing))}")
+        return real_update_entity(self, entity_id, **kwargs)
+
+    monkeypatch.setattr(dr.DeviceRegistry, "async_update_device", strict_update_device)
+    monkeypatch.setattr(er.EntityRegistry, "async_update_entity", strict_update_entity)
+
+    # Create temporary area/labels, assign them normally (populating all internal registry indexes),
+    # then drop them directly from area_reg.areas / label_reg.labels without cleanup events to match
+    # entries loaded from .storage whose area or label was deleted while offline.
+    area_reg.async_create("deleted_room")
+    label_reg.async_create("deleted_tag")
+    label_reg.async_create("stale_kept")
+
+    # Case 1 (0004 -> 04): twin device & entity ONLY hold deleted .storage area_id/labels -> carried is empty.
+    yaml_dev_4 = dev_reg.async_get_or_create(
+        config_entry_id=config_entry.entry_id, identifiers={(DOMAIN, f"{MAC}-1-0004")}
+    )
+    bus_dev_4 = dev_reg.async_get_or_create(
+        config_entry_id=config_entry.entry_id, identifiers={(DOMAIN, f"{MAC}-1-04")}
+    )
+    dev_reg.async_update_device(bus_dev_4.id, area_id="deleted_room", labels={"deleted_tag"})
+    yaml_light_4 = ent_reg.async_get_or_create(
+        "light",
+        DOMAIN,
+        f"{MAC}-1-0004",
+        config_entry=config_entry,
+        device_id=yaml_dev_4.id,
+        original_name="Light 0004",
+    )
+    bus_light_4 = ent_reg.async_get_or_create(
+        "light",
+        DOMAIN,
+        f"{MAC}-1-04",
+        config_entry=config_entry,
+        device_id=bus_dev_4.id,
+        original_name="Light 04",
+    )
+    ent_reg.async_update_entity(bus_light_4.entity_id, area_id="deleted_room", labels={"deleted_tag"})
+
+    # Case 2 (0005 -> 05): mixed valid ("lamps") + dangling ("deleted_tag") labels and valid user names,
+    # while yaml_dev_5 already holds a pre-existing stale label ("stale_kept") from .storage.
+    yaml_dev_5 = dev_reg.async_get_or_create(
+        config_entry_id=config_entry.entry_id, identifiers={(DOMAIN, f"{MAC}-1-0005")}
+    )
+    dev_reg.async_update_device(yaml_dev_5.id, labels={"stale_kept"})
+    bus_dev_5 = dev_reg.async_get_or_create(
+        config_entry_id=config_entry.entry_id, identifiers={(DOMAIN, f"{MAC}-1-05")}
+    )
+    dev_reg.async_update_device(
+        bus_dev_5.id,
+        area_id="deleted_room",
+        name_by_user="Kept Device Name",
+        labels={"deleted_tag", "lamps"},
+    )
+    yaml_light_5 = ent_reg.async_get_or_create(
+        "light", DOMAIN, f"{MAC}-1-0005", config_entry=config_entry, device_id=yaml_dev_5.id
+    )
+    bus_light_5 = ent_reg.async_get_or_create(
+        "light", DOMAIN, f"{MAC}-1-05", config_entry=config_entry, device_id=bus_dev_5.id
+    )
+    ent_reg.async_update_entity(
+        bus_light_5.entity_id,
+        area_id="deleted_room",
+        name="Kept Light Name",
+        labels={"deleted_tag", "lamps"},
+    )
+
+    del area_reg.areas["deleted_room"]
+    del label_reg.labels["deleted_tag"]
+    del label_reg.labels["stale_kept"]
+    assert area_reg.async_get_area("deleted_room") is None
+    assert label_reg.async_get_label("deleted_tag") is None
+    assert label_reg.async_get_label("stale_kept") is None
+
+    migrate_entry_and_registries(hass, config_entry, {})
+
+    dev4_after = dev_reg.async_get(yaml_dev_4.id)
+    ent4_after = ent_reg.async_get(yaml_light_4.entity_id)
+    assert dev4_after is not None and dev4_after.area_id is None and dev4_after.labels == set()
+    assert ent4_after is not None and ent4_after.area_id is None and ent4_after.labels == set()
+
+    dev5_after = dev_reg.async_get(yaml_dev_5.id)
+    ent5_after = ent_reg.async_get(yaml_light_5.entity_id)
+    assert dev5_after is not None
+    assert dev5_after.area_id is None
+    assert dev5_after.name_by_user == "Kept Device Name"
+    assert dev5_after.labels == {"stale_kept", "lamps"}
+    assert ent5_after is not None
+    assert ent5_after.area_id is None
+    assert ent5_after.name == "Kept Light Name"
+    assert ent5_after.labels == {"lamps"}
