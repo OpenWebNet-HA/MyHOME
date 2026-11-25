@@ -2,7 +2,7 @@ name: PyPI Standards & Packaging
 
 on:
   push:
-    branches: [main, master, "v2-*"]
+    branches: [main, master, "v2-*", "chore/release-*"]
   pull_request:
     branches: [main, master, "v2-*", "chore/release-*"]
 

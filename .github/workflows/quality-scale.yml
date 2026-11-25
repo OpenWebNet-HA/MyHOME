@@ -8,9 +8,9 @@ name: Integration Quality Scale
 
 on:
   push:
-    branches: [main, master, "v2-*", "fix/*", "feat/*"]
+    branches: [main, master, "v2-*", "fix/*", "feat/*", "chore/release-*"]
   pull_request:
-    branches: [main, master, "v2-*"]
+    branches: [main, master, "v2-*", "chore/release-*"]
   schedule:
     - cron: "30 4 * * 1" # weekly, Monday 04:30 UTC
   workflow_dispatch:

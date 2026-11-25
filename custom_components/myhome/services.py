@@ -94,29 +94,63 @@ def destructive_frame_reason(frame: str) -> str | None:
     return str(reason) if reason is not None else None
 
 
+_PLACEHOLDER_MODEL_KEYS: frozenset[str] = frozenset(
+    {
+        "",
+        "NONE",
+        "NULL",
+        "GENERIC",
+        "GENERICGATEWAY",
+        "GATEWAY",
+        "UNKNOWN",
+        "UNKNOWNMODEL",
+        "CUSTOMIPGATEWAY",
+    }
+)
+
+
+def _norm_model_token(value: object) -> str:
+    """Return the upper-case ASCII alphanumeric representation of ``value``."""
+    return "".join(ch for ch in str(value).upper() if ch.isalnum())
+
+
 def _handler_model_key(handler: Any) -> str:
     """Return the normalized gateway model key (``MH202``, ``H4684``, ``MH200``, ...) or ``""``."""
+    from .gateway import _ZONE_REQUEST_MODELS, _resolve_model_key
+
     direct = getattr(handler, "_model_key", None)
-    if isinstance(direct, str):
+    if isinstance(direct, str) and direct in _ZONE_REQUEST_MODELS:
         return direct
-    from .gateway import _resolve_model_key
 
     raw_gw = getattr(handler, "gateway", None)
     profile = getattr(raw_gw, "profile", None)
-    if not isinstance(getattr(profile, "model_name", None), str):
+    profile_model = getattr(profile, "model_name", None)
+    if not isinstance(profile_model, str):
         profile = None
+        profile_model = None
     cfg_entry = getattr(handler, "config_entry", None)
     cfg_data = getattr(cfg_entry, "data", None)
     cfg_name = cfg_data.get(CONF_NAME) if isinstance(cfg_data, Mapping) else None
-    for candidate in (
-        getattr(raw_gw, "model_name", None),
-        getattr(raw_gw, "model", None),
-        getattr(handler, "model", None),
-        cfg_name,
+    cfg_title = getattr(cfg_entry, "title", None)
+    fallback_key = ""
+    for candidate, cand_profile in (
+        (direct, None),
+        (profile_model, profile),
+        (getattr(raw_gw, "model_name", None), None),
+        (getattr(raw_gw, "model", None), None),
+        (getattr(handler, "model", None), None),
+        (cfg_name, None),
+        (cfg_title, None),
     ):
         if isinstance(candidate, str) and candidate.strip():
-            return _resolve_model_key(candidate, profile=profile)
-    return _resolve_model_key("", profile=profile) if profile is not None else ""
+            resolved = _resolve_model_key(candidate, profile=cand_profile)
+            if _norm_model_token(resolved) in _PLACEHOLDER_MODEL_KEYS:
+                continue
+            if resolved in _ZONE_REQUEST_MODELS:
+                return resolved
+            if not fallback_key:
+                fallback_key = resolved
+    return fallback_key
 
 
 def _effective_who4_model_key(handler: Any, base_key: str) -> str:
