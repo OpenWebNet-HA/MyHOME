@@ -1195,3 +1195,153 @@
   mcp_valid: true
   mcp_notes: "Lighting: Point-to-point DIMENSION 7 motion timeout reply (0h 0m 15s) from K4659 at WHERE 01 on F461 2.0.11 (MyHOME#941)"
   roundtrip: true
+
+- id: light.capture.evt.off.group_bus.6
+  frame: "*1*0*#6#4#01##"
+  direction: event
+  who: 1
+  what: 0
+  where: "#6"
+  interface: "01"
+  scope: group
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Lighting: Group #6 OFF event routed through F422 private-bus interface 01 (#4#01), followed 52 ms later by member OFF echoes (*1*0*72#4#01##, *1*0*0611#4#01##, *1*0*73#4#01##) on BTicino F459 FW 2.1.5 (MyHOME#466, tests/fixtures/traces/f459_full_debug_log_2026-11-26/F459_full_debug_log_2026-11-26T15-46-40.log, line 1878)"
+  roundtrip: true
+
+- id: light.capture.evt.on.group_bus.6
+  frame: "*1*1*#6#4#01##"
+  direction: event
+  who: 1
+  what: 1
+  where: "#6"
+  interface: "01"
+  scope: group
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Lighting: Group #6 ON event routed through F422 private-bus interface 01 (#4#01), followed 88 ms later by member brightness echoes (*1*8*72#4#01##, *1*5*0611#4#01##) on BTicino F459 FW 2.1.5 (MyHOME#466, tests/fixtures/traces/f459_full_debug_log_2026-11-26/F459_full_debug_log_2026-11-26T15-46-40.log, line 874)"
+  roundtrip: true
+
+- id: light.capture.evt.level5.bus.0611
+  frame: "*1*5*0611#4#01##"
+  direction: event
+  who: 1
+  what: 5
+  where: "0611"
+  interface: "01"
+  scope: point
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Lighting: Coarse dimmer level 5 event at 4-digit address 0611 routed through F422 private-bus interface 01 (#4#01) on BTicino F459 FW 2.1.5 (MyHOME#466, tests/fixtures/traces/f459_full_debug_log_2026-11-26/F459_full_debug_log_2026-11-26T15-46-40.log, line 880)"
+  roundtrip: true
+
+- id: light.capture.evt.level6.bus.68
+  frame: "*1*6*68#4#01##"
+  direction: event
+  who: 1
+  what: 6
+  where: "68"
+  interface: "01"
+  scope: point
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Lighting: Coarse dimmer level 6 event at address 68 routed through F422 private-bus interface 01 (#4#01) on BTicino F459 FW 2.1.5 (MyHOME#466, tests/fixtures/traces/f459_full_debug_log_2026-11-26/F459_full_debug_log_2026-11-26T15-46-40.log, line 507)"
+  roundtrip: true
+
+- id: light.capture.evt.level7.bus.25
+  frame: "*1*7*25#4#01##"
+  direction: event
+  who: 1
+  what: 7
+  where: "25"
+  interface: "01"
+  scope: point
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Lighting: Coarse dimmer level 7 event at address 25 routed through F422 private-bus interface 01 (#4#01) on BTicino F459 FW 2.1.5 (MyHOME#466, tests/fixtures/traces/f459_full_debug_log_2026-11-26/F459_full_debug_log_2026-11-26T15-46-40.log, line 473)"
+  roundtrip: true
+
+- id: light.capture.evt.level8.bus.72
+  frame: "*1*8*72#4#01##"
+  direction: event
+  who: 1
+  what: 8
+  where: "72"
+  interface: "01"
+  scope: point
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Lighting: Coarse dimmer level 8 event at address 72 routed through F422 private-bus interface 01 (#4#01) on BTicino F459 FW 2.1.5 (MyHOME#466, tests/fixtures/traces/f459_full_debug_log_2026-11-26/F459_full_debug_log_2026-11-26T15-46-40.log, line 877)"
+  roundtrip: true
+
+- id: light.capture.evt.level9.bus.74
+  frame: "*1*9*74#4#01##"
+  direction: event
+  who: 1
+  what: 9
+  where: "74"
+  interface: "01"
+  scope: point
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Lighting: Coarse dimmer level 9 event at address 74 routed through F422 private-bus interface 01 (#4#01) on BTicino F459 FW 2.1.5 (MyHOME#466, tests/fixtures/traces/f459_full_debug_log_2026-11-26/F459_full_debug_log_2026-11-26T15-46-40.log, line 828)"
+  roundtrip: true
+
+- id: light.capture.evt.level10.bus.0613
+  frame: "*1*10*0613#4#01##"
+  direction: event
+  who: 1
+  what: 10
+  where: "0613"
+  interface: "01"
+  scope: point
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Lighting: Coarse dimmer level 10 (100%) event at 4-digit address 0613 routed through F422 private-bus interface 01 (#4#01) on BTicino F459 FW 2.1.5 (MyHOME#466, tests/fixtures/traces/f459_full_debug_log_2026-11-26/F459_full_debug_log_2026-11-26T15-46-40.log, line 533)"
+  roundtrip: true
+
+- id: light.capture.evt.translation.on_255.1009
+  frame: "*1*1000#1#255*1009##"
+  direction: event
+  who: 1
+  what: "1000#1#255"
+  where: "1009"
+  scope: point
+  is_translation: true
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Lighting: Command-translation event (WHAT 1000#1#255) at 4-digit address 1009 received on the event monitor, followed 90 ms later by *#1*1009*4*200*2## (100% brightness at speed 2) on BTicino F459 FW 2.1.5 (MyHOME#466, tests/fixtures/traces/f459_full_debug_log_2026-11-26/F459_full_debug_log_2026-11-26T15-46-40.log, lines 2146-2148)"
+  roundtrip: true
+
+- id: light.capture.dim.reply.status.off.dim4.bus.0615
+  frame: "*#1*0615#4#01*4*100*2##"
+  direction: dimension_response
+  who: 1
+  what: null
+  where: "0615"
+  interface: "01"
+  scope: point
+  dimension: 4
+  dimension_values: ["100", "2"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Lighting: DIMENSION 4 status reply reporting OFF (LEVEL100 100 = 0% at speed 2) from dimmer 0615 routed through F422 private-bus interface 01 (#4#01), sent 207 ms after a DIMENSION 1 brightness query (*#1*0615#4#01*1##) on BTicino F459 FW 2.1.5 (MyHOME#466, tests/fixtures/traces/f459_full_debug_log_2026-11-26/F459_full_debug_log_2026-11-26T15-46-40.log, lines 1761-1765)"
+  roundtrip: true
+
+- id: light.capture.dim.req.level.bus.0613
+  frame: "*#1*0613#4#01*1##"
+  direction: dimension_request
+  who: 1
+  what: null
+  where: "0613"
+  interface: "01"
+  scope: point
+  dimension: 1
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Lighting: DIMENSION 1 brightness request to dimmer 0613 routed through F422 private-bus interface 01 (#4#01); sent to BTicino F459 FW 2.1.5 and answered on the command session with *#1*0613#4#01*1*200*4## (100% at speed 4) then ACK (MyHOME#466, tests/fixtures/traces/f459_full_debug_log_2026-11-26/F459_full_debug_log_2026-11-26T15-46-40.log, lines 1229-1241)"
+  roundtrip: true
+  builder:
+    class: OWNLightingCommand
+    method: get_brightness
+    args: ["0613#4#01"]
