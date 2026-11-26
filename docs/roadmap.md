@@ -187,7 +187,7 @@ graph TD
         GW_MHS1["🟢 MyHomeServer1<br/>(55 captures · 8,523 rx)"]
         GW_F454["🟢 F454<br/>(26 captures · 4,680 rx)"]
         GW_F455["🟢 F455<br/>(17 captures · 823 rx)"]
-        GW_F459["🟢 F459<br/>(1 capture · 898 rx)"]
+        GW_F459["🟢 F459<br/>(2 captures · 2,052 rx)"]
         GW_F461["🟢 F461<br/>(26 captures · 3,386 rx)"]
         GW_MH202["🟢 MH202<br/>(9 captures · 672 rx)"]
         GW_MH201["🟢 MH201<br/>(10 captures · 976 rx)"]
@@ -200,28 +200,28 @@ graph TD
     end
 
     subgraph Subsystems["⚙️ Protocol Subsystems & Edge Scenarios"]
-        SUB_LIGHT["🟢 Lighting & Dimmers (WHO 1)<br/>(5,750 rx · 93 captures)"]
+        SUB_LIGHT["🟢 Lighting & Dimmers (WHO 1)<br/>(6,457 rx · 94 captures)"]
         SUB_DALI["🟢 DALI DT8 & HSV (WHO 1)<br/>(18 rx · 2 captures)"]
         SUB_TIMER["🟢 DIN Bus Timers (WHO 1)<br/>(8 rx · 5 captures)"]
-        SUB_GRP["🟢 Lighting Groups (WHO 1)<br/>(27 rx · 10 captures)"]
-        SUB_COV_V["🟢 Covers Timed & Calibrated (WHO 2)<br/>(1,479 rx · 59 captures)"]
+        SUB_GRP["🟢 Lighting Groups (WHO 1)<br/>(39 rx · 11 captures)"]
+        SUB_COV_V["🟢 Covers Timed & Calibrated (WHO 2)<br/>(1,686 rx · 60 captures)"]
         SUB_COV_H["🟢 Covers Dim 10 / 11 (WHO 2)<br/>(539 rx · 27 captures)"]
         SUB_COV_255["🟡 Uncalibrated Dim 10=255 (WHO 2)<br/>(Unit tests only)"]
-        SUB_THERMO_ZONES["🟢 Zone Thermostats & Probes (WHO 4)<br/>(10,010 rx · 91 captures)"]
+        SUB_THERMO_ZONES["🟢 Zone Thermostats & Probes (WHO 4)<br/>(10,150 rx · 92 captures)"]
         SUB_CU3550["🟢 Central Unit 3550 (WHO 4)<br/>(291 rx · 23 captures)"]
         SUB_CU4695["🟢 Central Unit 4695 (WHO 4)<br/>(19 rx · 2 captures)"]
         SUB_FANCOIL["🟢 Fancoils Dim 11/20 (WHO 4)<br/>(445 rx · 28 captures)"]
         SUB_ALARM["🟢 Burglar Alarm (WHO 5)<br/>(273 rx · 12 captures)"]
         SUB_DOOR["🟢 Door Entry (WHO 6/8)<br/>(42 rx · 5 captures)"]
-        SUB_DRY["🟢 AUX & Dry Contacts (WHO 9/25)<br/>(215 rx · 16 captures)"]
+        SUB_DRY["🟢 AUX & Dry Contacts (WHO 9/25)<br/>(217 rx · 17 captures)"]
         SUB_CEN["🟢 CEN / CEN+ Triggers (WHO 15/25)<br/>(95 rx · 20 captures)"]
         SUB_SCENARIOS["🟢 Scenarios (WHO 0/17)<br/>(34 rx · 8 captures)"]
         SUB_LOCK14["🟢 Actuator Locks (WHO 14)<br/>(27 rx · 7 captures)"]
         SUB_WHO16["🟢 Audio Matrix (WHO 16)<br/>(439 rx · 23 captures)"]
         SUB_WHO22["🟢 Sound Diffusion & RDS (WHO 22)<br/>(412 rx · 19 captures)"]
         SUB_ENERGY["🟢 Energy Metering (WHO 18)<br/>(1,429 rx · 28 captures)"]
-        SUB_DIAG["🟢 Gateway Identity (WHO 13/1013)<br/>(1,239 rx · 86 captures)"]
-        SUB_ROUTER["🟢 F422 Cross-Bus (#4#bus)<br/>(420 rx · 15 captures)"]
+        SUB_DIAG["🟢 Gateway Identity (WHO 13/1013)<br/>(1,266 rx · 87 captures)"]
+        SUB_ROUTER["🟢 F422 Cross-Bus (#4#bus)<br/>(676 rx · 16 captures)"]
     end
 
     subgraph Engine["🧪 CI Replay & Regression Suite"]
@@ -281,7 +281,7 @@ graph TD
 | **MyHomeServer1 (MHS1)** | 🟢 **Covered** | 55 physical captures (8,523 `rx` frames; `WHO = 1, 2, 4, 7, 8, 9, 13, 14, 15, 18, 22, 25, 1000, 1001, 1013`) — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/who4_four_gateways_2026_11_18/` | *None needed — cloud/local hybrid gateway plant active in CI.* |
 | **F454** | 🟢 **Covered** | 26 physical captures (4,680 `rx` frames; `WHO = 0, 1, 2, 4, 5, 9, 13, 14, 18, 25, 1013`) — e.g. `tests/fixtures/traces/issue_429/`, `tests/fixtures/traces/issue_466/` | *None needed — high-speed multi-session IP webserver active in CI.* |
 | **F455** | 🟢 **Covered** | 17 physical captures (823 `rx` frames; `WHO = 1, 2, 4, 13, 25, 1001, 1013`) — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/central_restore_3100_live_2026-11-12/` | *None needed — single-bus DIN IP gateway active in CI.* |
-| **F459** | 🟢 **Covered** | 1 physical capture (898 `rx` frames; `WHO = 1, 2, 4, 13, 1013`) — e.g. `tests/fixtures/traces/issue_466/` | *None needed — WHO 1013 code 65 & WHO 4 capture active in CI.* |
+| **F459** | 🟢 **Covered** | 2 physical captures (2,052 `rx` frames; `WHO = 1, 2, 4, 13, 25, 1001, 1013`) — e.g. `tests/fixtures/traces/f459_full_debug_log_2026-11-26/`, `tests/fixtures/traces/issue_466/` | *None needed — WHO 1013 code 65 & WHO 4 capture active in CI.* |
 | **F461 Web Server** | 🟢 **Covered** | 26 physical captures (3,386 `rx` frames; `WHO = 1, 2, 4, 13, 14, 25, 1001, 1013`) — e.g. `tests/fixtures/traces/f461_live_2026-10-24/`, `tests/fixtures/traces/f461_live_2026-10-15/` | *None needed — DIN Ethernet Web Server (DALI DT8 & fancoils) active in CI.* |
 | **MH202** | 🟢 **Covered** | 9 physical captures (672 `rx` frames; `WHO = 1, 2, 4, 5, 6, 8, 9, 13, 14, 16, 18, 22, 25, 1013`) — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/mh202_sound_intercom_ducking/` | *None needed — modern scenario programmer plant active in CI.* |
 | **MH201** | 🟢 **Covered** | 10 physical captures (976 `rx` frames; `WHO = 0, 1, 2, 4, 13, 15, 18, 25`) — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/mh201-fresh-discovery-20260930.log` | *None needed — single-worker scenario programmer plant active in CI.* |
@@ -302,28 +302,28 @@ graph TD
 <!-- ROADMAP_SUBSYSTEM_TABLE_START -->
 | Subsystem & Domain | Status | Current Evidence / Fixture | Community Trace Needed / Target Scenario |
 | :--- | :--- | :--- | :--- |
-| **Lighting (WHO = 1) — Relays & Dimmers** | 🟢 **Covered** | 5,750 physical `rx` frames across 93 captures on 13 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/issue_629/` | *Baseline covered across standard, 4-digit, and F418/F418U2 dimmers.* |
+| **Lighting (WHO = 1) — Relays & Dimmers** | 🟢 **Covered** | 6,457 physical `rx` frames across 94 captures on 13 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/f459_full_debug_log_2026-11-26/` | *Baseline covered across standard, 4-digit, and F418/F418U2 dimmers.* |
 | **Lighting (WHO = 1) — DALI Tunable White & HSV Color** | 🟢 **Covered** | 18 physical `rx` frames across 2 captures on 1 gateway model — e.g. `tests/fixtures/plants/issue_288_f461_dali_dt8/`, `tests/fixtures/traces/issue_466/` | *Baseline covered (`Dimension 12` HSV & `Dimension 14` Kelvin/mireds).* |
 | **Lighting (WHO = 1) — Native DIN Timers** | 🟢 **Covered** | 8 physical `rx` frames across 5 captures on 3 gateway models — e.g. `tests/fixtures/plants/issue_311_f454/`, `tests/fixtures/traces/f461_live_2026-10-15/` | *Preset temporization & `Dimension 2` replies covered; optional mid-countdown `*#1*WHERE*2*H*M*S##` (`H/M/S > 0`) trace welcomed.* |
-| **Lighting (WHO = 1) — Groups & General Broadcasts (P7)** | 🟢 **Covered** | 27 physical `rx` frames across 10 captures on 6 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/f461_live_2026-10-15/` | *None needed — group (`#G`) and general (`WHERE=0`) resync engine active in CI.* |
-| **Covers (WHO = 2) — Travel-Time Positioning & On-Bus Calibration** | 🟢 **Covered** | 1,479 physical `rx` frames across 59 captures on 13 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/discussion_856/`; plus 23 calibrated `cover_travel_times` profiles in `tests/fixtures/traces/discussion_856/`, `tests/fixtures/traces/mh200_sound_f441m/` | *Baseline covered (stopwatch `myhome.calibrate_cover` runs, `cover_travel_times` profiles, and timed slat pulses active in CI).* |
+| **Lighting (WHO = 1) — Groups & General Broadcasts (P7)** | 🟢 **Covered** | 39 physical `rx` frames across 11 captures on 6 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/f459_full_debug_log_2026-11-26/` | *None needed — group (`#G`) and general (`WHERE=0`) resync engine active in CI.* |
+| **Covers (WHO = 2) — Travel-Time Positioning & On-Bus Calibration** | 🟢 **Covered** | 1,686 physical `rx` frames across 60 captures on 13 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/f459_full_debug_log_2026-11-26/`; plus 23 calibrated `cover_travel_times` profiles in `tests/fixtures/traces/discussion_856/`, `tests/fixtures/traces/mh200_sound_f441m/` | *Baseline covered (stopwatch `myhome.calibrate_cover` runs, `cover_travel_times` profiles, and timed slat pulses active in CI).* |
 | **Covers (WHO = 2) — Advanced Position (`Dim 10 / 11`)** | 🟢 **Covered** | 539 physical `rx` frames across 27 captures on 6 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/discussion_770_f454_f401/` | *Baseline covered (`F401` / `LN4661M2` percentage position; the slat angle is not on the bus).* |
 | **Covers (WHO = 2) — Uncalibrated Hardware Sentinel (`Dim 10` `LEVEL=255`)** | 🟡 **Synthetic** | Unit tests for `*#2*WHERE*10*BS*255*...##` in `tests/test_cover.py` (0 physical `LEVEL=255` `rx` frames in `tests/fixtures/`) | **Uncalibrated actuator trace**: Bus capture of an uncalibrated `F401`, `LN4672M2`, or `067557` reporting `*#2*WHERE*10*BS*255*...##` prior to *Push&Learn* end-stop learning. |
-| **Thermoregulation (WHO = 4) — Zone Thermostats, Probes & Humidity** | 🟢 **Covered** | 10,010 physical `rx` frames across 91 captures on 13 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/issue_429/` | *Baseline covered (zone temperature `Dim 0`, setpoints `Dim 12/14`, knob offsets `Dim 13` & `Dim 60` humidity).* |
+| **Thermoregulation (WHO = 4) — Zone Thermostats, Probes & Humidity** | 🟢 **Covered** | 10,150 physical `rx` frames across 92 captures on 13 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/issue_429/` | *Baseline covered (zone temperature `Dim 0`, setpoints `Dim 12/14`, knob offsets `Dim 13` & `Dim 60` humidity).* |
 | **Thermoregulation (WHO = 4) — 99-Zone Central Unit 3550 (`#0`)** | 🟢 **Covered** | 291 physical `rx` frames across 23 captures on 8 gateway models — e.g. `tests/fixtures/traces/central_restore_3100_live_2026-11-12/`, `tests/fixtures/traces/issue_466/` | *Baseline covered (`#0` master modes, `*4*3100*#0##` auto restore, & zone sync).* |
 | **Thermoregulation (WHO = 4) — 4-Zone Central Unit 4695 (`#0#1`)** | 🟢 **Covered** | 19 physical `rx` frames across 2 captures on 1 gateway model — e.g. `tests/fixtures/traces/issue_994/` | *4-zone Central Unit 4695 (`#0#1`) verified from physical hardware.* |
 | **Thermoregulation (WHO = 4) — Fancoils (`Dim 11 / 20`)** | 🟢 **Covered** | 445 physical `rx` frames across 28 captures on 4 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/f461_live_2026-10-15/` | *Baseline covered (`Dimension 11` fan speeds & `Dimension 20` fan-coil states `5`–`8`).* |
 | **Burglar Alarm (WHO = 5)** | 🟢 **Covered** | 273 physical `rx` frames across 12 captures on 7 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/plants/issue_311_f454/` | *Baseline covered (physical `3486` / `MH202` partition & zone captures active in CI).* |
 | **Door Entry & Intercom Locks (WHO = 6 / 8)** | 🟢 **Covered** | 42 physical `rx` frames across 5 captures on 4 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/mh202_sound_intercom_ducking/` | *Baseline covered (door lock release & video intercom call events active in CI).* |
-| **AUX & Dry Contacts (WHO = 9 / 25)** | 🟢 **Covered** | 215 physical `rx` frames across 16 captures on 10 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/mh202_sound_intercom_ducking/` | *Baseline covered (`WHO = 9` auxiliary channels & `3477` / `F428` contact sensors).* |
+| **AUX & Dry Contacts (WHO = 9 / 25)** | 🟢 **Covered** | 217 physical `rx` frames across 17 captures on 11 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/mh202_sound_intercom_ducking/` | *Baseline covered (`WHO = 9` auxiliary channels & `3477` / `F428` contact sensors).* |
 | **CEN / CEN+ Pushbuttons & Rotary Triggers (WHO = 15 / 25)** | 🟢 **Covered** | 95 physical `rx` frames across 20 captures on 6 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/issue_434/` | *Baseline covered (short, long-press, repeat & release active in CI); a `WHO = 25` rotary capture (`WHAT = 25..28`) is welcome.* |
 | **Scenarios & Schedulers (WHO = 0 / 17)** | 🟢 **Covered** | 34 physical `rx` frames across 8 captures on 3 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/f500_tuner/` | *Baseline covered (`WHO = 0` activation on an F454, `WHO = 17` frames on MH200 / MH200N).* |
 | **Actuator Maintenance Locks (WHO = 14)** | 🟢 **Covered** | 27 physical `rx` frames across 7 captures on 5 gateway models — e.g. `tests/fixtures/plants/issue_247_myhomeserver1/`, `tests/fixtures/traces/f461_who14_live_2026-10-18/` | *Baseline covered (hardware pushbutton lock/unlock status frames active in CI).* |
 | **Sound System (WHO = 16) — Matrix & Streaming Proxy** | 🟢 **Covered** | 439 physical `rx` frames across 23 captures on 5 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/mh200_sound_f441m/` | *Baseline covered (`F441` / `F441M` matrix routing, group takeover & ducking).* |
 | **Sound Diffusion (WHO = 22) — FM RDS Tuners & Active-Source Sync** | 🟢 **Covered** | 412 physical `rx` frames across 19 captures on 5 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/f500_tuner/` | *Baseline covered (`F500` / `F500N` FM RDS tuners on `WHO = 22`-only & dual-stack gateways, `4#<area>` active-source tracking, and `H4562` `WHO = 22` zone captures).* |
 | **Energy Management & Metering (WHO = 18)** | 🟢 **Covered** | 1,429 physical `rx` frames across 28 captures on 6 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/issue_907/` | *Baseline covered (`F520` / `F521` / `3522` active power `W` and total/daily/monthly `Wh` energy counters).* |
-| **Gateway Clock, Identity & Diagnostics (WHO = 13 / 1001–1022)** | 🟢 **Covered** | 1,239 physical `rx` frames across 86 captures on 13 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/mh200_sound_f441m/` | *Baseline covered (`WHO = 13` device type/firmware/clock & `WHO = 1013` `OBJECT_MODEL`).* |
-| **F422 Cross-Bus Router (`#4#<bus>`)** | 🟢 **Covered** | 420 physical `rx` frames across 15 captures on 4 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/plants/issue_288_f461_dali_dt8/` | *None needed — physical F422 local-bus routing (`#4#01`, `#4#02`, ...) active in CI.* |
+| **Gateway Clock, Identity & Diagnostics (WHO = 13 / 1001–1022)** | 🟢 **Covered** | 1,266 physical `rx` frames across 87 captures on 13 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/mh200_sound_f441m/` | *Baseline covered (`WHO = 13` device type/firmware/clock & `WHO = 1013` `OBJECT_MODEL`).* |
+| **F422 Cross-Bus Router (`#4#<bus>`)** | 🟢 **Covered** | 676 physical `rx` frames across 16 captures on 4 gateway models — e.g. `tests/fixtures/traces/issue_466/`, `tests/fixtures/traces/f459_full_debug_log_2026-11-26/` | *None needed — physical F422 local-bus routing (`#4#01`, `#4#02`, ...) active in CI.* |
 
 *Table 2 is automatically generated and verified from inbound (`rx`) OpenWebNet frames and calibration bundles in `tests/fixtures/` by `scripts/sync_documentation.py`.*
 <!-- ROADMAP_SUBSYSTEM_TABLE_END -->
