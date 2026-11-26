@@ -25,7 +25,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
     
     
       
@@ -1009,10 +1009,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#temperature-sensors-who-4" class="md-nav__link">
+  <a href="#temperature-humidity-010-v-proportional-actuator-output-sensors-who-4" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🌡️ Temperature Sensors (WHO = 4)
+        🌡️ Temperature, Humidity &amp; 0–10 V Proportional Actuator Output Sensors (WHO = 4)
       
     </span>
   </a>
@@ -2022,10 +2022,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#temperature-sensors-who-4" class="md-nav__link">
+  <a href="#temperature-humidity-010-v-proportional-actuator-output-sensors-who-4" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🌡️ Temperature Sensors (WHO = 4)
+        🌡️ Temperature, Humidity &amp; 0–10 V Proportional Actuator Output Sensors (WHO = 4)
       
     </span>
   </a>
@@ -2116,11 +2116,15 @@
 To publish non-MyHOME power and energy measurements (such as Shelly EM, SolarEdge, Enphase, or utility smart meters) onto SCS meter addresses for display on wall touchscreens, see the <a href="../expose/">Expose to Bus Guide</a>.</p>
 </div>
 <hr />
-<h2 id="temperature-sensors-who-4">🌡️ Temperature Sensors (WHO = 4)<a class="headerlink" href="#temperature-sensors-who-4" title="Permanent link">&para;</a></h2>
-<p>Standalone and secondary temperature probes operating on <code>WHO = 4</code> are automatically discovered as <code>sensor</code> entities with <code>device_class: temperature</code>:</p>
+<h2 id="temperature-humidity-010-v-proportional-actuator-output-sensors-who-4">🌡️ Temperature, Humidity &amp; 0–10 V Proportional Actuator Output Sensors (WHO = 4)<a class="headerlink" href="#temperature-humidity-010-v-proportional-actuator-output-sensors-who-4" title="Permanent link">&para;</a></h2>
+<p>Temperature, humidity, and actuator-level telemetry on <code>WHO = 4</code> are exposed as standard <code>sensor</code> entities:</p>
 <ul>
-<li><strong>Standalone &amp; Secondary Probes (<code>WHERE ≥ 100</code>, i.e. <code>0101</code>–<code>0999</code> / <code>101</code>–<code>899</code>, or <code>Dimension 15</code>)</strong>: Auto-discovered from SCS bus traffic (including battery-powered wireless probes such as BTicino <code>3455</code> behind <code>L4577</code> radio interfaces, and outdoor/slave probes <code>3475</code>/<code>3476</code>).</li>
-<li><strong>Thermostat Zones (<code>WHERE = 1..99</code>)</strong>: Zone addresses <code>1..99</code> belong to <code>climate.*</code> thermostat entities by default and do <strong>not</strong> spawn duplicate standalone temperature <code>sensor</code> entities unless explicitly declared under <code>sensor:</code> in <code>/config/myhome.yaml</code>.</li>
+<li><strong>Standalone &amp; Secondary Probes (<code>WHERE ≥ 100</code>, i.e. <code>0101</code>–<code>0999</code> / <code>101</code>–<code>899</code>, or <code>Dimension 15</code>)</strong>: Auto-discovered passively from SCS bus traffic (including battery-powered wireless probes such as BTicino <code>3455</code> behind <code>L4577</code> radio interfaces, and outdoor/slave probes <code>3475</code>/<code>3476</code>). To prevent a single bit-flipped zone frame on the 2-wire SCS bus (for example zone <code>1</code> corrupted to <code>129</code>) from registering a permanent phantom probe sensor, an unconfigured bus probe is created only on its <strong>second independent reading</strong> — either a distinct frame/value or a repeated reading received at least <code>5 s</code> later and within <code>1 h</code> (<code>3600 s</code>) — with <strong>zero active polling</strong> (<code>#308</code>, <code>#938</code>; real probes push periodically on their own and NACK explicit status requests). Probes configured in <code>/config/myhome.yaml</code> or already present in the Home Assistant entity registry are created immediately at startup.</li>
+<li><strong>Climate Zone Companion Temperature Sensors (<code>WHERE = 1..99</code>)</strong>: Every confirmed non-central <code>WHO = 4</code> climate zone automatically exposes an enabled, strictly passive (<code>should_poll = False</code>) <code>sensor.&lt;zone&gt;_temperature</code> entity (<code>device_class: temperature</code>, <code>state_class: measurement</code>, native unit <code>°C</code>, <code>RestoreSensor</code> native-unit preservation) attached to the same Home Assistant device as its <code>climate</code> entity — unlocking Home Assistant Long-Term Statistics without adding any bus polling. Central units (<code>#0</code>, <code>#0#1..#0#96</code>), probe-less thermo switches, exposed virtual probes, ignored addresses, and unconfirmed zones are excluded. Existing <code>sensor:</code> entries for zones <code>1..99</code> in <code>/config/myhome.yaml</code> continue to take precedence without duplicates; removing a legacy <code>where: "&lt;Z&gt;"</code> YAML temperature entry seamlessly transfers the same <code>{mac}-4-&lt;Z&gt;-temperature</code> entity ID and its Long-Term Statistics history to the passive companion sensor.</li>
+<li><strong>Climate Zone Companion Humidity Sensors (<code>Dimension 60</code>)</strong>: Dynamically created as an enabled, passive (<code>should_poll = False</code>) <code>sensor.&lt;zone&gt;_humidity</code> entity (<code>device_class: humidity</code>, <code>state_class: measurement</code>, unit <code>%</code>) on the zone's Home Assistant device only when the zone reports <code>Dimension 60</code> humidity (<code>*#4*&lt;WHERE&gt;*60*&lt;HH&gt;##</code>), restores prior humidity state, or declares <code>humidity: true</code> in <code>myhome.yaml</code>.</li>
+<li><strong>0–10 V Proportional Actuator Output Level (<code>*#4*Z#N*20*100..200##</code>, <code>1 &lt;= Z &lt;= 99</code>, <code>1 &lt;= N &lt;= 9</code>)</strong>: Whenever an explicit zone actuator address <code>Z#N</code> (<code>1 &lt;= Z &lt;= 99</code>, <code>1 &lt;= N &lt;= 9</code>) reports a proportional 0–10 V output code (<code>Dimension 20</code> values <code>100..200</code> → <code>0..100 %</code>, e.g. Sabiana 0–10 V fan coils or modulating valves), the integration automatically creates an enabled <code>sensor</code> entity (<code>MyHOMEActuatorOutputSensor</code> — <code>Actuator &lt;N&gt; output level</code>, unit <code>%</code>, <code>state_class: measurement</code>, <code>mdi:gauge</code>) attached to the same Home Assistant Device as the zone's <code>climate</code> entity — with <code>generate_events</code> disabled. Bare zone (<code>Z</code>) and <code>Z#0</code> Dimension 20 frames never create or spread output levels onto proportional sensors, and standard discrete <code>0..22</code> valve and 3-speed fan-coil actuators never spawn extra entities.</li>
+<li><strong>Restart behaviour (<code>SensorEntity</code>, no stale state restoration)</strong>: <code>MyHOMEActuatorOutputSensor</code> inherits directly from <code>SensorEntity</code> (not <code>RestoreSensor</code>), so its state starts <code>unknown</code> after a Home Assistant restart until the first bus report arrives rather than replaying stale values alongside the live <code>climate</code> entity.</li>
+<li><strong>When <code>*#4*Z#N*20##</code> is polled</strong>: Each sensor registers its <code>Z#N</code> address with <code>watch_zone_actuators</code> when added (unless routed behind a local interface <code>#4#IF</code> where <code>interface_zone_request_refused</code> is <code>True</code>), triggering polls after startup discovery completes and after every event-session reconnect. Depending on the gateway, that poll is coalesced into <code>*#4*0#0*20##</code> on <code>F461</code> and <code>MyHomeServer1</code>, sent as <code>*#4*Z#N*20##</code> on <code>3488</code>, <code>F450</code>, <code>F454</code>, <code>F455</code>, <code>F459</code>, and <code>F460</code>, and skipped on <code>ACTUATOR_REQUEST_REFUSED</code> gateways (<code>F453</code>, <code>F453AV</code>, <code>H4684</code>, <code>MH200</code>, <code>MH200N</code>, <code>MH202</code>) as well as behind <code>#4#IF</code> (<code>interface_zone_request_refused</code>). Calling <code>homeassistant.update_entity</code> (<code>async_update</code>) also sends <code>*#4*Z#N*20##</code> whenever neither <code>actuator_request_refused</code> nor <code>interface_zone_request_refused</code> is <code>True</code>.</li>
 </ul>
 <hr />
 <h2 id="illuminance-lux-sensors-who-1">☀️ Illuminance Lux Sensors (WHO = 1)<a class="headerlink" href="#illuminance-lux-sensors-who-1" title="Permanent link">&para;</a></h2>
@@ -2135,7 +2139,7 @@ To publish non-MyHOME power and energy measurements (such as Shelly EM, SolarEdg
 <h2 id="legacy-yaml-note">🔄 Legacy YAML Note<a class="headerlink" href="#legacy-yaml-note" title="Permanent link">&para;</a></h2>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p><code>WHO = 18</code> energy meters, <code>WHO = 4</code> standalone probes (<code>WHERE ≥ 100</code> or <code>Dimension 15</code>), and <code>WHO = 1</code> illuminance sensors are discovered dynamically from the bus; <code>sensor:</code> entries in <code>/config/myhome.yaml</code> remain supported for custom naming or exposing thermostat zone (<code>1..99</code>) temperatures as standalone <code>sensor</code> entities. For migrating pre-v0.9 <code>configuration.yaml</code> files, see the <a href="../../migration/legacy-yaml/">Legacy YAML Migration Guide</a>.</p>
+<p><code>WHO = 18</code> energy meters, <code>WHO = 4</code> standalone probes (<code>WHERE ≥ 100</code> or <code>Dimension 15</code>), passive <code>WHO = 4</code> climate zone companion temperature &amp; dynamic humidity sensors, and <code>WHO = 1</code> illuminance sensors are discovered dynamically from the bus; explicit <code>sensor:</code> entries in <code>/config/myhome.yaml</code> remain supported for custom naming or polling standalone zone sensors without duplicating companion entities. For migrating pre-v0.9 <code>configuration.yaml</code> files, see the <a href="../../migration/legacy-yaml/">Legacy YAML Migration Guide</a>.</p>
 </div>
 
 

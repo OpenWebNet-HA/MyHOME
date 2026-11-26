@@ -25,7 +25,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
     
     
       
@@ -1510,6 +1510,17 @@
     <span class="md-ellipsis">
       
         How to resolve
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#if-the-central-unit-has-no-backup-battery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        If the central unit has no backup battery
       
     </span>
   </a>
@@ -3029,6 +3040,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#if-the-central-unit-has-no-backup-battery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        If the central unit has no backup battery
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3561,7 +3583,7 @@
 <li>Save and reboot.</li>
 </ul>
 </li>
-<li><strong>MyHOME_Suite / TiMyHome (MH200N, MH201, MH202, F452)</strong>:<ul>
+<li><strong>MyHOME_Suite / MyHotelSuite / TiMyHome (MH200N, MH201, MH202, F452)</strong> <em>(use <strong>MyHotelSuite</strong> for MH201 firmware updates)</em>:<ul>
 <li>Connect to the gateway via USB or Ethernet.</li>
 <li>Open <strong>Gateway Settings</strong> → <strong>Date &amp; Time</strong>.</li>
 <li>Configure local time, timezone, and automatic DST.</li>
@@ -3609,11 +3631,11 @@
 <strong>Auto-Resolving</strong>: Yes</p>
 <h3 id="what-it-means_4">What it means<a class="headerlink" href="#what-it-means_4" title="Permanent link">&para;</a></h3>
 <p>The gateway rejected the OpenWebNet password or HMAC SHA-negotiation credentials.</p>
+<p>This also happens while Home Assistant runs: the gateway's password was changed, or the gateway refuses the stored one on a reconnect. Then both sessions (event and command) stop, every entity of the gateway becomes unavailable, no command is sent, and the password is not presented again until you enter one.</p>
 <h3 id="how-to-resolve_4">How to resolve<a class="headerlink" href="#how-to-resolve_4" title="Permanent link">&para;</a></h3>
 <ol>
-<li>Open <strong>Settings → Devices &amp; Services → MyHOME</strong>.</li>
-<li>Click <strong>Reconfigure</strong> on the gateway card.</li>
-<li>Enter the correct OpenWebNet numeric password or HMAC secret.</li>
+<li>Open the <strong>Reauthentication required</strong> prompt of the gateway entry (<strong>Settings → Devices &amp; Services → MyHOME</strong>) and enter the OpenWebNet numeric password or HMAC secret configured on the gateway. The entry reloads by itself.</li>
+<li>Or open <strong>Settings → Devices &amp; Services → MyHOME</strong>, click <strong>Reconfigure</strong> on the gateway card and enter the correct password. A Reconfigure dialog that is already open takes the place of the prompt (Home Assistant starts no reauth while one is open): finish it with the right password, or close it and reload the entry.</li>
 </ol>
 <hr />
 <h2 id="heating-zone-no-longer-answers">Heating Zone No Longer Answers<a class="headerlink" href="#heating-zone-no-longer-answers" title="Permanent link">&para;</a></h2>
@@ -3631,13 +3653,13 @@
 <strong>Auto-Resolving</strong>: Yes<br />
 <strong>Fixable via UI</strong>: No</p>
 <h3 id="what-it-means_6">What it means<a class="headerlink" href="#what-it-means_6" title="Permanent link">&para;</a></h3>
-<p>A 99-zone thermoregulation central unit (<code>WHERE = #0</code>, such as a BTicino <code>3550</code>, <code>MyHOME_Screen 10</code>, or <code>MyHOME_Screen 3.5</code>) reported OpenWebNet status <code>*4*20*#0##</code> (<code>Remote control disabled</code> / <em>Telegestione disabilitata</em>).</p>
-<p>When <em>Telegestione</em> (Remote Control) is disabled in the physical central unit's settings menu, the OpenWebNet gateway still acknowledges central-unit commands (<code>*4*1*#0##</code>, <code>*4*311*#0##</code>, <code>*#4*#0*#14*...##</code>) with <code>*#*1##</code> at the TCP command session layer, <strong>but the central unit itself ignores remote mode and setpoint writes from Home Assistant</strong>.</p>
+<p>A thermoregulation central unit (99-zone <code>WHERE = #0</code> such as a BTicino <code>3550</code>, <code>MyHOME_Screen 10</code>, or <code>MyHOME_Screen 3.5</code>, or 4-zone <code>WHERE = #0#N</code> such as a BTicino <code>4695</code>) reported OpenWebNet status <code>*4*20*&lt;where&gt;##</code> (<code>Remote control disabled</code> / <em>Telegestione disabilitata</em>).</p>
+<p>When <em>Telegestione</em> (Remote Control) is disabled in the physical central unit's settings menu, the OpenWebNet gateway still acknowledges central-unit commands (<code>*4*1*&lt;where&gt;##</code>, <code>*4*3100*&lt;where&gt;##</code>, <code>*#4*&lt;where&gt;*#14*...##</code>) with <code>*#*1##</code> at the TCP command session layer, <strong>but the central unit itself ignores remote mode and setpoint writes from Home Assistant</strong>.</p>
 <h3 id="how-to-resolve_6">How to resolve<a class="headerlink" href="#how-to-resolve_6" title="Permanent link">&para;</a></h3>
 <ol>
-<li>On the physical BTicino <code>3550</code> (or central unit display panel), open the <strong>Settings / Impostazioni</strong> menu.</li>
+<li>On the physical BTicino <code>3550</code> / <code>4695</code> (or central unit display panel), open the <strong>Settings / Impostazioni</strong> menu.</li>
 <li>Set <strong>Remote Control / Telegestione</strong> to <strong>Enabled / Abilitata</strong>.</li>
-<li>The central unit will emit <code>*4*21*#0##</code> (<code>Remote control enabled</code>) on the next status query or mode broadcast, and this repair issue will clear automatically.</li>
+<li>The central unit will emit <code>*4*21*&lt;where&gt;##</code> (<code>Remote control enabled</code>) on the next status query or mode broadcast, and this repair issue will clear automatically.</li>
 </ol>
 <hr />
 <h2 id="central-unit-battery-fault">Central Unit Battery Fault<a class="headerlink" href="#central-unit-battery-fault" title="Permanent link">&para;</a></h2>
@@ -3646,12 +3668,14 @@
 <strong>Auto-Resolving</strong>: Yes<br />
 <strong>Fixable via UI</strong>: No</p>
 <h3 id="what-it-means_7">What it means<a class="headerlink" href="#what-it-means_7" title="Permanent link">&para;</a></h3>
-<p>A 99-zone thermoregulation central unit (<code>WHERE = #0</code>, such as a BTicino <code>3550</code>) reported OpenWebNet status <code>*4*31*#0##</code> (<code>Central unit battery KO</code>) during its status report burst (<code>*#4*#0##</code>).</p>
+<p>A thermoregulation central unit (99-zone <code>WHERE = #0</code> such as a BTicino <code>3550</code>, or 4-zone <code>WHERE = #0#N</code> such as a BTicino <code>4695</code>) reported OpenWebNet status <code>*4*31*&lt;where&gt;##</code> (<code>Central unit battery KO</code>) during its status report burst (<code>*#4*&lt;where&gt;##</code>).</p>
 <h3 id="how-to-resolve_7">How to resolve<a class="headerlink" href="#how-to-resolve_7" title="Permanent link">&para;</a></h3>
 <ol>
-<li>Check or replace the backup battery inside the physical central unit (<code>3550</code>) so weekly programs and internal clock settings are preserved across mains power interruptions.</li>
-<li>Once the battery fault is resolved on the hardware, the central unit omits <code>*4*31*#0##</code> from its next status burst (<code>*#4*#0##</code>), and this repair issue clears automatically.</li>
+<li>Check or replace the backup battery inside the physical central unit (<code>3550</code> / <code>4695</code>) so weekly programs and internal clock settings are preserved across mains power interruptions.</li>
+<li>Once the battery fault is resolved on the hardware, the central unit omits <code>*4*31*&lt;where&gt;##</code> from its next status burst (<code>*#4*&lt;where&gt;##</code>), and this repair issue clears automatically, one second after the burst's remote-control frame (<code>*4*20*&lt;where&gt;##</code> / <code>*4*21*&lt;where&gt;##</code>).</li>
 </ol>
+<h3 id="if-the-central-unit-has-no-backup-battery">If the central unit has no backup battery<a class="headerlink" href="#if-the-central-unit-has-no-backup-battery" title="Permanent link">&para;</a></h3>
+<p>A central unit fitted without a battery repeats <code>*4*31*&lt;where&gt;##</code> in every status burst. Use <strong>Ignore</strong> on the repair: the issue is left untouched while the flag keeps coming, so the Ignore holds through every burst and every reload until Home Assistant restarts: the first burst after a restart shows the repair again, as a reminder, and it can be ignored again. The repair itself ends only when a burst arrives without the flag.</p>
 <hr />
 <h2 id="unmapped-device-status">Unmapped Device Status<a class="headerlink" href="#unmapped-device-status" title="Permanent link">&para;</a></h2>
 <p><strong>Repair Key</strong>: <code>unmapped_device_status</code><br />
@@ -3689,7 +3713,7 @@
 <tr>
 <td>Stop the repair issue for now</td>
 <td>Use <strong>Ignore</strong> on the repair.</td>
-<td>Only temporary. The ignore is forgotten when the issue clears (any on, off or level frame for the address, for example a wall-button press) and at every restart or reload, and the next odd status raises the issue again.</td>
+<td>Only temporary. The ignore is forgotten when the issue clears (any on, off or level frame for the address, for example a wall-button press), and the next odd status raises the issue again. A reload or restart alone keeps it.</td>
 </tr>
 <tr>
 <td>Stop the repair issue and silence the device for good</td>

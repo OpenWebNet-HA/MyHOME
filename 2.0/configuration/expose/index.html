@@ -25,7 +25,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
     
     
       
@@ -1093,6 +1093,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#openwebnet-addressing-reference-a-pl-where" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🔢 OpenWebNet Addressing Reference (A / PL → WHERE)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#virtual-dimmers-myhome_suite-wall-control-modes-who-1-vs-cen" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2106,6 +2117,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#openwebnet-addressing-reference-a-pl-where" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🔢 OpenWebNet Addressing Reference (A / PL → WHERE)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#virtual-dimmers-myhome_suite-wall-control-modes-who-1-vs-cen" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2263,91 +2285,123 @@
 <h2 id="how-to-configure">🛠️ How to Configure<a class="headerlink" href="#how-to-configure" title="Permanent link">&para;</a></h2>
 <p>The integration supports two methods for configuring exposed bindings: <strong>UI Config Subentries</strong> (recommended) and <strong>Declarative YAML</strong> (<code>myhome.yaml</code>).</p>
 <h3 id="method-1-home-assistant-ui-config-subentries">Method 1: Home Assistant UI (Config Subentries)<a class="headerlink" href="#method-1-home-assistant-ui-config-subentries" title="Permanent link">&para;</a></h3>
-<p>In Home Assistant, exposed bindings are configured as <strong>Config Subentries</strong> on your gateway entry:</p>
+<p>In Home Assistant, exposed bindings are configured as <strong>Config Subentries</strong> on your gateway entry using a <strong>2-step <code>WHO</code>-tailored wizard</strong> (with zero breaking changes — Home Assistant still stores the exact same canonical <code>WHERE</code> string internally):</p>
 <ol>
 <li>In Home Assistant, navigate to <strong>Settings → Devices &amp; Services → Integrations → MyHOME</strong>.</li>
 <li>Click on your gateway card (e.g. <code>F454</code>, <code>067292</code>, or <code>MyHomeServer1</code>).</li>
 <li>Scroll down to the <strong>Subentries</strong> section (or click the three dots <code>⋮</code> menu in the upper corner).</li>
 <li>Click <strong>+ Add exposed entity</strong> (or <strong>Expose entity to SCS bus</strong>).</li>
-<li>Complete the setup form:</li>
+<li><strong>Step 1 — Choose <code>WHO</code> subsystem</strong>: Select the OpenWebNet domain (<code>WHO 1</code>, <code>WHO 2</code>, <code>WHO 4</code>, <code>WHO 13</code>, or <code>WHO 18</code>; subsystems whose injection is unsupported by your gateway firmware are hidden automatically) and click <strong>Next</strong>.</li>
+<li><strong>Step 2 — Configure subsystem fields</strong>: Only the fields that apply to the chosen <code>WHO</code> are shown:</li>
+<li><strong><code>WHO = 1</code> (Lighting / Switch) &amp; <code>WHO = 2</code> (Automation / Cover)</strong>: Pick <strong><code>Area (A, 0–10)</code></strong> and <strong><code>Point (PL, 1–15)</code></strong> plus an optional <strong>Local-bus interface (<code>#4#01–#4#09</code> or <code>#4#11–#4#15</code>)</strong> directly from <em>MyHOME_Suite</em> — or leave them blank and paste a canonical <strong>Raw <code>WHERE</code> override</strong> (<code>88</code>, <code>08</code>, <code>0812</code>, <code>0012</code>, <code>1008</code>, <code>88#4#01</code>) from Bus Monitor traces. On reconfigure, existing bindings automatically pre-fill <code>A</code>, <code>PL</code>, and <code>interface</code>.</li>
+<li><strong><code>WHO = 4</code> (Temperature Probe)</strong>: Enter a probe <code>WHERE</code> address (<code>1–99</code> zone master probe, <code>100–900</code> external probe, or <code>101–899</code> <code>PZZ</code>), source entity, and deadband/interval options (<code>dimension</code> is fixed to <code>0</code>; <code>WHO 1/2</code>-only options and custom actions are hidden).</li>
+<li><strong><code>WHO = 18</code> (Energy / Power Meter)</strong>: Enter a meter <code>WHERE</code> (<code>5N</code> or <code>7N#0</code> with <code>N = 1..255</code>, i.e. <code>51..59</code>, <code>510..599</code>, <code>5100..5255</code>, or <code>71#0..79#0</code>, <code>710#0..799#0</code>, <code>7100#0..7255#0</code>) and pick an <strong>OpenWebNet energy/power dimension</strong> (<code>113</code>, <code>51–54</code>) from the dropdown.</li>
+<li><strong><code>WHO = 13</code> (Bus Clock &amp; DST Sync)</strong>: Pick the <strong>Clock dimension</strong> (<code>22</code>, <code>0</code>, or <code>1</code>), broadcast interval (<code>0</code> for query-only), and read-response toggle (no <code>WHERE</code> or entity required).</li>
 </ol>
 <table>
 <thead>
 <tr>
 <th style="text-align: left;">Field</th>
+<th style="text-align: left;">Applies to</th>
 <th style="text-align: left;">Description</th>
 <th style="text-align: left;">Example</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td style="text-align: left;"><strong>WHO Subsystem</strong></td>
+<td style="text-align: left;"><strong>WHO Subsystem</strong> <em>(Step 1)</em></td>
+<td style="text-align: left;">All</td>
 <td style="text-align: left;">The OpenWebNet domain to emulate (<code>1</code>, <code>2</code>, <code>4</code>, <code>13</code>, or <code>18</code>).</td>
 <td style="text-align: left;"><code>WHO 1 — Lighting / Switch / Virtual Actuator</code></td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>WHERE Address</strong></td>
-<td style="text-align: left;">Unused SCS address assigned to the button/tile in <strong>MyHOME_Suite</strong>. <em>(Omit for WHO 13)</em></td>
-<td style="text-align: left;"><code>25</code> or <code>83</code></td>
+<td style="text-align: left;"><strong>Area (<code>A</code>, <code>0–10</code>) &amp; Point (<code>PL</code>, <code>1–15</code>)</strong></td>
+<td style="text-align: left;"><code>WHO = 1, 2</code></td>
+<td style="text-align: left;"><em>MyHOME_Suite</em> area and point selectors; automatically encoded to canonical <code>WHERE</code> on save.</td>
+<td style="text-align: left;"><code>A = 8, PL = 12</code> → <code>0812</code></td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>Source Entity</strong> <em>(Optional on WHO 1/2 if custom actions are set)</em></td>
+<td style="text-align: left;"><strong>Local-bus Interface</strong> <em>(Optional)</em></td>
+<td style="text-align: left;"><code>WHO = 1, 2</code></td>
+<td style="text-align: left;">Optional F422 routing interface (<code>Main SCS bus</code>, <code>01–09</code>, or <code>11–15</code> → <code>#4#01</code>..<code>#4#09</code>, <code>#4#11</code>..<code>#4#15</code>).</td>
+<td style="text-align: left;"><code>01</code> → <code>#4#01</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Raw <code>WHERE</code> Override</strong> <em>(Optional on <code>1, 2</code>; required on <code>4, 18</code>)</em></td>
+<td style="text-align: left;"><code>WHO = 1, 2, 4, 18</code></td>
+<td style="text-align: left;">Canonical OpenWebNet <code>WHERE</code> string; when entered on <code>WHO = 1 / 2</code>, overrides <code>A</code> / <code>PL</code> / interface. <em>(Omitted on <code>WHO = 13</code>)</em></td>
+<td style="text-align: left;"><code>88</code>, <code>0812#4#01</code>, <code>50</code>, <code>51</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Source Entity</strong> <em>(Optional on <code>1, 2</code> with actions)</em></td>
+<td style="text-align: left;"><code>WHO = 1, 2, 4, 18</code></td>
 <td style="text-align: left;">The Home Assistant entity providing state and commands.</td>
 <td style="text-align: left;"><code>light.hue_living_room</code></td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>State Attribute</strong> <em>(Optional)</em></td>
+<td style="text-align: left;"><code>WHO = 1, 2, 4, 18</code></td>
 <td style="text-align: left;">Entity attribute providing the value (<code>brightness</code> for <code>WHO = 1</code> dimmers; <code>current_position</code> for <code>WHO = 2</code> covers).</td>
 <td style="text-align: left;"><code>brightness</code></td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>OpenWebNet Dimension</strong> <em>(Optional)</em></td>
-<td style="text-align: left;">Dimension selector (<code>0</code> for temperature; <code>51..54</code> / <code>113</code> for energy/power; <code>0</code>, <code>1</code>, <code>22</code> for clock). <em>(Not used for WHO 1 or WHO 2)</em></td>
-<td style="text-align: left;"><code>0</code></td>
+<td style="text-align: left;"><strong>OpenWebNet Dimension</strong></td>
+<td style="text-align: left;"><code>WHO = 13, 18</code></td>
+<td style="text-align: left;">Dropdown selector (<code>22</code>, <code>0</code>, <code>1</code> for clock; <code>113</code>, <code>51..54</code> for power/energy). <em>(Fixed to <code>0</code> on <code>WHO = 4</code>; hidden on <code>1, 2</code>)</em></td>
+<td style="text-align: left;"><code>113</code></td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Cooldown</strong> <em>(Optional)</em></td>
+<td style="text-align: left;"><code>WHO = 1, 2, 4, 18</code></td>
 <td style="text-align: left;">Rate-limiting debounce window in seconds (default: <code>1.0</code> s).</td>
 <td style="text-align: left;"><code>1.0</code></td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Minimum Delta</strong> <em>(Optional)</em></td>
+<td style="text-align: left;"><code>WHO = 4, 18</code></td>
 <td style="text-align: left;">Deadband threshold; changes smaller than this value are not sent.</td>
 <td style="text-align: left;"><code>0.5</code></td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Periodic Broadcast Interval</strong> <em>(Optional)</em></td>
-<td style="text-align: left;">Interval in seconds for recurring heartbeat broadcasts.</td>
+<td style="text-align: left;">All</td>
+<td style="text-align: left;">Interval in seconds for recurring heartbeat broadcasts (<code>0</code> disables proactive clock sync on <code>WHO = 13</code>).</td>
 <td style="text-align: left;"><code>60</code></td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Respond to Bus Queries</strong></td>
+<td style="text-align: left;">All</td>
 <td style="text-align: left;">Reply to incoming <code>*#WHO*WHERE...##</code> status and dimension read requests (default: <code>true</code>).</td>
 <td style="text-align: left;"><code>true</code></td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Bidirectional</strong></td>
+<td style="text-align: left;"><code>WHO = 1, 2</code></td>
 <td style="text-align: left;">Act on incoming <code>WHO = 1</code> / <code>WHO = 2</code> bus commands and wall-switch presses (default: <code>true</code>).</td>
 <td style="text-align: left;"><code>true</code></td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Brightness Step (%)</strong></td>
+<td style="text-align: left;"><code>WHO = 1</code></td>
 <td style="text-align: left;">Relative step size (<code>1..100%</code>) applied per <code>WHO = 1</code> dimmer step-up / step-down command (default: <code>10%</code>).</td>
 <td style="text-align: left;"><code>25</code></td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Custom 'On' States</strong> <em>(Optional)</em></td>
+<td style="text-align: left;"><code>WHO = 1</code></td>
 <td style="text-align: left;">Comma-separated list of states considered ON (e.g. <code>on, playing, open</code>).</td>
 <td style="text-align: left;"><code>on, playing</code></td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Value Template</strong> <em>(Optional)</em></td>
+<td style="text-align: left;"><code>WHO = 1, 2, 4, 18</code></td>
 <td style="text-align: left;">Jinja2 template to extract or transform values before publishing.</td>
 <td style="text-align: left;"><code>{{ value \| round(1) }}</code></td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Turn-on / Turn-off / Step-up / Step-down Actions</strong> <em>(Optional)</em></td>
-<td style="text-align: left;">Visual Home Assistant action sequences overriding default entity service calls (<code>turn_on</code> / <code>turn_off</code> for <code>WHO = 1</code> &amp; <code>WHO = 2</code>; <code>step_up</code> / <code>step_down</code> for <code>WHO = 1</code>; hidden for <code>WHO = 4</code>, <code>13</code>, and <code>18</code>).</td>
+<td style="text-align: left;"><code>WHO = 1, 2</code></td>
+<td style="text-align: left;">Visual Home Assistant action sequences overriding default entity service calls (<code>turn_on</code> / <code>turn_off</code> for <code>WHO = 1</code> &amp; <code>WHO = 2</code>; <code>step_up</code> / <code>step_down</code> for <code>WHO = 1</code>).</td>
 <td style="text-align: left;"><code>media_player.volume_up</code></td>
 </tr>
 </tbody>
@@ -2430,6 +2484,72 @@
 </span><span id="__span-0-72"><a id="__codelineno-0-72" name="__codelineno-0-72" href="#__codelineno-0-72"></a><span class="w">      </span><span class="nt">periodic_send</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3600</span>
 </span><span id="__span-0-73"><a id="__codelineno-0-73" name="__codelineno-0-73" href="#__codelineno-0-73"></a><span class="w">      </span><span class="nt">respond_to_read</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </span></code></pre></div>
+<hr />
+<h2 id="openwebnet-addressing-reference-a-pl-where">🔢 OpenWebNet Addressing Reference (<code>A</code> / <code>PL</code> → <code>WHERE</code>)<a class="headerlink" href="#openwebnet-addressing-reference-a-pl-where" title="Permanent link">&para;</a></h2>
+<p>When configuring <code>WHO = 1</code> (Lighting / Switch) or <code>WHO = 2</code> (Automation / Cover) in <strong>MyHOME_Suite</strong> (<code>Object 400</code> / <code>401</code>) or on physical configurators, point-to-point addresses consist of <strong><code>A</code> (Area / Ambiente, <code>0–10</code>)</strong> and <strong><code>PL</code> (Point / Punto Luce, <code>1–15</code>)</strong> <em>(note: Expose enforces the published OpenWebNet point-to-point range <code>PL = 1–15</code>; <code>PL = 0</code> is the unconfigured default in MyHOME_Suite)</em>.</p>
+<p>On the OpenWebNet wire and in <code>myhome.yaml</code> (<code>where:</code>), leading zeros are <strong>not</strong> uniformly 2-digit or 4-digit — they depend on whether either half has two digits:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: center;"><code>A</code> (<code>0–10</code>)</th>
+<th style="text-align: center;"><code>PL</code> (<code>1–15</code>)</th>
+<th style="text-align: center;">Canonical <code>WHERE</code></th>
+<th style="text-align: center;">Example</th>
+<th style="text-align: left;">Common Mistake (Rejected)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: center;"><code>1–9</code></td>
+<td style="text-align: center;"><code>1–9</code></td>
+<td style="text-align: center;"><strong>2 digits</strong> (<code>APL</code>)</td>
+<td style="text-align: center;"><code>A = 8, PL = 8</code> → <strong><code>88</code></strong></td>
+<td style="text-align: left;"><code>0808</code> <em>(4-digit <code>01..09</code> is valid only when <code>PL = 10–15</code>)</em></td>
+</tr>
+<tr>
+<td style="text-align: center;"><code>0</code></td>
+<td style="text-align: center;"><code>1–9</code></td>
+<td style="text-align: center;"><strong>2 digits</strong> (<code>0PL</code>)</td>
+<td style="text-align: center;"><code>A = 0, PL = 8</code> → <strong><code>08</code></strong></td>
+<td style="text-align: left;"><code>8</code> / <code>008</code> <em>(area <code>8</code> / 3-digit; note: legacy <code>0008</code> is auto-normalized to <code>08</code>)</em></td>
+</tr>
+<tr>
+<td style="text-align: center;"><code>1–9</code></td>
+<td style="text-align: center;"><code>10–15</code></td>
+<td style="text-align: center;"><strong>4 digits</strong> (<code>0APL</code>)</td>
+<td style="text-align: center;"><code>A = 8, PL = 12</code> → <strong><code>0812</code></strong></td>
+<td style="text-align: left;"><code>812</code> <em>(3-digit strings are invalid)</em></td>
+</tr>
+<tr>
+<td style="text-align: center;"><code>0</code></td>
+<td style="text-align: center;"><code>10–15</code></td>
+<td style="text-align: center;"><strong>4 digits</strong> (<code>00PL</code>)</td>
+<td style="text-align: center;"><code>A = 0, PL = 12</code> → <strong><code>0012</code></strong></td>
+<td style="text-align: left;"><code>012</code> / <code>12</code></td>
+</tr>
+<tr>
+<td style="text-align: center;"><code>10</code></td>
+<td style="text-align: center;"><code>1–9</code></td>
+<td style="text-align: center;"><strong>4 digits</strong> (<code>100PL</code>)</td>
+<td style="text-align: center;"><code>A = 10, PL = 8</code> → <strong><code>1008</code></strong></td>
+<td style="text-align: left;"><code>108</code></td>
+</tr>
+<tr>
+<td style="text-align: center;"><code>10</code></td>
+<td style="text-align: center;"><code>10–15</code></td>
+<td style="text-align: center;"><strong>4 digits</strong> (<code>10PL</code>)</td>
+<td style="text-align: center;"><code>A = 10, PL = 12</code> → <strong><code>1012</code></strong></td>
+<td style="text-align: left;"><code>001012</code></td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Optional local-bus routing (<code>F422</code> interface)</strong>: Append <code>#4#01</code>..<code>#4#09</code> or <code>#4#11</code>..<code>#4#15</code> (for example <code>88#4#01</code> or <code>0812#4#01</code>), or pick the interface in the UI <strong>Local-bus interface</strong> dropdown.</li>
+<li><strong>Non-<code>A/PL</code> subsystems</strong>:</li>
+<li><strong><code>WHO = 4</code> (Temperature Probe)</strong>: Zone master probe <code>1–99</code> (required on <code>F461</code> / <code>bt_termo</code>), external probe <code>100–900</code>, or individual probe <code>PZZ</code> (<code>101–899</code>).</li>
+<li><strong><code>WHO = 18</code> (Energy / Power Meter)</strong>: Meter address <code>5N</code> or <code>7N#0</code> with <code>N = 1..255</code> (i.e. <code>51..59</code>, <code>510..599</code>, <code>5100..5255</code>, or <code>71#0..79#0</code>, <code>710#0..799#0</code>, <code>7100#0..7255#0</code>).</li>
+<li><strong><code>WHO = 13</code> (Bus Clock)</strong>: Bus-wide broadcast; no <code>WHERE</code> address is used.</li>
+</ul>
 <hr />
 <h2 id="virtual-dimmers-myhome_suite-wall-control-modes-who-1-vs-cen">💡 Virtual Dimmers &amp; <code>MyHOME_Suite</code> Wall Control Modes (<code>WHO = 1</code> vs <code>CEN+</code>)<a class="headerlink" href="#virtual-dimmers-myhome_suite-wall-control-modes-who-1-vs-cen" title="Permanent link">&para;</a></h2>
 <p>When using a physical 2-wire SCS wall control (such as BTicino <code>H4652/2</code>, <code>L4652/2</code>, <code>AM5832/2</code>, <code>K4652M2</code>, or Legrand <code>067552</code>) to dim a Home Assistant light on an <strong>unpopulated</strong> SCS address (an address with no physical BTicino actuator wired on the 2-wire bus):</p>
@@ -2597,7 +2717,8 @@ On <code>H4652/2</code> / <code>L4652/2</code> / <code>067552</code> / <code>K46
 <ul>
 <li><strong>Check Active Bindings</strong>: Open <strong>Settings → Devices &amp; Services → MyHOME → Download Diagnostics</strong>. The JSON file contains an <code>"expose"</code> section detailing all active bindings, throttles, and last-sent timestamps.</li>
 <li><strong>Unsupported / Unverified Gateway Warning</strong>: The UI Config Subentry flow hides <code>WHO = 4</code> and <code>WHO = 18</code> on gateways whose firmware cannot inject them onto the SCS bus, and rejects 3-digit <code>WHO = 4</code> probe addresses (<code>100..900</code>) on <code>#0</code>-only gateways (<code>F461</code>). If a legacy YAML or pre-existing binding targets an unsupported gateway or address, a single warning is logged at startup (<em>"Expose WHO=... is disabled: gateway ... Nothing is sent for this binding"</em>).</li>
-<li><strong>Duplicate Address Error (<code>invalid_expose</code>)</strong>: Each <code>(who, where, dimension)</code> triplet must be unique per gateway.</li>
+<li><strong>Field-Level <code>WHERE</code> Validation Hints</strong>: Both the UI raw <code>WHERE</code> override field and <code>myhome.yaml</code> report specific corrective hints for common <code>A</code> / <code>PL</code> mistakes (e.g. <code>0808</code> suggests <code>88</code>, <code>812</code> suggests <code>0812</code>, <code>108</code> suggests <code>1008</code>, and <code>PL = 0</code> explains that point addresses start at <code>1</code>).</li>
+<li><strong>Duplicate Address Error (<code>already_configured</code>)</strong>: Each <code>(who, where, dimension)</code> triplet must be unique per gateway.</li>
 </ul>
 
 

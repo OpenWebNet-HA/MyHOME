@@ -25,7 +25,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
     
     
       
@@ -1567,10 +1567,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#central-heating-units-0-01-are-broadcast-event-driven" class="md-nav__link">
+  <a href="#central-heating-units-0-0n-are-broadcast-event-driven" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🌡️ Central heating units (#0 / #0#1) are broadcast event-driven
+        🌡️ Central heating units (#0 / #0#N) are broadcast event-driven
       
     </span>
   </a>
@@ -1593,6 +1593,28 @@
     <span class="md-ellipsis">
       
         🪟 Timed covers: clock starts at the write, echoes are not keypad presses
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#a-light-that-does-not-report-after-a-command-is-read-back-once" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        💡 A light that does not report after a command is read back once
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#bidirectional-who-14-actuator-lock-tracking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🔒 Bidirectional WHO = 14 actuator lock tracking
       
     </span>
   </a>
@@ -2143,10 +2165,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#central-heating-units-0-01-are-broadcast-event-driven" class="md-nav__link">
+  <a href="#central-heating-units-0-0n-are-broadcast-event-driven" class="md-nav__link">
     <span class="md-ellipsis">
       
-        🌡️ Central heating units (#0 / #0#1) are broadcast event-driven
+        🌡️ Central heating units (#0 / #0#N) are broadcast event-driven
       
     </span>
   </a>
@@ -2169,6 +2191,28 @@
     <span class="md-ellipsis">
       
         🪟 Timed covers: clock starts at the write, echoes are not keypad presses
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#a-light-that-does-not-report-after-a-command-is-read-back-once" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        💡 A light that does not report after a command is read back once
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#bidirectional-who-14-actuator-lock-tracking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🔒 Bidirectional WHO = 14 actuator lock tracking
       
     </span>
   </a>
@@ -2255,7 +2299,7 @@
 <tr>
 <td style="text-align: left;"><code>*#4*0##</code></td>
 <td style="text-align: left;">Thermoregulation</td>
-<td style="text-align: left;">All gateways except F450, F454, F459, F460, F461, H4684, MH200, MH201, MH202 and MyHomeServer1, whose firmware drops it (firmware oracle; the MH201 from a physical sweep trace, <code>tests/fixtures/traces/issue_466</code>); F454, MH202, F460, F461 and MyHomeServer1 poll <code>*#4*&lt;WHERE&gt;##</code> per zone instead (#629, #649, #714, #866), and the zones of the remaining SCS-only models (F450, F459, H4684, MH200, MH201) ask <code>*#4*&lt;WHERE&gt;*0##</code></td>
+<td style="text-align: left;">All gateways except F450, F454, F455, F459, F460, F461, H4684, MH200, MH201, MH202 and MyHomeServer1, whose firmware drops it (firmware oracle; the MH201 from a physical sweep trace, <code>tests/fixtures/traces/issue_466</code>; a physical F455 1.0.76 acknowledged it after about 9 s with no frame). In its place the sweep asks every actuator's status, <code>*#4*0#0*20##</code>, on F450, F454, F455, F459, F460, F461 and MyHomeServer1, and the central unit's status, <code>*#4*#0##</code>, on F461 and MyHomeServer1. F454, MH202, F460, F461 and MyHomeServer1 poll <code>*#4*&lt;WHERE&gt;##</code> per zone (#629, #649, #714, #866), and the zones of the remaining SCS-only models (F450, F455, F459, H4684, MH200, MH201) ask <code>*#4*&lt;WHERE&gt;*0##</code></td>
 </tr>
 <tr>
 <td style="text-align: left;"><code>*#5*0##</code></td>
@@ -2313,7 +2357,7 @@
 <td style="text-align: left;"><strong>Thermoregulation (WHO 4)</strong></td>
 <td style="text-align: center;">✅ Yes (<code>*#4*0##</code>), per gateway</td>
 <td style="text-align: center;">Optional (<code>cooling</code>, <code>fan</code>)</td>
-<td style="text-align: left;">Standard zones (<code>1</code>–<code>99</code>) and central units (<code>#0</code>, <code>#0#1</code>). Area broadcasts (<code>00</code>) and probe broadcasts do not create climate entities. On F450, F454, F459, F460, F461, H4684, MH200, MH201, MH202 and MyHomeServer1 the firmware drops <code>*#4*0##</code> (see the table above), so with no registry entry and no <code>myhome.yaml</code> a zone is discovered from its first bus frame rather than by the startup sweep.</td>
+<td style="text-align: left;">Standard zones (<code>1</code>–<code>99</code>) and central units (<code>#0</code>, <code>#0#1</code>). Area broadcasts (<code>00</code>) and probe broadcasts do not create climate entities. On F450, F454, F455, F459, F460, F461, H4684, MH200, MH201, MH202 and MyHomeServer1 the firmware drops <code>*#4*0##</code> (see the table above). Where the sweep asks every actuator instead (F450, F454, F455, F459, F460, F461, MyHomeServer1), a zone with no registry entry and no <code>myhome.yaml</code> is found at start: one with a fan coil from its actuator's answer, one with a plain valve by a read of its temperature. On H4684, MH200, MH201 and MH202 such a zone is still discovered from its first bus frame.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Burglar Alarm (WHO 5)</strong></td>
@@ -2377,14 +2421,42 @@ Instead, the integration debounces across a bidirectional window:</p>
 <li>
 <p><strong>Group</strong> <code>#G</code>: <code>*#1*#G##</code> (the group's own status).</p>
 </li>
-<li><strong>Area</strong> <code>A</code>: <code>*#1*A##</code>, using the frame's own <code>WHERE</code> (<code>"00"</code>, <code>"1"</code>.."9", <code>"100"</code>)</li>
-<li>never a value re-derived from an integer, which would risk emitting the banned
-  <code>*#1*0##</code>.</li>
-<li><strong>General</strong>: one <code>*#1*A##</code> per area that has at least one known WHO=1 actuator
-  (<code>light</code> or <code>switch</code> in the entity registry), never <code>*#1*0##</code>.</li>
+<li><strong>Area</strong> <code>A</code> of the gateway's own bus: <code>*#1*A##</code>, using the frame's own <code>WHERE</code>
+  (<code>"00"</code>, <code>"1"</code>.."9", <code>"100"</code>) - never a value re-derived from an integer, which
+  would risk emitting the banned <code>*#1*0##</code>.</li>
+<li><strong>General</strong> of the gateway's own bus: one <code>*#1*A##</code> per area of that bus that has
+  at least one known WHO=1 actuator (<code>light</code> or <code>switch</code> in the entity registry),
+  never <code>*#1*0##</code>.</li>
+<li><strong>Behind an F422 interface</strong> (<code>*1*x*A#4#&lt;Int&gt;##</code>, <code>*1*x*0#4#&lt;Int&gt;##</code>): the same
+  <code>A</code> / <code>PL</code> exists on every bus, so an area behind interface <code>Int</code> is a scope of
+  its own (<code>A#4#&lt;Int&gt;</code>). Its echoes do not count for the gateway's own area <code>A</code>
+  and the other way round, and it is read light by light with
+  <code>*#1*&lt;APL&gt;#4#&lt;Int&gt;##</code> for each known light of that scope (no area request is
+  sent behind an interface). A scope behind an interface with no known light
+  sends nothing. <code>*1*x*0#4#&lt;Int&gt;##</code> sweeps the scopes of that interface only.</li>
+<li><strong>General of the whole system</strong> (<code>*1*x*0##</code>): selects every known scope, and each
+  scope is read its own way: an area of the gateway's own bus with <code>*#1*A##</code>, an
+  area behind an interface with one point request per known light.</li>
 </ul>
 </li>
 </ol>
+<p>A status request is answered with <code>*1*&lt;status&gt;*&lt;where&gt;##</code> frames, on the command and on
+the event session, and for a scope that is the frame of a scope command: a physical F461
+(2.0.11) and F455 (1.0.76) answered <code>*#1*00##</code> with <code>*1*0*00##</code> frames between the point
+statuses. Two rules keep an answer from starting the next sweep:</p>
+<ul>
+<li>While the integration's own request for a scope is queued or being answered, and for
+  0.5 s after the gateway closes it (<code>RESYNC_REPLY_GRACE_S</code>), a frame for that scope that
+  states the ON/OFF of the command being read back is its answer. A frame that states
+  the other (the scope switched back within a second) is a new command and is swept.</li>
+<li>A scope is swept at most 3 times in 30 s for the same commanded state
+  (<code>RESYNC_STORM_SWEEPS</code>, <code>RESYNC_STORM_WINDOW_S</code>). After that it gets one more sweep
+  once it has been quiet for 30 s, so the last command is still read back, and nothing
+  else until it has been quiet for 30 s again; a warning names the scope. This is what
+  ends the exchange when another client on the same bus (a second Home Assistant, for
+  example) sweeps the scope and its answer is seen here. Dim steps (<code>WHAT</code> 30 / 31) are
+  never held.</li>
+</ul>
 <p>Disable this with <strong>Sweep group/area/general light addresses for status</strong> in the
 Options Flow if your gateway lags on repeated status requests.</p>
 <hr />
@@ -2430,6 +2502,7 @@ Options Flow if your gateway lags on repeated status requests.</p>
 <hr />
 <h2 id="authentication-failures-use-home-assistants-reauth">🔐 Authentication failures use Home Assistant's reauth<a class="headerlink" href="#authentication-failures-use-home-assistants-reauth" title="Permanent link">&para;</a></h2>
 <p>If the gateway rejects the OpenWebNet password during setup, the integration raises <code>ConfigEntryAuthFailed</code>. Home Assistant then shows the entry as <strong>Reauthentication required</strong> with a repair prompt, instead of <em>Failed to set up</em>, and opens the reauth flow itself. Any other connection-test failure raises <code>ConfigEntryNotReady</code> so Home Assistant retries with backoff.</p>
+<p>If the gateway refuses the password while the entry is loaded (the gateway's password was changed, or it refuses the stored one on a reconnect of the event or command session), both sessions stop, every entity of the gateway becomes unavailable, no command is sent, and the password is not presented again: the integration opens the reauth flow once. Entering the password there reloads the entry. A connection that is only refused or lost (no password involved) does not open it; the normal reconnect goes on. An SSDP announcement of the gateway does not reload an entry that waits for its password: the announced data is stored and applied by the reload after the password is entered.</p>
 <hr />
 <h2 id="zones-that-have-not-reported-ask-once-30-s-after-the-sweep">🌡️ Zones that have not reported ask once, 30 s after the sweep<a class="headerlink" href="#zones-that-have-not-reported-ask-once-30-s-after-the-sweep" title="Permanent link">&para;</a></h2>
 <p>What a zone is asked when it is added depends on the gateway: the zone status request <code>*#4*&lt;WHERE&gt;##</code> (F454, F460, F461, MH202, MyHomeServer1 and any model that is in no table), its temperature and its knob (F450, F459, H4684, MH200, MH201), its knob only (F452, F453, F453AV, F458, MH200N), or nothing (F455). Where none of that brings the setpoint, nothing else asked for it: a standalone thermostat on an F455 could stay <code>unknown</code> for hours (#466), and the zones of an MH201 had no <code>temperature</code> after every restart until a thermostat published a change (#932). Whether a gateway answers <code>*#4*0##</code> or <code>*#4*&lt;WHERE&gt;##</code> with the state of a zone is known for the models in the request tables and unknown for any other, so the delayed poll has no model list.</p>
@@ -2439,8 +2512,8 @@ Options Flow if your gateway lags on repeated status requests.</p>
 <li>It goes by the result: a zone that got everything from the sweep, from its status request or from its thermostat sends nothing. A zone that answered neither of its last two status requests (<code>unresponsive_zone</code> repair) is left alone until it is probed again.</li>
 <li>The zones are asked one after another, and each read waits for the previous answer and then for the bus to be quiet (no frame for 0.75 s, the pacing of the startup polls, #886). A request a zone makes on its own while the poll runs (dimension 19 and the fan speed, once an actuator reported a fan coil) is sent first, with the same quiet time, and the poll's next read follows it. A refused or unanswered read ends the poll, so a zone without a probe (an actuator-only channel) costs one read. Unanswered means a NACK, no reply at all within 60 s, or an ACK that came without a frame while the zone itself sent nothing within one more second: an ACK alone is not an answer (a physical F455 ACKs <code>*#4*0##</code> after about 9 s and sends nothing). A read that was dropped because it collected only another zone's frame (the guard of #886) says nothing about its own zone: it is sent once more after the quiet time, unless the zone's own answer arrived on the event session in the meantime (for the read of an actuator, that actuator's own report; an answer of dimension 19 does not stand in for it). On a physical F455 plant the state of an actuator came twice, 0.09 to 0.27 s apart, after one read, and the next read collected the second copy (<code>tests/fixtures/traces/issue_932</code>); the quiet time lets such a frame pass before the next read opens. On an F455 that read is refused only after about 9 s and holds a command session for those 9 s, once per zone added or reloaded (<code>F455_direct_requests_zone3_2026-11-06.jsonl</code>).</li>
 <li>What is asked when a zone is added does not change. The knob read is sent then (#466 / #902). The poll does not repeat a knob read that was answered; one that brought nothing is repeated once, as the last read of a zone that is still missing its temperature, setpoint or mode, so that its refusal cannot hold back the setpoint reads. The poll does not ask for a knob that a zone left out of its answer to <code>*#4*&lt;WHERE&gt;##</code>. Only the F455 keeps the knob read for the poll (<code>KNOB_READ_IN_SILENT_ZONE_POLL</code>): its zones ask nothing when they are added (<code>*#4*0##</code> returns nothing and <code>*#4*&lt;WHERE&gt;##</code> is ACKed only after about 9 s; sixteen of them timing out one after another was #674).</li>
-<li><code>*#4*&lt;zone&gt;#1*20##</code> is not asked on F453, F453AV, H4684, MH200, MH200N and MH202, which drop the actuator request (<code>ACTUATOR_REQUEST_REFUSED</code>). A zone that misses nothing but its actuators was already asked for them when it was added (<code>*#4*&lt;WHERE&gt;*20##</code>), so it asks for actuator 1 here only on an F455, where that request is not sent; thermo actuator switches (<code>*#4*&lt;WHERE&gt;#&lt;N&gt;*20##</code>) still ask, and the F455 answers them. After a restart the poll asks for every actuator the zone had reported before it (the numbers are kept, not the states) instead of actuator 1 alone.</li>
-<li>On an F455 the last read is <code>*#4*&lt;zone&gt;*19##</code>. The F455 refuses every form that would list a zone's actuators (<code>*#4*&lt;zone&gt;*20##</code> and <code>*#4*#0*20##</code> at once, <code>*#4*&lt;zone&gt;#0*20##</code> and the read of an absent actuator after about 9 s), and dimension 19 carries the state of both sides of the zone in one frame: <code>hvac_action</code>, the fan coil's side and the running fan speed do not depend on which actuators are known. It is sent after the actuator reads because the most recent report drives <code>hvac_action</code>, and it is not sent when the zone already asked for it (an actuator that reported a fan coil) or has its answer and no actuator took the lead after it. The zone's own request can leave before the read of a later actuator; when that actuator's first report then took the lead, the poll still ends with <code>*#4*&lt;zone&gt;*19##</code>.</li>
+<li><code>*#4*&lt;zone&gt;#1*20##</code> is not asked on H4684 and MH200, whose firmware drops the actuator form of the request too (<code>ACTUATOR_FORM_REQUEST_REFUSED</code>). F453, F453AV, MH200N and MH202 drop only the zone form <code>*#4*&lt;zone&gt;*20##</code> (<code>ACTUATOR_REQUEST_REFUSED</code>) and put the actuator form on the bus (own-firmware-oracle <code>thermo-actuator</code>: <code>*#4*1#1*20##</code> forwarded, acknowledged by the MH202; emulated firmware, no physical capture yet), so their zones are asked. A zone that misses nothing but its actuators was already asked for them when it was added (<code>*#4*&lt;WHERE&gt;*20##</code>), so it asks for actuator 1 here only on an F455, where that request is not sent; thermo actuator switches (<code>*#4*&lt;WHERE&gt;#&lt;N&gt;*20##</code>) still ask, and the F455 answers them. After a restart the poll asks for every actuator the zone had reported before it (the numbers are kept, not the states) instead of actuator 1 alone.</li>
+<li>On an F455 the last read is <code>*#4*&lt;zone&gt;*19##</code>. The F455 refuses the forms that would list one zone's actuators (<code>*#4*&lt;zone&gt;*20##</code> and <code>*#4*#0*20##</code> at once, <code>*#4*&lt;zone&gt;#0*20##</code> and the read of an absent actuator after about 9 s) and answers the published request for all actuators, <code>*#4*0#0*20##</code> (live F455 1.0.76, 2026-11-18: the five actuators of a three-zone plant within 0.4 s, ACK after about 1.4 s). That request is sent once when the zones are added and after a reconnect; a zone whose actuators it reported is not asked for <code>*#4*&lt;zone&gt;#&lt;N&gt;*20##</code> here. Dimension 19 carries the state of both sides of the zone in one frame: <code>hvac_action</code>, the fan coil's side and the running fan speed do not depend on which actuators are known. It is sent after the actuator reads because the most recent report drives <code>hvac_action</code>, and it is not sent when the zone already asked for it (an actuator that reported a fan coil) or has its answer and no actuator took the lead after it. The zone's own request can leave before the read of a later actuator; when that actuator's first report then took the lead, the poll still ends with <code>*#4*&lt;zone&gt;*19##</code>.</li>
 <li>After dimension 19 reported an active side, an "off" of an actuator that was already known to be off changes nothing (every gateway): the actuator that runs is one that has not reported. On the physical F455 plant another client read actuator 1 of zone 4 through the F461, 23 s after the zone had answered <code>*#4*4*19*8*0##</code>, and the answer <code>*#4*4#1*20*0##</code> set the zone to <code>idle</code> for 3 s while the fan coil on actuator 2 ran (2026-11-17, <code>tests/fixtures/traces/issue_932</code>). Everything else changes the zone as before: the first report of an actuator, an actuator that starts, the "off" of one that was on, and the next dimension 19.</li>
 <li>On a shared bus the gateway that serves WHO 4 decides the knob and the actuator read, and a passive standby or secondary asks nothing.</li>
 </ul>
@@ -2452,45 +2525,47 @@ Options Flow if your gateway lags on repeated status requests.</p>
 </ul>
 <hr />
 <h2 id="temperature-probes-where-100-are-push-driven">🌡️ Temperature probes (<code>WHERE ≥ 100</code>) are push-driven<a class="headerlink" href="#temperature-probes-where-100-are-push-driven" title="Permanent link">&para;</a></h2>
-<p>Slave / external probes use the <code>ZPP</code> address form (zone <code>Z</code>, probe <code>PP</code>, e.g. <code>101</code>). Devices such as a <strong>3455</strong> behind an <strong>L4577</strong> radio interface push <code>*#4*ZPP*0*T*3##</code> unsolicited every few seconds and <strong>NACK</strong> the explicit <code>*#4*ZPP*15##</code> poll.</p>
+<p>A probe address is a bare number from <code>100</code>: a slave probe <code>PZZ</code> (probe <code>P</code> = 1..8 of zone <code>ZZ</code> = 01..99, e.g. <code>303</code>) or an external probe <code>N00</code> (e.g. <code>100</code>). Probes report by themselves: a <strong>3455</strong> behind an <strong>L4577</strong> radio interface on an F454 sent <code>*#4*100*15*1*0253*0001##</code> every few seconds and <strong>NACKed</strong> the explicit <code>*#4*100*15##</code> poll (#308); slave probe <code>303</code> on a physical F455 / F461 plant sends <code>*#4*303*0*0232##</code> every 10 minutes.</p>
 <p>Behaviour:</p>
 <ul>
 <li>A probe entity starts <strong>receive-only</strong>: no request is sent when it is added.</li>
-<li>The periodic update (every 5 minutes) only sends a poll if <strong>no reading arrived within the last 15 minutes</strong>, so a probe that goes silent (battery, radio) still recovers. Not every probe reports every few seconds: one on a physical F455 / F461 plant reported every 10 minutes, and with a 5-minute window every second update sent a read that the F455 NACKed only after about 9 s.</li>
-<li>A read the gateway <strong>refused</strong> (a NACK, or no reply before the command timeout, while the gateway was connected and the probe sent nothing during the read) is <strong>not sent again</strong> until the entry is reloaded; the probe's own reports are still shown. A read that was not answered at all because the command session could not be opened or lost its connection is not a refusal, and neither is one that collected only another zone's frames (the guard of #886, which covers the read of a probe too).</li>
-<li>Zone sensors (<code>WHERE &lt; 100</code>) keep polling <code>*#4*Z*0##</code> as before.</li>
+<li>The periodic update (every 5 minutes) only sends a poll if <strong>no reading arrived within the last 15 minutes</strong>, so a probe that goes silent (battery, radio) still recovers. Not every probe reports every few seconds: the one on the F455 / F461 plant reported every 10 minutes, and with a 5-minute window every second update sent a read.</li>
+<li>The read of a <strong>slave probe</strong> is the published <code>*#4*PZZ*0##</code> (WHO 4 document, "Slave probe temperature request"). On that plant the F455 1.0.76 and the F461 2.0.11 both answer <code>*#4*303*0##</code> with <code>*#4*303*0*0233##</code> in about 0.1 s, and both NACK <code>*#4*303*15##</code> with no frame, the F455 only after about 9 s and the F461 after about 2 s. The read of an <strong>external probe</strong> (<code>N00</code>) stays <code>*#4*N00*15##</code>: its reports are dimension 15 frames and no capture shows it answering another read.</li>
+<li>A read the gateway <strong>refused</strong> (a NACK, or no reply before the command timeout, while the gateway was connected and the probe sent nothing during the read) is <strong>not sent again</strong> until the entry is reloaded, the gateway that served the read reconnects or comes back from an outage, or another gateway serves the read (a delegated secondary, the warm standby, the primary when it is back); it is then asked once more. The probe's own reports are still shown. A read that was not answered at all because the command session could not be opened or lost its connection is not a refusal, and neither is one that collected only another zone's frames (the guard of #886, which covers the read of a probe too).</li>
+<li>Automatic climate zone companion temperature and humidity sensors (<code>WHERE = 1..99</code>) are strictly passive (<code>should_poll = False</code>) and add zero bus polls; only explicit legacy <code>myhome.yaml</code> <code>sensor:</code> zone entries (<code>WHERE &lt; 100</code>) keep polling <code>*#4*Z*0##</code> as before (and behind an interface they are not asked where the gateway does not route WHO 4).</li>
 </ul>
 <p><em>(#308)</em></p>
+<p>A dimension 15 frame whose sensor field and temperature are all zeros is <strong>not a reading</strong>: an MH201 3.3.6 delivered <code>*#4*105*15*0*0000*0000##</code> for a probe that reports 29.6 °C on dimension 0 (<code>*#4*105*0*0296##</code>). Such a frame creates no sensor, is not shown as 0.0 °C and does not count as a report of the probe. A dimension 15 report of sensor 1 (<code>*#4*100*15*1*0253*0001##</code>) is shown as before.</p>
 <hr />
-<h2 id="central-heating-units-0-01-are-broadcast-event-driven">🌡️ Central heating units (<code>#0</code> / <code>#0#1</code>) are broadcast event-driven<a class="headerlink" href="#central-heating-units-0-01-are-broadcast-event-driven" title="Permanent link">&para;</a></h2>
-<p>Central thermoregulation units (such as the BTicino <strong>3550</strong> at address <code>#0</code> and the <strong>4695</strong> 4-zone unit at <code>#0#1</code>) manage subordinate zones and set plant-wide seasonal modes (heating, cooling, off, auto).</p>
+<h2 id="central-heating-units-0-0n-are-broadcast-event-driven">🌡️ Central heating units (<code>#0</code> / <code>#0#N</code>) are broadcast event-driven<a class="headerlink" href="#central-heating-units-0-0n-are-broadcast-event-driven" title="Permanent link">&para;</a></h2>
+<p>Central thermoregulation units (such as the BTicino <strong>3550</strong> at address <code>#0</code> and the <strong>4695</strong> 4-zone unit at <code>#0#N</code>, <code>1..96</code>) manage subordinate zones and set plant-wide seasonal modes (heating, cooling, off, auto).</p>
 <p>Central units handle status updates differently from subordinate zones (<code>1..99</code>):</p>
 <ul>
 <li><strong>Dimension 14 queries rejected</strong>: Gateways reject Dimension 14 status queries (<code>*#4*#0*14##</code>) with fast NACK, as Dimension 14 status queries are only defined for zone thermostats <code>1..99</code> (#629).</li>
-<li><strong>Plain status requests supported</strong>: Authentic physical gateway traces (#629) confirm that 99-zone central units (<code>#0</code>) reliably answer the plain status request <code>*#4*#0##</code> within ~0.17 s, returning their operating mode (<code>*4*202*#0##</code> for conditional OFF) and status flags (<code>*4*21*#0##</code>, <code>*4*22*#0##</code>, <code>*4*24*#0##</code>).</li>
-<li><strong>Startup Polling</strong>: On startup and poll intervals, the integration queries central unit <code>#0</code> with <code>*#4*#0##</code>. Answering populates the seasonal mode and coordinates subordinate zones. This poll is informational: an unanswered <code>*#4*#0##</code> never raises an <code>unresponsive_zone</code> repair (only an F454 has been captured so far). 4-zone central units (<code>#0#1</code>) remain exempt to prevent gateway timeouts.</li>
+<li><strong>Plain status requests supported</strong>: Authentic physical gateway traces confirm that 99-zone central units (<code>#0</code>, #629) answer <code>*#4*#0##</code> within ~0.17 s and 4-zone central units (<code>#0#N</code>, #994) answer <code>*#4*#0#N##</code> within ~0.14 s, returning their operating mode and status flags (<code>*4*21*...</code>, <code>*4*31*...</code>, etc.).</li>
+<li><strong>Startup Polling</strong>: On startup, and when an update of the entity is asked for (<code>homeassistant.update_entity</code>), the integration queries <code>#0</code> with <code>*#4*#0##</code> and <code>#0#N</code> with <code>*#4*#0#N##</code> (plus master zone temperature <code>*#4*N*0##</code> on gateways that drop <code>*#4*0##</code> when unified <code>#0#N</code> has no live temperature yet); Home Assistant does not poll central units on an interval. This poll is informational: an unanswered central-unit poll never raises an <code>unresponsive_zone</code> repair.</li>
 </ul>
 <p>Central units coordinate with the plant as follows:</p>
 <ol>
-<li><strong>Startup Hydration &amp; Polling</strong>: On restart, the central unit entity is restored from its previous state (<code>async_restore_last_state()</code>) and sends canonical status request <code>*#4*#0##</code>, updating its mode and subordinate zones upon answer.</li>
+<li><strong>Startup Hydration &amp; Polling</strong>: On restart, the central unit entity is restored from its previous state (<code>async_restore_last_state()</code>) and sends its canonical status request (<code>*#4*#0##</code> for <code>#0</code>, <code>*#4*#0#N##</code> for <code>#0#N</code>), updating its mode (and, for <code>#0</code>, subordinate zones) upon answer.</li>
 <li>
 <p><strong>Outbound Mode Commands</strong>: When commanded from Home Assistant, the central unit receives canonical seasonal mode commands (<code>OWNHeatingCommand.set_central_mode</code>):</p>
 <ul>
-<li><code>*4*303*#0##</code> (Central unit OFF command)</li>
-<li><code>*4*1*#0##</code> (Heating season command)</li>
-<li><code>*4*0*#0##</code> (Conditioning season command)</li>
-<li><code>*4*3100*#0##</code> (Auto / restore scheduled programming command)</li>
-<li><code>*#4*#0*#14*&lt;temp&gt;*&lt;mode&gt;##</code> (Target temperature setpoint command)</li>
+<li><code>*4*303*#0##</code> / <code>*4*303*#0#N##</code> (Central unit OFF command)</li>
+<li><code>*4*1*#0##</code> / <code>*4*1*#0#N##</code> (Heating season command)</li>
+<li><code>*4*0*#0##</code> / <code>*4*0*#0#N##</code> (Conditioning season command)</li>
+<li><code>*4*3100*#0##</code> / <code>*4*3100*#0#N##</code> (Auto / restore scheduled programming command)</li>
+<li><code>*#4*#0*#14*&lt;temp&gt;*3##</code> / <code>*#4*#0#N*#14*&lt;temp&gt;*3##</code> (Target temperature setpoint command, <code>5.0..40.0 °C</code> on <code>#0</code> and <code>5.0..35.0 °C</code> on <code>#0#N</code>)</li>
 </ul>
-<p><em>(Note: <code>WHAT = 103</code> and <code>102</code> — Heating OFF and Antifreeze protection — are inbound status reports emitted by thermostats/central units on the bus, never outbound <code>#0</code> mode-switch commands.)</em>
+<p><em>(Note: Home Assistant's mode switch on <code>#0</code> / <code>#0#N</code> does not send <code>WHAT = 103</code> or <code>102</code> — Heating OFF and Antifreeze protection — it sends the frames listed above; they reach it as status reports from thermostats/central units on the bus.)</em>
 3. <strong>Inbound Operating Mode &amp; Status Broadcasts</strong>: The physical central unit broadcasts events across the bus whenever its state changes:</p>
 <ul>
-<li>Operating mode status: <code>*4*110*#0##</code> (Manual Heating status), <code>*4*210*#0##</code> (Manual Cooling / Conditioning status), <code>*4*311*#0##</code> (Programmed/automatic generic status; mapped to <code>HVACMode.AUTO</code> in Home Assistant), <code>*4*303*#0##</code> / <code>*4*103*#0##</code> (OFF status), <code>*4*202*#0##</code> (Conditional OFF status), <code>*4*102*#0##</code> (Antifreeze status).</li>
+<li>Operating mode status: <code>*4*110*#0##</code> (Manual Heating status), <code>*4*210*#0##</code> (Manual Cooling / Conditioning status), <code>*4*311*#0##</code> (Programmed/automatic generic status; mapped to <code>HVACMode.AUTO</code> in Home Assistant), <code>*4*303*#0##</code> / <code>*4*103*#0##</code> (OFF status), <code>*4*202*#0##</code> (thermal protection status, conditioning season), <code>*4*102*#0##</code> (antifreeze status, heating season). Thermal protection and antifreeze are not OFF: the central unit keeps its season and holds the protection setpoint, so the entity shows <code>cool</code> / <code>heat</code> with the attribute <code>central_operation</code> (<code>thermal_protection</code> / <code>antifreeze</code>). A <code>3550</code> answers a season frame with that season's protection and stays there, or answers nothing when it is already in that season, in protection or off; that is why <code>heat</code> / <code>cool</code> on <code>#0</code> follow the season frame with <code>*4*3100*#0##</code> when the central unit has reported protection, off or the other season (live F461 + F455, 2026-11-18).</li>
 <li>Target temperature setpoints: <code>*4*110#&lt;temp&gt;*#0##</code> (Heating setpoint), <code>*4*210#&lt;temp&gt;*#0##</code> (Cooling setpoint).</li>
 <li>Remote control / local adjustments: <code>*4*20*#0##</code>, <code>*4*21*#0##</code>, <code>*4*40*#0##</code>.</li>
 <li>Programs &amp; scenarios: <code>*4*1101*#0##</code> .. <code>*4*1103*#0##</code> (Weekly heating programs 1..3), <code>*4*1201*#0##</code> .. <code>*4*1216*#0##</code> (Scenarios 1..16).</li>
-<li><strong>Canonical Status Polling</strong>: Central unit <code>#0</code> is queried with plain status request <code>*#4*#0##</code>, avoiding the rejected Dimension 14 query (<code>*#4*#0*14##</code>) while ensuring the central unit's initial state is populated at startup.</li>
-<li><strong>Subordinate Coordination</strong>: When the central unit changes seasonal mode (either via command or inbound broadcast event), it dispatches an internal event (<code>myhome_central_mode_&lt;mac&gt;</code>) so non-standalone subordinate zones synchronize their operating mode immediately.</li>
+<li><strong>Canonical Status Polling</strong>: Central units are queried with plain status requests (<code>*#4*#0##</code> for <code>#0</code>, <code>*#4*#0#N##</code> for <code>#0#N</code>), avoiding the rejected Dimension 14 query (<code>*#4*#0*14##</code>) while ensuring initial state is populated at startup.</li>
+<li><strong>Subordinate Coordination (<code>#0</code> only)</strong>: When a 99-zone central unit (<code>#0</code>) changes seasonal mode (either via command or inbound broadcast event), it dispatches an internal event (<code>myhome_central_mode_&lt;mac&gt;</code>) so non-standalone subordinate zones synchronize their operating mode immediately. A 4-zone central unit (<code>#0#N</code>) never dispatches <code>myhome_central_mode_&lt;mac&gt;</code>: its subordinate zones (<code>N+1..N+3</code>) follow their own direct bus reports.</li>
 <li><strong>Bus Discovery Isolation</strong>: All broadcast frames emitted by a 3550 central unit carry address <code>#0</code>. They never resolve to or invent phantom zone <code>99</code> (commercial name <em>"Centrale termoregolazione 99 zone"</em>). If an installation physically includes a Zone 99 thermostat, on-wire frames directed to zone 99 (<code>*4*...*99##</code>) will discover and manage it normally.</li>
 </ul>
 </li>
@@ -2505,7 +2580,7 @@ Options Flow if your gateway lags on repeated status requests.</p>
 <li><strong><code>KNOB_READ_IN_SILENT_ZONE_POLL</code> (<code>F455</code>)</strong>: The delayed sequential direct-read recovery described above (30 s after the sweep: <code>*#4*&lt;zone&gt;*0##</code>, <code>*13##</code>, <code>*14##</code>, <code>*12##</code>, <code>*#4*&lt;zone&gt;#&lt;N&gt;*20##</code> for each actuator the zone had reported before the restart, or for actuator 1 when there is none, and on <code>F455</code> <code>*#4*&lt;zone&gt;*19##</code> last, for what a zone has not reported) runs on every gateway and has no model table. Only on <code>F455</code> is the knob read <code>*#4*&lt;zone&gt;*13##</code> part of that sequence instead of being sent when the zone is added (#466, #674).</li>
 <li><strong>Local-bus <code>#4#II</code> write refusal</strong>: Gateway translators do not implement <code>#4#&lt;interface&gt;</code> sub-bus routing on <code>WHO = 4</code> thermoregulation writes; outbound <code>WHO = 4</code> frames carrying <code>#4#II</code> are refused rather than stalling or NACKing on the gateway.</li>
 <li><strong><code>HUMIDITY_REQUEST_REFUSED</code></strong>: Explicit Dimension 60 (<code>*#4*&lt;zone&gt;*60##</code>) humidity polls are suppressed on <code>F450</code>, <code>F453</code>, <code>F453AV</code>, <code>F454</code>, <code>F455</code>, <code>H4684</code>, <code>MH200</code>, <code>MH200N</code>, and <code>MH202</code> (zones still decode unsolicited Dimension 60 reports whenever broadcast on the bus).</li>
-<li><strong><code>ACTUATOR_REQUEST_REFUSED</code></strong>: Explicit Dimension 20 (<code>*#4*&lt;zone&gt;*20##</code>) actuator status polls are suppressed on <code>F453</code>, <code>F453AV</code>, <code>H4684</code>, <code>MH200</code>, <code>MH200N</code>, and <code>MH202</code>.</li>
+<li><strong><code>ACTUATOR_REQUEST_REFUSED</code></strong>: Explicit Dimension 20 (<code>*#4*&lt;zone&gt;*20##</code>) actuator status polls are suppressed on <code>F453</code>, <code>F453AV</code>, <code>H4684</code>, <code>MH200</code>, <code>MH200N</code>, and <code>MH202</code>. The actuator form (<code>*#4*&lt;zone&gt;#&lt;N&gt;*20##</code>: a thermo actuator switch, and actuator 1 in the silent-zone poll) is suppressed only on <code>H4684</code> and <code>MH200</code> (<code>ACTUATOR_FORM_REQUEST_REFUSED</code>).</li>
 <li><strong>Non-split Dimension 22 crash guard (<code>is_refused_dimension_22</code>)</strong>: Non-split <code>WHO = 4</code> Dimension 22 queries such as <code>*#4*1*22##</code> or <code>*#4*0*22##</code> crash the thermostat daemon on <code>F461</code>, <code>F454</code>, and <code>MH200N</code> and are refused in <code>myhome.send_message</code> (split addressing <code>*#4*3#Z#N*22##</code> remains permitted).</li>
 </ul>
 <hr />
@@ -2519,16 +2594,41 @@ Options Flow if your gateway lags on repeated status requests.</p>
 </span></code></pre></div>
 <p>The v2 model therefore:</p>
 <ol>
-<li><strong>Starts the clock at the write, not at enqueue.</strong> The gateway's send queue reports when each frame actually left the socket (after any reconnect of the command session, and only when the gateway acknowledged it); with several covers commanded together the last one can leave many seconds after it was queued. A frame that is never delivered (connection lost, NACK) cancels its report, and the cover falls back to a run timed from now.</li>
-<li><strong>Opens an echo window</strong> for each command, from enqueue until 1.5 s after the write (bounded: it closes at once when delivery fails, and 30 s after enqueue at the latest). Inside it, the relayed stop status is ignored and our own direction status <strong>re-anchors the clock to the real motor start</strong> — no gateway-specific latency constant needed. A gateway that never relays that status gets the measured 0.55 s motor-start delay added to the write time instead. An opposite-direction frame, or any frame after the window, is a genuine command (wall switch, scenario) and is handled normally.</li>
+<li><strong>Starts the clock at the write, not at enqueue.</strong> The gateway's send queue reports when each frame actually left the socket (after any reconnect of the command session, and only when the gateway acknowledged it); with several covers commanded together the last one can leave many seconds after it was queued. A frame that is never delivered (connection lost, NACK) cancels its report. On point-to-point moves, the 1 Hz position slider ticker and <code>65 s</code> <code>M=0</code> relay-hold window wait for motor-start confirmation before starting (and when <code>actuator_locked</code> is <code>True</code>, <code>opening</code> / <code>closing</code> also stays idle until a point-to-point moving frame arrives, <code>#976</code>).</li>
+<li><strong>Opens an echo window</strong> for each command, from enqueue until 1.5 s after the write (bounded: it closes at once when delivery fails, and 30 s after enqueue at the latest). Inside it, a relayed stop status is deferred while our own direction status <strong>re-anchors the clock to the real motor start</strong> — no gateway-specific latency constant needed. If a plain <code>*2*0*&lt;where&gt;##</code> stop arrived inside the window and no <code>*2*1*</code> / <code>*2*2*</code> motor-start status followed before the window expired, that stop was terminal and ends the optimistic run (<code>#959</code>). If the <code>1.5 s</code> window expires on a point-to-point move with neither a terminal stop nor a motor-start echo (<code>*2*1/2*&lt;where&gt;##</code> or <code>Dimension 10</code> <code>11/12</code>), a cover already known to be locked (<code>actuator_locked: true</code>) aborts at once with zero extra bus traffic, while any other cover sends one point-to-point status request <code>*#2*&lt;where&gt;##</code>: a moving reply (<code>*2*1/2*&lt;where&gt;##</code>, e.g. after an <code>F455</code> burst drop or on a <code>3578</code> <code>#9</code> ZigBee cover) confirms the run anchored at <code>write_ts + 0.55 s</code>, whereas a stationary <code>*2*0*&lt;where&gt;##</code> reply (locked <code>F411/2</code>), <code>*#*0##</code> NACK, or empty reply (transceiver-locked <code>L4671/2</code> on <code>MH201</code>/<code>F461</code>/<code>F454</code>/<code>MH202</code> or unpowered address) aborts the unconfirmed move with <code>0 %</code> position drift and excludes the cover from <code>#1</code> / Area / General scope follower runs until unlocked or moved (<code>#976</code>; scope follower runs keep the <code>write_ts + 0.55 s</code> anchor because standard actuators emit no per-member start frames on broadcasts). On gateways that omit the synthetic SCS pre-move stop (<code>MH201</code>, <code>MH202</code>), timed covers whose relay may still be energized (<code>65 s</code> window, cleared on <code>*2*0*&lt;where&gt;##</code> or <code>WHO = 14</code> lock) automatically send <code>*2*0*&lt;where&gt;##</code> and wait <code>0.6 s</code> after socket write before sending the direction frame (<code>#959</code>). An opposite-direction frame, or any frame after the window, is a genuine command (wall switch, scenario) and is handled normally.</li>
 <li><strong>Times <code>set_position</code> from that anchor</strong>, then re-anchors at the target when the timer fires and lets the stop frame's own write time settle the estimate (target plus whatever the queue delay added).</li>
 <li><strong>Freezes the estimate for a stop provisionally at its write</strong>, not at enqueue, and repaints the entity at every write so the estimate is responsive without waiting for a status frame. Gateways that never relay stop status keep this write-time freeze.</li>
 <li><strong>Re-anchors at the stop status echo</strong>, when the gateway relays it within the echo window (34–47 ms, median 42 ms on MyHOMEServer1; 64–120 ms on F461). When the stop status arrives, the final position and <code>last_run_seconds</code> are re-anchored from <code>stop status - start anchor</code>.</li>
-<li><strong>Prioritises cover stops ahead of queued commands</strong> (<code>#645</code>), while preserving FIFO order relative to earlier stops and never overtaking pending motion frames for the same cover or overlapping scopes (such as area or general broadcasts). Across multi-worker gateways, workers acquire sequential tickets at dequeue to keep wire delivery strictly FIFO regardless of session pacing.</li>
+<li><strong>Prioritises cover stops ahead of queued commands</strong> (<code>#645</code>), while preserving FIFO order relative to earlier stops and never overtaking pending motion frames for the same cover or overlapping scopes (such as area or general broadcasts). On gateways with several command sessions, a frame waits while a frame that can reach the same cover (the same address, or an area, group or general scope that overlaps it) is being written by another worker, or is queued ahead of it and waiting for that reason, so overlapping frames reach the gateway in queue order regardless of session pacing; frames for unrelated covers are not held. "Can reach the same cover" is decided conservatively: two numbers with the same value, such as <code>02</code> and <code>2</code>, wait for each other although they are different addresses (point A=00 PL=02 and area 2). A cancel withdraws only a queued frame for the exact same address (the one alias is the area-zero point spelling: <code>0009</code> is <code>09</code>). Stops keep their order among overlapping stops; a stop for an unrelated cover may pass an earlier stop that is held back. A frame its caller withdrew (never to be written) holds nothing back.</li>
 </ol>
-<p>Trade-off: a wall-switch stop pressed in the ≤ 0.6 s between the write and the motor start is treated as an echo. The motor has not moved yet, so nothing is lost; once the motor-start status arrives the window closes and wall-switch stops are honoured immediately.</p>
+<p>Trade-off: on gateways that do not relay a stop status on keypad presses, a wall-switch stop pressed in the ≤ 0.6 s between the write and the motor start is not distinguishable until the motor fails to start; when <code>*2*0*&lt;where&gt;##</code> is relayed and no motor-start frame follows inside the 1.5 s window, the cover settles as stopped when the window expires (<code>#959</code>). Once the motor-start status arrives the window closes and wall-switch stops are honoured immediately.</p>
 <p><strong>Calibration.</strong> Because the actuator reports its motor start and stop, a timed cover can measure its own travel: <code>myhome.calibrate_cover</code> (or the <em>Calibrate travel time</em> button on the cover's device, or <em>Calibrate all covers</em> on the gateway) drives the cover fully up, then fully down (timed), then fully up (timed), one cover at a time per gateway, and stores the up and down times in the config entry options. The model then uses the up time when opening and the down time when closing. Measured values are the actuator's run times — equal to the physical travel on an installer-calibrated actuator; otherwise an upper bound. A run that ends at a whole-minute configurator limit (60 s, 120 s, …) is refused and nothing is stored; a run-time parameter the installer set longer than the travel (30 s on a 14 s shutter) is not detectable on the bus and is stored as is — a run stopped by hand (<code>last_run_seconds</code>) is the only check. See <a href="../services/#7-myhomecalibrate_cover">Services → <code>myhome.calibrate_cover</code></a>.</p>
-<p><em>(#302, #645, #705, measurements by @Interstellar0verdrive and @gdluck)</em></p>
+<p><em>(#302, #645, #705, #959, #976, measurements by @Interstellar0verdrive, @gdluck, @wave68runner and @ermanno00)</em></p>
+<hr />
+<h2 id="a-light-that-does-not-report-after-a-command-is-read-back-once">💡 A light that does not report after a command is read back once<a class="headerlink" href="#a-light-that-does-not-report-after-a-command-is-read-back-once" title="Permanent link">&para;</a></h2>
+<p>Every <code>WHO = 1</code> light or switch — whether commanded with plain <code>turn_on</code> / <code>turn_off</code> or with parameterized writes (<code>Dimension 1</code> / <code>WHAT 2..10</code> brightness, <code>Dimension 12</code> HSV/RGB, <code>Dimension 14</code> colour temperature, native hardware transitions, <code>turn_on_timed</code>, and step 1 of <code>software_stepped</code> fades) — takes its state strictly from the actuator's status or dimension frame on the event session, never optimistically from the command or its <code>ACK</code> (<code>#976</code>). Waiting for the <code>90–330 ms</code> bus echo means dragging a slider or toggling a <code>WHO = 14</code>-locked dimmer produces zero UI state bounce and never triggers automations or <code>expose:</code> follower entities even before <code>WHO = 14</code> has been observed. Some gateways leave an event status out under burst load: a physical <code>F455</code> (firmware <code>1.0.76</code>) acknowledges a command in about 4 ms and, when several commands follow each other within tens of milliseconds (a scene, "all off", tiles tapped in a row), its event session omits some of the statuses although the lights switched. Home Assistant then kept the old state until the light changed again, and the header toggle of an entities card, which only commands the entities not yet shown in the target state, left such a light on at the next "all off" (live 2026-11-20, six lights in one call: the <code>F455</code> left out 1 or 2 statuses in 5 of 8 steps and a light stayed on in 3 of 4 on / off cycles; through the <code>F461</code> on the same bus none was left out).</p>
+<p>The gateway handler (<code>gateway_confirm.py</code>) therefore notes every acknowledged point-to-point <code>WHO = 1</code> command along with any written dimension (<code>status</code>, <code>Dimension 1</code>, <code>Dimension 12</code>, <code>Dimension 14</code>). If the endpoint is not known to be locked via <code>WHO = 14</code> and no matching event of that light arrived <code>1.5 s</code> (<code>ECHO_CONFIRM_DELAY_S</code>) after the <code>ACK</code>, it sends <code>*#1*&lt;where&gt;##</code> together with any written dimension read-back (<code>*#1*&lt;where&gt;*1##</code>, <code>*12##</code>, or <code>*14##</code>); the answers come back on the command session and update the entity without leaving stale brightness or colour state (<code>#964</code>, <code>#976</code>).</p>
+<ul>
+<li><strong>Every gateway model.</strong> The read-back does not look at the model: each gateway entry notes its own acknowledged commands, and the <code>F455</code> is where the loss was measured, not a condition. A gateway that drops a status under load (a large plant, a slower model) gets the same read-back.</li>
+<li><strong>No extra traffic where the status arrives or when known locked.</strong> On a physical <code>F461</code> and in the real-user traces of <code>F454</code>, <code>F461</code>, <code>MH200N</code>, <code>MH201</code>, <code>MH202</code> and <code>MyHomeServer1</code> every status followed its command within <code>0.33 s</code>, so nothing is sent there; commands to endpoints already known to have <code>actuator_locked: true</code> also skip the read-back. On a physical <code>MH200</code> (firmware <code>2.1.0</code>) the same six-light bursts lost no status in 192 commands, with one or two command sessions (measured by a maintainer in the review of #964): that gateway acknowledges a command only after the bus telegram, where the <code>F455</code> acknowledges in about 4 ms.</li>
+<li><strong>One read-back pass at most per command.</strong> A status request never arms the read-back, so an address that does not answer costs one read-back and nothing more.</li>
+<li><strong>A status of the other polarity is not the answer.</strong> After <code>ON</code> then <code>OFF</code> in quick succession, a late <code>ON</code> status does not cancel the read-back of the <code>OFF</code>. A level write says its polarity too (<code>*#1*&lt;where&gt;*#1*&lt;100 + level&gt;*&lt;speed&gt;##</code> and the <code>#4</code> form: level <code>0</code> is off; <code>*#1*&lt;where&gt;*#12*&lt;H&gt;*&lt;S&gt;*&lt;V&gt;##</code>: <code>V = 0</code> is off), so the late <code>OFF</code> of the command before does not answer it (seen on an <code>MH200</code> with an <code>F418U2</code>), and written dimensions (<code>1</code>, <code>12</code>, <code>14</code>) wait for their matching dimension report or read it back directly.</li>
+<li><strong>Only a matching status or dimension report counts.</strong> A request or a write that the gateway relays on its event session (an <code>MH202</code> relays a level write about 30 ms before the dimmer's status), a frame with no state meaning (toggle, motion, anomaly) and a dim step (<code>*1*30*&lt;where&gt;##</code> / <code>*1*31*&lt;where&gt;##</code>, which the light entity ignores) neither end the wait nor replace the status remembered for the light.</li>
+<li><strong>The read-back carries the whole <code>WHERE</code></strong>: <code>09#4#01</code> behind an interface, <code>&lt;id&gt;#9</code> on a Zigbee gateway.</li>
+<li><strong>Only for commands this gateway entry sent.</strong> When another client switches several lights at once (another gateway, a scenario module), the <code>F455</code> leaves statuses out in the same way and nothing here notices: the light keeps its old state until its next status.</li>
+<li><strong>Not used for</strong> group / area / general commands (see <em>Broadcast re-sync</em> above), frames sent for exposed (virtual) addresses, and <code>WHO = 2</code> covers, which run their own post-<code>ECHO_WINDOW</code> <code>*#2*&lt;where&gt;##</code> check inside <code>cover.py</code> (see <em>Timed covers</em> above).</li>
+</ul>
+<hr />
+<h2 id="bidirectional-who-14-actuator-lock-tracking">🔒 Bidirectional <code>WHO = 14</code> actuator lock tracking<a class="headerlink" href="#bidirectional-who-14-actuator-lock-tracking" title="Permanent link">&para;</a></h2>
+<p>OpenWebNet <code>WHO = 14</code> (<code>*14*0*&lt;where&gt;##</code> lock, <code>*14*1*&lt;where&gt;##</code> unlock) cannot be polled at startup (<code>*#14*&lt;where&gt;##</code> is NACKed in <code>50–52 ms</code> on <code>F461</code> and immediately on <code>MH200</code> / <code>MH201</code>), and event-session (<code>*99*1##</code>) echoing of <code>*14*0/1*&lt;where&gt;##</code> depends on both the gateway (<code>MH201</code> never relays <code>WHO = 14</code>; <code>MH202</code> synthesizes locally) and whether the physical actuator or <code>F422</code> local-bus interface transmits <code>B8 &lt;addr&gt; 11/10 00</code> on SCS (omitted by 1st-gen <code>L4671/2</code>, legacy <code>MH200</code> / <code>MH200N</code> relays, and <code>#4#II</code> local-bus interfaces).</p>
+<p><code>ActuatorLockManager</code> (<code>actuator_lock.py</code>, routed to the primary entry under Warm Standby / WHO delegation) therefore tracks <code>actuator_locked</code> across three sources:</p>
+<ol>
+<li><strong>Inbound <code>*99*1##</code> <code>OWNActuatorLockEvent</code> frames</strong> (ignoring <code>1000#</code> command translations).</li>
+<li><strong>Acknowledged outbound <code>OWNActuatorLockCommand</code> writes</strong> in <code>CommandWorkerPool</code> upon <code>*#*1##</code> <code>ACK</code> (covering <code>button.&lt;name&gt;_lock</code> / <code>unlock</code>, <code>myhome.send_message</code>, scenes, and automations on <code>MH201</code> and <code>#4#II</code> local-bus interfaces while rejecting <code>*#*0##</code> NACKs such as <code>F450</code> or <code>~2.05 s</code> unpopulated addresses on <code>F460</code>/<code>F461</code>/<code>MyHomeServer1</code>/<code>3488</code>).</li>
+<li><strong><code>WHO = 2</code> <code>Dimension 10</code> <code>SHUTTER_INFO</code></strong> on positioned <code>Object 218</code> shutters (<code>F401</code>, <code>K4672M2S</code>: <code>12</code>/<code>13</code> locked, <code>0</code>/<code>15</code> unlocked).</li>
+</ol>
+<p>Lock scopes resolve across point (<code>APL</code>), Area (<code>00</code>, <code>1</code>–<code>9</code>, <code>100</code>), configured <code>#G</code> groups, and General (<code>0</code>) with strict <code>#4#II</code> local-bus interface isolation, soft-restore via <code>RestoreEntity</code> (including <code>extra_restore_state_data</code> across <code>unavailable</code> saves), never block outbound bus writes (actuator RAM clears on power loss), and self-heal strictly on genuine point-to-point cover motion (<code>*2*1/2*&lt;where&gt;##</code> or <code>Dimension 10</code> <code>11/12</code>, never <code>*2*0*</code> or scope broadcasts) or an actual <code>WHO = 1</code> state change (never an unchanged poll reply). <em>(#976)</em></p>
+<p>On a fine dimmer a preset frame (<code>WHAT = 2..10</code>) asks Dimension 1 for the exact level (#851). A preset frame that arrives while that read is out is taken as part of its answer (a <code>MyHomeServer1</code> and a <code>3488</code> answer the read with the level and with the preset frame). A read that brings no new level is repeated at most twice for the same preset; then the light is not asked again until its preset or level changes, it goes off, a command is sent to it from Home Assistant, or it has sent no preset frame for <code>30 s</code>.</p>
 <hr />
 <h2 id="lights-learn-colour-capabilities-additively">🎨 Lights learn colour capabilities additively<a class="headerlink" href="#lights-learn-colour-capabilities-additively" title="Permanent link">&para;</a></h2>
 <p>Colour modes are promoted from bus frames, and never removed:</p>

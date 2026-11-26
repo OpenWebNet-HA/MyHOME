@@ -25,7 +25,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
     
     
       
@@ -1623,10 +1623,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#number-who-16-22" class="md-nav__link">
+  <a href="#number-who-2-16-22" class="md-nav__link">
     <span class="md-ellipsis">
       
-        number (WHO 16 / 22)
+        number (WHO 2 / 16 / 22)
       
     </span>
   </a>
@@ -2193,10 +2193,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#number-who-16-22" class="md-nav__link">
+  <a href="#number-who-2-16-22" class="md-nav__link">
     <span class="md-ellipsis">
       
-        number (WHO 16 / 22)
+        number (WHO 2 / 16 / 22)
       
     </span>
   </a>
@@ -2602,14 +2602,19 @@
 <td style="text-align: left;">Auto-detected from dimension 11/20 frames, or explicit <code>fan: true</code>.</td>
 </tr>
 <tr>
+<td style="text-align: left;">Proportional 0–10 V output level (<code>100..200</code>)</td>
+<td style="text-align: center;">👁️</td>
+<td style="text-align: left;">Exposed on <code>Dimension 20</code> strictly for explicit <code>Z#N</code> (<code>1 &lt;= Z &lt;= 99</code>, <code>1 &lt;= N &lt;= 9</code>) point actuators as <code>actuator_levels</code> (<code>0..100 %</code>, excluded from recorder history via <code>_unrecorded_attributes</code>) while keeping <code>actuators</code> <code>"on"</code> / <code>"off"</code>, alongside an auto-discovered <code>%</code> <code>sensor</code> entity per proportional actuator.</td>
+</tr>
+<tr>
 <td style="text-align: left;">Current humidity</td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: left;">Auto-detected from dimension 60 frames, restored across restarts, or explicit <code>humidity: true</code>.</td>
+<td style="text-align: left;">Auto-detected from dimension 60 frames, restored across restarts, or explicit <code>humidity: true</code>; dynamically attaches a passive companion <code>%</code> <code>sensor</code> entity on the zone device.</td>
 </tr>
 <tr>
 <td style="text-align: left;">Central unit modes</td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: left;">Central unit 3550 (<code>#0</code>) and 4695 (<code>#0#1</code>..<code>#0#4</code>) as <code>central: true</code> zones; seasonal propagation. 99-zone <code>#0</code> is polled via <code>*#4*#0##</code>, while 4-zone <code>#0#1</code>..<code>#0#4</code> units remain exempt from point-to-point status polling.</td>
+<td style="text-align: left;">Central unit 3550 (<code>#0</code>, with HA-side seasonal propagation) and 4695 (<code>#0#1</code>..<code>#0#96</code>, with on-bus propagation) as <code>central: true</code> zones. 99-zone <code>#0</code> is polled via <code>*#4*#0##</code> and 4-zone <code>#0#N</code> via <code>*#4*#0#N##</code> (informational, never raising unresponsive-zone repairs).</td>
 </tr>
 <tr>
 <td style="text-align: left;">Weekly programs / scenarios</td>
@@ -2715,7 +2720,12 @@
 <tr>
 <td style="text-align: left;">Temperature (zones and probes)</td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: left;">Standalone probes (<code>WHERE ≥ 100</code> or Dimension 15) auto-discover and are push-driven (polled only when silent); thermostat zones <code>1..99</code> belong to <code>climate</code> unless declared under <code>sensor:</code> in <code>myhome.yaml</code> (polled every 5 min).</td>
+<td style="text-align: left;">Confirmed non-central <code>WHO = 4</code> climate zones automatically expose a strictly passive (<code>should_poll = False</code>) companion temperature <code>sensor</code> (<code>°C</code>, <code>state_class: measurement</code>, <code>RestoreSensor</code>) attached to the zone device for Long-Term Statistics; standalone probes (<code>WHERE ≥ 100</code> or Dimension 15) auto-discover independently (polled only when silent), and explicit <code>sensor:</code> entries in <code>myhome.yaml</code> remain supported without duplicates.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Proportional 0–10 V actuator output level (<code>%</code>)</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: left;">Auto-discovered strictly for explicit <code>Z#N</code> (<code>1 &lt;= Z &lt;= 99</code>, <code>1 &lt;= N &lt;= 9</code>) <code>Dimension 20</code> reports (<code>*#4*Z#N*20*100..200##</code>) and attached to the zone's <code>climate</code> device; inherits <code>SensorEntity</code> (<code>unknown</code> after restart until the first bus report) and registers <code>watch_zone_actuators</code> (startup/reconnect) plus <code>homeassistant.update_entity</code> where supported. Discrete <code>0..22</code> actuators create no extra entities.</td>
 </tr>
 <tr>
 <td style="text-align: left;">Illuminance (lux)</td>
@@ -2724,8 +2734,8 @@
 </tr>
 <tr>
 <td style="text-align: left;">Humidity</td>
-<td style="text-align: center;">👁️</td>
-<td style="text-align: left;">Shown as the climate entity's <code>current_humidity</code> when the zone reports it; no separate sensor.</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: left;">Dynamically created passive companion <code>sensor</code> (<code>%</code>, <code>state_class: measurement</code>) attached to the zone's <code>climate</code> device only when the zone reports <code>Dimension 60</code> humidity, restores prior humidity state, or configures <code>humidity: true</code>; never polls <code>*#4*Z*60##</code>.</td>
 </tr>
 </tbody>
 </table>
@@ -2742,7 +2752,7 @@
 <tr>
 <td style="text-align: left;">Lock / unlock actuator</td>
 <td style="text-align: center;">✅</td>
-<td style="text-align: left;">On every light, switch and cover device (<code>EntityCategory.CONFIG</code>).</td>
+<td style="text-align: left;">On every light, switch and cover device (<code>EntityCategory.CONFIG</code>). A press waits for the gateway's answer and raises an error when the gateway rejects the frame with NACK (<code>command_rejected</code>), when the frame could not be delivered (<code>command_not_delivered</code>) or was not confirmed within 15 s (<code>command_not_confirmed</code>). Whether the gateway acknowledges depends on the gateway and the target: a physical <code>F455</code> (firmware <code>1.0.76</code>) answered <code>*14*0*05##</code> and <code>*14*1*05##</code> with NACK, a physical <code>F461</code> (<code>2.0.11</code>) acknowledged both. Why that <code>F455</code> answered NACK is unknown; an <code>F461</code> also answers NACK for an address with no device (<code>*14*0*99##</code>, <code>tests/fixtures/traces/f461_who14_live_2026-10-18/README.md</code>).</td>
 </tr>
 <tr>
 <td style="text-align: left;">Calibrate travel time</td>
@@ -2756,7 +2766,7 @@
 </tr>
 </tbody>
 </table>
-<h3 id="number-who-16-22"><code>number</code> (WHO 16 / 22)<a class="headerlink" href="#number-who-16-22" title="Permanent link">&para;</a></h3>
+<h3 id="number-who-2-16-22"><code>number</code> (WHO 2 / 16 / 22)<a class="headerlink" href="#number-who-2-16-22" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
 <tr>
@@ -2766,6 +2776,11 @@
 </tr>
 </thead>
 <tbody>
+<tr>
+<td style="text-align: left;">Native cover minimum position step</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: left;"><code>number.&lt;cover&gt;_minimum_position_step</code> (<code>1–5 %</code>, step <code>1 %</code>, <code>NumberMode.BOX</code>, <code>EntityCategory.CONFIG</code>) on every point-to-point native WHO 2 cover device (persists in config entry options and overrides <code>myhome.yaml</code> <code>min_position_delta</code>).</td>
+</tr>
 <tr>
 <td style="text-align: left;">FM tuner manual frequency</td>
 <td style="text-align: center;">✅</td>

@@ -25,7 +25,7 @@
       
       
       <link rel="icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
     
     
       
@@ -1638,6 +1638,34 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="3. Actuator Diagnostics &amp; Endpoint Safety Locks (WHO = 14)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gateway-who-14-command-event-session-matrix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Gateway WHO = 14 Command &amp; Event-Session Matrix
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#actuator-hardware-generations-while-locked" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Actuator Hardware Generations While Locked
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
       </ul>
@@ -2187,6 +2215,34 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="3. Actuator Diagnostics &amp; Endpoint Safety Locks (WHO = 14)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gateway-who-14-command-event-session-matrix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Gateway WHO = 14 Command &amp; Event-Session Matrix
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#actuator-hardware-generations-while-locked" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Actuator Hardware Generations While Locked
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
       </ul>
@@ -2315,7 +2371,7 @@
 <li><strong><code>WHO = 3</code></strong>: Load control legacy central unit (F421) (Seeking newer official PDF than 2006).</li>
 <li><strong><code>WHO = 6</code></strong>: Dedicated audio door entry call frames (Seeking standalone document beyond WHO 7 / Intro).</li>
 <li><strong><code>WHO = 9</code></strong>: Auxiliary channels (AUX 1–9) (Seeking newer official PDF than 2006).</li>
-<li><em>(Note: <strong><code>WHO = 14</code></strong> Actuator Lock is fully reverse-engineered and documented below; Legrand never published a public standalone PDF).</em></li>
+<li><em>(Note: <strong><code>WHO = 14</code></strong> Actuator Lock has no separate <code>WHO_14.pdf</code> file because it is published inside <code>WHO_1.pdf</code> — <code>Who = 1 LIGHTING</code> v1.1.0, Chapter 4 "WHO 14", §4.2, p. 21 &amp; §5.1, p. 22 — and cross-verified below against gateway firmwares and live hardware).</em></li>
 </ul>
 </li>
 <li>
@@ -2452,11 +2508,11 @@
 <tr>
 <td style="text-align: center;"><strong>14</strong></td>
 <td style="text-align: left;"><strong>Actuators Lock (Light &amp; Shutters)</strong></td>
-<td style="text-align: left;"><code>Light &amp; Shutter Actuators Lock</code> <em>(No Public PDF)</em></td>
-<td style="text-align: center;">v1.0.0 (2008)</td>
+<td style="text-align: left;"><code>Who = 1 LIGHTING</code> / <code>WHO_1.pdf</code> <em>(Chapter 4, §4.2 p. 21 &amp; §5.1 p. 22)</em></td>
+<td style="text-align: center;"><strong>v1.1.0 (2014-11-17)</strong></td>
 <td style="text-align: center;">🟢</td>
 <td style="text-align: left;"><code>button</code></td>
-<td style="text-align: left;">Physical endpoint lock/unlock. Lock (<code>*14*0*&lt;WHERE&gt;##</code>), Unlock (<code>*14*1*&lt;WHERE&gt;##</code>), Status query (<code>*#14*&lt;WHERE&gt;##</code>). Disables/enables physical wall button input. Legrand never distributed a public standalone PDF (internal diagnostic spec).</td>
+<td style="text-align: left;">Physical endpoint lock/unlock: Lock (<code>*14*0*&lt;WHERE&gt;##</code>) and Unlock (<code>*14*1*&lt;WHERE&gt;##</code>); <code>*#14*&lt;WHERE&gt;##</code> status queries are NACKed on tested gateways (write/event-only, tracked via <code>actuator_locked</code>). Disables/enables physical wall buttons and bus actuation. Documented in <code>WHO_1.pdf</code> Chapter 4 rather than a separate <code>WHO_14.pdf</code>.</td>
 </tr>
 <tr>
 <td style="text-align: center;"><strong>15</strong></td>
@@ -2643,24 +2699,91 @@
 </ol>
 <hr />
 <h3 id="3-actuator-diagnostics-endpoint-safety-locks-who-14">3. Actuator Diagnostics &amp; Endpoint Safety Locks (<code>WHO = 14</code>)<a class="headerlink" href="#3-actuator-diagnostics-endpoint-safety-locks-who-14" title="Permanent link">&para;</a></h3>
-<p>BTicino and Legrand never distributed a standalone <code>WHO_14.pdf</code> in their public developer distributions, retaining it as an internal/installer diagnostic function. However, the protocol grammar is fully reverse-engineered and verified across live systems:</p>
+<p><code>WHO = 14</code> is published inside <code>WHO_1.pdf</code> (<code>Who = 1 LIGHTING</code>, v1.1.0, 2014-11-17, Chapter 4 <em>"WHO 14"</em>, §4.2 <em>"WHERE Table"</em>, p. 21 and §5.1 <em>"Command session - Special Commands"</em>, p. 22) rather than as a standalone <code>WHO_14.pdf</code>. Its frame grammar, gateway translation rules, and per-generation actuator behaviour have been cross-verified across the QEMU Firmware Oracle and live hardware captures (<code>F461</code> <code>2.0.11</code>, <code>MH200N</code> <code>1.1.8</code>, <code>MH201</code> <code>3.3.6</code> &amp; <code>3.6.44</code>, <code>F454</code> <code>2.0.51</code>, <code>MH202</code> <code>1.0.24</code>):</p>
 <ul>
-<li><strong>Protocol Function</strong>: Inhibits physical wall buttons (rocker switches, CEN pushbuttons) and remote actuation for safety, maintenance, or child locking on lighting and cover/shutter actuators (F411, F411U2, F418, LN4672M2).</li>
-<li><strong>Lock Actuator (Disable Controls)</strong>: <code>*14*0*&lt;WHERE&gt;##</code><ul>
-<li>Freezes the relay in its current position and disables physical switch inputs.</li>
+<li><strong>Protocol Function</strong>: Inhibits physical wall pushbuttons and remote OpenWebNet/SCS actuation on <code>WHO = 1</code> lighting and <code>WHO = 2</code> shutter actuators for safety, maintenance, window-contact interlocks, or child locking. Lock state lives in volatile actuator RAM and clears on a mains bus power cycle.</li>
+<li><strong>Lock Actuator (Disable Controls)</strong>: <code>*14*0*&lt;WHERE&gt;##</code> (SCS opcode <code>11 00</code>) — freezes lighting outputs (or immediately opens motorized shutter relays) and blocks physical switch inputs and bus actuation writes.</li>
+<li><strong>Unlock Actuator (Enable Controls)</strong>: <code>*14*1*&lt;WHERE&gt;##</code> (SCS opcode <code>10 00</code>) — restores normal wall-button and bus operation.</li>
+<li><strong>Published <code>WHERE</code> Scopes (<code>WHO_1.pdf</code> §4.2, p. 21 &amp; §2.3, p. 7)</strong>: Point-to-point (<code>&lt;A&gt;&lt;PL&gt;</code>), Environment/Area (<code>00</code>, <code>1</code>–<code>9</code>, <code>100</code>), and General (<code>0</code>) per <code>WHO_1.pdf</code> §4.2, plus <code>F422</code> local-bus interfaces (<code>&lt;WHERE&gt;#4#&lt;Int&gt;</code>, <code>#4#01</code>–<code>#4#09</code> and <code>#4#11</code>–<code>#4#15</code> per <code>WHO_1.pdf</code> §2.3, verified across all 13 emulated gateways on <code>*14*0*31#4#01##</code> / <code>*14*0*31#4#02##</code> in the firmware oracle <code>interface-routing</code> suite and on live <code>F461</code> / <code>MH200</code> + <code>F422</code> hardware). <em>(Note: <code>WHO_1.pdf</code> §4.2 does not publish <code>#1</code>–<code>#255</code> group addresses for <code>WHO = 14</code>, and group <code>WHO = 14</code> frames have not been replayed in the firmware oracle; Home Assistant resolves configured <code>#G</code> groups defensively if seen. <code>WHO = 14</code> is SCS-only and does not apply to <code>#9</code> ZigBee endpoints.)</em></li>
+<li><strong>No Status Query (<code>*#14*&lt;WHERE&gt;##</code> Rejected on Live Gateways)</strong>: Although <code>*#14*&lt;WHERE&gt;##</code> matches generic OpenWebNet <code>*#WHO*WHERE##</code> syntax (<code>WHO_1.pdf</code> §5.1 notes no monitor-session answer for point <code>A;PL</code>, and <code>*#14*&lt;WHERE&gt;##</code> has not yet been replayed in the firmware oracle), <strong>every live gateway tested rejects <code>*#14*&lt;WHERE&gt;##</code> with <code>*#*0##</code> NACK and transmits zero SCS bus traffic</strong> (<code>50–52 ms</code> on <code>F461</code> <code>2.0.11</code>, immediate <code>NACK</code> on <code>MH200</code> <code>2.1.0</code> and <code>MH201</code> <code>3.3.6</code> / <code>3.6.44</code>). <code>WHO = 14</code> is strictly write/event-only on SCS.</li>
+<li><strong>Home Assistant Integration</strong>: Exposed via per-device configuration buttons (<code>DisableCommandButtonEntity</code> / <code>EnableCommandButtonEntity</code>: <code>button.&lt;name&gt;_lock</code> and <code>button.&lt;name&gt;_unlock</code>) and tracked bidirectionally via the <code>actuator_locked</code> state attribute across inbound <code>*99*1##</code> events, <code>*#*1##</code>-acknowledged outbound <code>WHO = 14</code> commands, and <code>WHO = 2</code> <code>Dimension 10</code> <code>SHUTTER_INFO</code> telemetry (<a href="https://github.com/OpenWebNet-HA/MyHOME/issues/976">#976</a>).</li>
 </ul>
-</li>
-<li><strong>Unlock Actuator (Enable Controls)</strong>: <code>*14*1*&lt;WHERE&gt;##</code><ul>
-<li>Restores normal operation and re-enables physical wall buttons and bus commands.</li>
-</ul>
-</li>
-<li><strong>Status Query</strong>: <code>*#14*&lt;WHERE&gt;##</code><ul>
-<li>Returns <code>*14*0*&lt;WHERE&gt;##</code> (Locked) or <code>*14*1*&lt;WHERE&gt;##</code> (Unlocked).</li>
-</ul>
-</li>
-<li><strong>Home Assistant Integration</strong>: Represented via configuration button entities (<code>DisableCommandButtonEntity</code> and <code>EnableCommandButtonEntity</code>) under each actuator device.</li>
-<li><strong>Gateway Support</strong>: Supported on modern gateways (F454, MyHomeServer1). Older gateways (e.g. early F455 firmware) return NACK (<code>*#*0##</code>).</li>
-</ul>
+<h4 id="gateway-who-14-command-event-session-matrix">Gateway <code>WHO = 14</code> Command &amp; Event-Session Matrix<a class="headerlink" href="#gateway-who-14-command-event-session-matrix" title="Permanent link">&para;</a></h4>
+<p>Event-session (<code>*99*1##</code>) echoing of <code>*14*0*&lt;WHERE&gt;##</code> / <code>*14*1*&lt;WHERE&gt;##</code> is a <strong>two-factor product</strong> of gateway firmware and whether the physical actuator or <code>F422</code> local-bus interface transmits SCS <code>B8 &lt;addr&gt; 11/10 00</code> back onto the main bus:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Gateway Family</th>
+<th style="text-align: left;">Command Session (<code>*14*0/1*&lt;WHERE&gt;##</code>)</th>
+<th style="text-align: left;">Status Query (<code>*#14*&lt;WHERE&gt;##</code>)</th>
+<th style="text-align: left;">Event Session (<code>*99*1##</code>) Echo of <code>*14*0/1*&lt;WHERE&gt;##</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong><code>MH202</code></strong> (<code>1.0.24</code>, <code>coso</code>)</td>
+<td style="text-align: left;">Immediate <code>*#*1##</code> ACK in empty-bus emulation</td>
+<td style="text-align: left;"><code>*#*0##</code> NACK <em>(not yet replayed in oracle)</em></td>
+<td style="text-align: left;"><strong>Always echoed</strong> — synthesized locally by <code>coso</code> even on an empty bus (including <code>#4#&lt;Int&gt;</code> local-bus frames).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong><code>F460</code>, <code>F461</code> (<code>2.0.11</code>), <code>MyHomeServer1</code>, <code>3488</code></strong> (<code>bt_luci</code> + <code>empty_bus_txack</code>)</td>
+<td style="text-align: left;"><code>*#*1##</code> ACK in <code>~90–127 ms</code> when populated; <strong><code>*#*0##</code> NACK after <code>~2.05 s</code></strong> (<code>3×</code> retry) on unpopulated addresses</td>
+<td style="text-align: left;"><code>*#*0##</code> NACK (<code>50–52 ms</code> on live <code>F461</code>, zero SCS traffic)</td>
+<td style="text-align: left;"><strong>Actuator / local-bus dependent</strong> — echoed only when the target emits SCS <code>B8 &lt;addr&gt; 11/10 00</code> (echoed on <code>F411/2</code>, <code>F411/4</code>, General <code>0</code>; <strong>omitted</strong> behind <code>F422</code> <code>#4#II</code> local-bus interfaces and on 1st-gen actuators).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong><code>F453</code>, <code>F453AV</code>, <code>F454</code> (<code>2.0.51</code>), <code>F459</code>, <code>H4684</code>, <code>MH200</code> (<code>2.1.0</code>), <code>MH200N</code> (<code>1.1.8</code>)</strong> (<code>bt_luci</code> <code>pic_ack</code>)</td>
+<td style="text-align: left;"><code>*#*1##</code> ACK via PIC bus controller (<code>pic_ack</code> in empty-bus emulation; mediated by PIC TX-ACK on physical SCS)</td>
+<td style="text-align: left;"><code>*#*0##</code> NACK (verified live on <code>MH200</code> <code>2.1.0</code>)</td>
+<td style="text-align: left;"><strong>Actuator / local-bus dependent</strong> — echoed when the actuator emits <code>B8 &lt;addr&gt; 11/10 00</code> (e.g. <code>F418U2</code> / dimmer <code>55</code>), <strong>omitted</strong> on 1st-gen <code>L4671/2</code>, legacy <code>MH200</code> / <code>MH200N</code> relays, and <code>#4#II</code> local-bus interfaces.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong><code>MH201</code></strong> (<code>3.3.6</code> &amp; <code>3.6.44</code>, <code>OPEN_SERVICE</code>)</td>
+<td style="text-align: left;">Immediate <code>*#*1##</code> ACK (locks/unlocks actuator on SCS)</td>
+<td style="text-align: left;"><code>*#*0##</code> NACK (verified live)</td>
+<td style="text-align: left;"><strong>Never echoed</strong> — <code>OPEN_SERVICE</code> never relays <code>WHO = 14</code> onto <code>*99*1##</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong><code>F450</code></strong> (<code>2.0.10</code>, thermo/BACnet) / <strong><code>F455</code></strong> (<code>1.0.76</code>)</td>
+<td style="text-align: left;"><strong><code>*#*0##</code> NACK</strong> (<code>F450</code> drops <code>WHO = 14</code> silently)</td>
+<td style="text-align: left;"><code>*#*0##</code> NACK</td>
+<td style="text-align: left;">Never echoed.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="actuator-hardware-generations-while-locked">Actuator Hardware Generations While Locked<a class="headerlink" href="#actuator-hardware-generations-while-locked" title="Permanent link">&para;</a></h4>
+<p>Physical BTicino / Legrand actuators implement SCS lock (<code>11 00</code>) across three distinct hardware generations:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">Generation &amp; Representative Hardware</th>
+<th style="text-align: left;">Lock Entry Bus Behaviour (<code>*14*0*&lt;WHERE&gt;##</code>)</th>
+<th style="text-align: left;">Behaviour While Locked on Actuation Writes (<code>WHO = 1</code> / <code>WHO = 2</code> / Scopes)</th>
+<th style="text-align: left;">Behaviour While Locked on Status Queries (<code>*#1*&lt;WHERE&gt;##</code> / <code>*#2*&lt;WHERE&gt;##</code>)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>1st-Gen (Transceiver-Level Lock)</strong>: <code>L4671/2</code>, <code>H4671/2</code>, <code>AM5851/2</code> (<code>Object 7</code>), legacy relays</td>
+<td style="text-align: left;">Opens motor relay immediately and emits <code>*2*0*&lt;WHERE&gt;##</code>; <strong>omits</strong> <code>B8 &lt;addr&gt; 11 00</code> (<code>*14*0*&lt;WHERE&gt;##</code>).</td>
+<td style="text-align: left;"><strong>Silent on point &amp; <code>#G</code> group writes; stationary <code>*2*0*&lt;WHERE&gt;##</code> on Area</strong> — stays physically still; emits zero bus frames on point-to-point and <code>#1</code> group commands, and answers Area commands immediately with stationary <code>*2*0*&lt;WHERE&gt;##</code> (verified on <code>MH201</code> <code>3.6.44</code> + <code>L4671/2</code> <code>64</code>).</td>
+<td style="text-align: left;"><strong>100 % silent on SCS</strong> — ignores <code>*#2*&lt;WHERE&gt;##</code> (<code>*#*0##</code> NACK on <code>MH201</code> / <code>MH200N</code> / <code>F461</code> / <code>MyHomeServer1</code> / <code>F453</code>; bare <code>*#*1##</code> ACK with zero frames on <code>F454</code> / <code>F459</code> / <code>MH202</code>).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>2nd-Gen (Output-Stage Lock)</strong>: <code>F411/2</code>, <code>F411/4</code>, <code>F418U2</code> / <code>F414</code> dimmers</td>
+<td style="text-align: left;">Emits <code>B8 &lt;addr&gt; 11/10 00</code> (<code>*14*0/1*&lt;WHERE&gt;##</code> on <code>bt_luci</code>); <code>F411/2</code> shutters also emit <code>*2*0*&lt;WHERE&gt;##</code> (<code>+54 ms</code>).</td>
+<td style="text-align: left;"><strong>Ignores writes</strong> (<code>WHO = 1</code>, <code>WHO = 2</code>, <code>Dimension 1</code>, <code>#1</code> / Area / General); only the gateway's own <code>*2*1000#0/1/2*</code> command translations appear on <code>F454</code> / <code>F461</code> / <code>MyHomeServer1</code>.</td>
+<td style="text-align: left;"><strong>Answers with frozen state</strong> — <code>*#2*&lt;WHERE&gt;##</code> returns <code>*2*0*&lt;WHERE&gt;##</code>; <code>*#1*&lt;WHERE&gt;##</code> and <code>*#1*&lt;WHERE&gt;*1##</code> return frozen <code>on</code>/<code>off</code> and brightness.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>3rd-Gen Positioned Shutters (<code>Object 218</code>)</strong>: <code>F401</code>, <code>K4672M2S</code>, <code>H4661M2</code> / <code>LN4661M2</code></td>
+<td style="text-align: left;">Halts motor and transitions <code>Object 218</code> (<em>Shutter actuator</em>) to disabled state.</td>
+<td style="text-align: left;">Blocks <code>*2*1/2*&lt;WHERE&gt;##</code> and <code>Dimension 11</code> (<code>GoToLevel</code>); reports <code>Dimension 10</code> <code>SHUTTER_INFO = 14</code> (<em>command not executed</em>) or <code>12</code> / <code>13</code>.</td>
+<td style="text-align: left;">Answers <code>*#2*&lt;WHERE&gt;*10##</code> (<code>*#2*W*10*STATUS*LEVEL*PRIO*INFO##</code>) with <strong><code>SHUTTER_INFO = 12</code></strong> (<em>PUL + disabled</em>) or <strong><code>13</code></strong> (<em>disabled</em>), and <strong><code>0</code></strong> (<em>normal</em>) / <strong><code>15</code></strong> (<em>PUL</em>) when unlocked.</td>
+</tr>
+</tbody>
+</table>
 <hr />
 <h2 id="cen-cen-automation-community-blueprints">🪄 CEN / CEN+ Automation &amp; Community Blueprints<a class="headerlink" href="#cen-cen-automation-community-blueprints" title="Permanent link">&para;</a></h2>
 <p>One of the most powerful capabilities of physical MyHOME installations is using existing BTicino wall pushbuttons and dry contact modules (such as the <strong>3477</strong> interface) to trigger automations across modern smart home ecosystems.</p>

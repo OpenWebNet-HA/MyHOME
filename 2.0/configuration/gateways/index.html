@@ -25,7 +25,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
     
     
       
@@ -2740,6 +2740,10 @@
 </table>
 <!-- GATEWAY_PROFILES_END -->
 
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><strong>MH201 Configuration &amp; Firmware Updates</strong>: Because the <strong>MH201</strong> belongs to Legrand / BTicino's hotel product line (<em>MH201 hotel room scenario manager</em>), updating its firmware (for example to <code>3.6.44</code>) requires <strong>MyHotelSuite</strong> — plain <strong>MyHOME_Suite</strong> fails with a null-reference error when attempting to update an MH201.</p>
+</div>
 <hr />
 <h2 id="connection-setup-via-config-flow">🔌 Connection Setup via Config Flow<a class="headerlink" href="#connection-setup-via-config-flow" title="Permanent link">&para;</a></h2>
 <h3 id="step-1-initial-discovery">Step 1: Initial Discovery<a class="headerlink" href="#step-1-initial-discovery" title="Permanent link">&para;</a></h3>
@@ -2747,6 +2751,8 @@
 <li>On local networks, MyHOME gateways announce themselves via <strong>SSDP / UPnP</strong> (mDNS / <code>.local</code> hostnames are not used by OpenWebNet gateways).</li>
 <li>If discovered automatically over SSDP, Home Assistant displays a discovery card prompting you to <strong>Configure</strong> the gateway, or lists discovered gateways in the setup picker alongside <strong>"Custom (IP Gateway)"</strong>.</li>
 <li>If configuring manually: Go to <strong>Settings</strong> -&gt; <strong>Devices &amp; Services</strong> -&gt; <strong>Add Integration</strong> -&gt; search <strong>MyHOME</strong> -&gt; choose <strong>Custom (IP Gateway)</strong>.</li>
+<li>A later announcement of a configured gateway that was found over SSDP updates its address when that changed, and the change reloads the entry. The port is not announced and stays as configured. The friendly name, the UDN and the firmware are stored only while the entry has none: the firmware kept is the version the gateway reports over <code>WHO=13</code> dimension 16, not the announced UPnP <code>modelNumber</code>. A gateway added by hand (<strong>Custom (IP Gateway)</strong>) and an ignored gateway are not updated by SSDP.</li>
+<li>An <code>F455</code> is found under the manufacturer names <code>BTicino S.p.A.</code> and <code>Legrand S.p.A.</code>. An F455 1.0.76 that reports <code>Legrand S.p.A.</code> answers Home Assistant's search with <code>ST: ssdp:all</code> and announces itself with <code>NT: upnp:rootdevice</code> every 6 to 7 minutes; it has a matcher for each of the two.</li>
 </ul>
 <h3 id="step-2-installation-parameters-reference">Step 2: Installation Parameters Reference<a class="headerlink" href="#step-2-installation-parameters-reference" title="Permanent link">&para;</a></h3>
 <table>
@@ -2926,6 +2932,14 @@
 <td style="text-align: left;">Newline- or comma-separated <code>WHO/WHERE</code> addresses (e.g. <code>1/74</code>, <code>1/74#4#01</code>) silenced from discovery, entity creation, and fault tracking.</td>
 </tr>
 <tr>
+<td style="text-align: left;"><strong>Standalone Thermostats</strong></td>
+<td style="text-align: left;"><code>standalone_zones</code></td>
+<td style="text-align: center;">Text</td>
+<td style="text-align: center;"><code>[]</code></td>
+<td style="text-align: left;">Zones <code>1</code>..<code>99</code> (local bus)</td>
+<td style="text-align: left;">Comma-separated thermostat zones (e.g. <code>2, 7</code>) that are not managed by the central unit of a plant that has one: written as <code>*#4*Z*#14*...</code> instead of <code>*#4*#Z*#14*...</code>. Empty: found from the bus (see <a href="../climate/">Climate</a>). Same as <code>standalone: true</code> in <code>myhome.yaml</code>. The emulated firmware of F453, F453AV, H4684, MH200 and MH200N refuses that direct form (own-firmware-oracle <code>trace-corpus.tsv:55</code>; not yet seen on a real gateway): a refused write fails the service call.</td>
+</tr>
+<tr>
 <td style="text-align: left;"><strong>Bus Topology</strong></td>
 <td style="text-align: left;"><code>bus_topology</code></td>
 <td style="text-align: center;">Select</td>
@@ -3094,7 +3108,7 @@
 </div>
 <h3 id="how-to-resolve">How to resolve:<a class="headerlink" href="#how-to-resolve" title="Permanent link">&para;</a></h3>
 <ol>
-<li>Log into the gateway's web administration interface, or open <strong>MyHOME_Suite</strong> / <strong>TiMyHome</strong> / <strong>MyHOME_Up</strong>.</li>
+<li>Log into the gateway's web administration interface, or open <strong>MyHOME_Suite</strong> / <strong>MyHotelSuite</strong> (for <code>MH201</code>) / <strong>TiMyHome</strong> / <strong>MyHOME_Up</strong>.</li>
 <li>Navigate to the <strong>Date &amp; Time</strong> or <strong>Clock</strong> settings.</li>
 <li>Configure the correct local time and timezone (or enable NTP synchronization if supported by your gateway).</li>
 <li>Save the configuration and reboot or restart the gateway.</li>

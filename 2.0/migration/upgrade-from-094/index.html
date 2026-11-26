@@ -25,7 +25,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
     
     
       
@@ -2393,7 +2393,7 @@
 <h4 id="1-click-terminal-command-home-assistant-terminal-ssh">⚡ 1-Click Terminal Command (Home Assistant Terminal &amp; SSH)<a class="headerlink" href="#1-click-terminal-command-home-assistant-terminal-ssh" title="Permanent link">&para;</a></h4>
 <p>If you have the <strong>Terminal &amp; SSH</strong> add-on installed (or connect via SSH), paste this command directly into your terminal:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Set target release version (check https://github.com/OpenWebNet-HA/MyHOME/releases)</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nv">TAG</span><span class="o">=</span><span class="s2">"2.0.0"</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nv">TAG</span><span class="o">=</span><span class="s2">"2.0.1"</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># Download, extract cleanly, verify, and restart Home Assistant</span>
 </span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>mkdir<span class="w"> </span>-p<span class="w"> </span>/config/custom_components<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>/config/custom_components<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="se">\</span>
@@ -2457,7 +2457,7 @@
 </ul>
 <h3 id="2-myhomeserver1-session-concurrency-pacing-397">2. MyHomeServer1 Session Concurrency &amp; Pacing (<code>#397</code>)<a class="headerlink" href="#2-myhomeserver1-session-concurrency-pacing-397" title="Permanent link">&para;</a></h3>
 <ul>
-<li><strong>Change</strong>: <code>MyHomeServer1</code> firmware supports up to <strong>4</strong> concurrent command sessions (<code>default = 2</code> command workers, <code>max = 4</code>, with a <strong><code>20 ms</code></strong> inter-frame delay). v2 enforces profile-specific worker caps and ticket-ordered FIFO queue pacing so <code>MyHomeServer1</code> stays responsive alongside the mobile app without exhausting its socket pool.</li>
+<li><strong>Change</strong>: <code>MyHomeServer1</code> firmware supports up to <strong>4</strong> concurrent command sessions (<code>default = 2</code> command workers, <code>max = 4</code>, with a <strong><code>20 ms</code></strong> inter-frame delay). v2 enforces profile-specific worker caps and per-cover ordering of overlapping frames (see <a href="../../configuration/runtime_behaviour/">runtime behaviour</a>) so <code>MyHomeServer1</code> stays responsive alongside the mobile app without exhausting its socket pool.</li>
 </ul>
 <h3 id="3-core-python-requirements">3. Core &amp; Python Requirements<a class="headerlink" href="#3-core-python-requirements" title="Permanent link">&para;</a></h3>
 <ul>
