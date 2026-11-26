@@ -760,6 +760,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._calibration_interrupted: str | None = None
         self._stopped_event: asyncio.Event = asyncio.Event()
         self._last_stop_at: float | None = None
+        self._live_position_seen: bool = False
         # Set once a real curtain run or slat pulse finishes (never by a static
         # *2*0*WHERE## poll reply while idle, nor by an aborted write).
         self._ran_since_start: bool = False
@@ -2031,7 +2032,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 ):
                     self._attr_is_closed = record["is_closed"]
         elif not self._advanced and not ran_since_start:
-            if not self._bus_state_complete and (not moving_on_add or self._start_position is None):
+            if not self._live_position_seen and (not moving_on_add or self._start_position is None):
                 restored = False
                 last_pos = last_state.attributes.get(ATTR_CURRENT_POSITION)
                 # The record fills what is unknown, never what a run since startup set.
@@ -2070,7 +2071,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 if moving_on_add:
                     self._run_start_position = self._start_position
 
-        if self._slat_tilt and not ran_since_start and not self._bus_state_complete:
+        if self._slat_tilt and not ran_since_start and not self._live_position_seen:
             last_tilt = last_state.attributes.get(ATTR_CURRENT_TILT_POSITION)
             if last_tilt is None and saved_unavailable and self._attr_current_cover_tilt_position is None:
                 last_tilt = record.get("tilt")
@@ -4430,10 +4431,24 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         if own_point and (position is not None or position_unknown):
             self._dim10_seen = True
         if own_point and position is not None:
+            self._live_position_seen = True
             self._bus_state_complete = True
             if not self._advanced and self._allow_auto_advanced and not self._calibrating:
                 self._promote_to_native_strategy(reported_position=position)
                 promoted = True
+        elif (
+            own_point
+            and not is_translation
+            and not self._advanced
+            and not self._allow_auto_advanced
+            and (
+                is_opening
+                or is_closing
+                or position_unknown
+                or getattr(message, "_what", getattr(message, "what", None)) in (0, 10, "0", "10")
+            )
+        ):
+            self._bus_state_complete = True
 
         LOGGER.debug(
             "%s %s",

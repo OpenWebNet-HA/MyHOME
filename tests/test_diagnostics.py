@@ -753,3 +753,197 @@ async def test_diagnostics_redacts_migrated_yaml_platforms_and_decoder_companion
     assert "4321" not in serialized
     assert shared_z152["name"] == "Camera 152"
     assert "camera_152" in raw_options["migrated_yaml_platforms"]["climate"]
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_redacts_cover_travel_times_copied_from(
+    hass: HomeAssistant,
+) -> None:
+    """cover_travel_times maps registered copied_from entities to bus addresses and redacts unknown ones."""
+    from homeassistant.helpers import entity_registry as er
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    mac = "00:03:50:aa:bb:e1"
+    raw_travel_times = {
+        "11#4#02": {
+            "down": 28.3,
+            "up": 30.2,
+            "source": "manual",
+            "measured_at": "2026-09-14T11:25:56+00:00",
+        },
+        "16#4#02": {
+            "copied_from": "cover.rolluik_woonkamer_oost_1",
+            "down": 36.7,
+            "up": 38.9,
+            "source": "copied",
+            "measured_at": "2026-09-14T11:59:54+00:00",
+        },
+        "18#4#02": {
+            "copied_from": "cover.rossi_deleted_room",
+            "down": 36.7,
+            "up": 38.9,
+            "source": "copied",
+        },
+        "rossi_custom_key": {
+            "copied_from": "cover.foreign_shade",
+            "down": 20.0,
+            "up": 21.0,
+        },
+        "85": "Rossi Raw Note",
+        "86": 42,
+    }
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Casa Rossi",
+        data={CONF_MAC: mac, "name": "MH200"},
+        options={"cover_travel_times": raw_travel_times},
+    )
+    entry.add_to_hass(hass)
+
+    ent_reg = er.async_get(hass)
+    ent_reg.async_get_or_create(
+        domain="cover",
+        platform=DOMAIN,
+        unique_id=f"{mac}-2-11#4#02",
+        config_entry=entry,
+        suggested_object_id="rolluik_woonkamer_oost_1",
+    )
+    ent_reg.async_get_or_create(
+        domain="cover",
+        platform="other_integration",
+        unique_id="foreign_1",
+        suggested_object_id="foreign_shade",
+    )
+
+    mock_handler = MagicMock()
+    mock_handler.gateway = None
+    mock_handler.send_buffer = None
+    mock_handler.bus_monitor = None
+    mock_handler.device_health = None
+    attach_runtime(hass, entry, mac, mock_handler)
+
+    diag = await async_get_config_entry_diagnostics(hass, entry)
+    tt = diag["config_entry"]["options"]["cover_travel_times"]
+
+    assert tt["11#4#02"]["down"] == 28.3
+    assert "copied_from" not in tt["11#4#02"]
+    assert tt["16#4#02"]["copied_from"] == "cover.11#4#02"
+    assert tt["18#4#02"]["copied_from"] == "**REDACTED**"
+    assert tt["cover_4"]["copied_from"] == "**REDACTED**"
+    assert tt["85"] == "**REDACTED**"
+    assert tt["86"] == 42
+
+    serialized = repr(diag)
+    for household_term in ("rolluik", "woonkamer", "rossi", "Rossi", "foreign_shade"):
+        assert household_term not in serialized
+    # Original config entry options remain untouched
+    assert entry.options["cover_travel_times"]["16#4#02"]["copied_from"] == "cover.rolluik_woonkamer_oost_1"
+
+    # Registry lookup failure falls back cleanly to **REDACTED**
+    from unittest.mock import patch
+
+    with patch("custom_components.myhome.diagnostics.er.async_get", side_effect=RuntimeError("no registry")):
+        diag_no_reg = await async_get_config_entry_diagnostics(hass, entry)
+    assert diag_no_reg["config_entry"]["options"]["cover_travel_times"]["16#4#02"]["copied_from"] == "**REDACTED**"
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_platforms_counts_entity_registry_and_hybrid_yaml(
+    hass: HomeAssistant,
+) -> None:
+    """Platform counts include UI/bus-discovered registry entities without double-counting YAML entries."""
+    from unittest.mock import patch
+
+    from homeassistant.helpers import entity_registry as er
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.diagnostics import _registry_device_key
+
+    mac = "00:03:50:aa:bb:e2"
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="MH200 Gateway",
+        data={CONF_MAC: mac, "name": "MH200"},
+        options={},
+    )
+    entry.add_to_hass(hass)
+
+    ent_reg = er.async_get(hass)
+    # 1. Pure UI-discovered entities (cover, media_player, button) + hybrid YAML/discovered lights & sensors
+    for domain, uid, obj_id in (
+        ("light", f"{mac}-1-11", "light_11"),
+        ("light", f"{mac}-1-29", "light_29"),
+        ("cover", f"{mac}-2-11#4#02", "cover_11i02"),
+        ("cover", f"{mac}-2-85", "cover_85"),
+        ("media_player", f"{mac}-16-21#16", "audio_zone_21"),
+        ("button", f"{mac}-1-11-disable", "light_11_disable"),
+        ("sensor", f"{mac}-18-51-power", "meter_51_power"),
+        ("sensor", f"{mac}-18-51-energy", "meter_51_energy"),
+        ("sensor", f"{mac}-12-illuminance", "lux_12"),
+        ("sensor", f"{mac}-18-77", "raw_77"),
+        ("number", f"{mac}-2-0715-min_position_delta", "cover_0715_delta"),
+    ):
+        ent_reg.async_get_or_create(
+            domain=domain,
+            platform=DOMAIN,
+            unique_id=uid,
+            config_entry=entry,
+            suggested_object_id=obj_id,
+        )
+
+    shared_light_11 = {"where": "11", "name": "Hall"}
+    platforms = {
+        "light": {
+            "hall": shared_light_11,
+            "1-11": shared_light_11,
+            "11": {"who": "1", "where": "11", "name": "Hall Copy"},
+            "unregistered_yaml": {"where": "99", "name": "Attic"},
+            "headless": {"custom": True},
+        },
+        "cover": {},
+        "media_player": {},
+        "button": {},
+        "sensor": {
+            "18-51-power": {"who": "18", "where": "51", "class": "power"},
+            "18-51-energy": {"who": "18", "where": "51", "class": "energy"},
+            "1-12-lux": {"who": "1", "where": "12", "class": "illuminance"},
+            "18-52-power": {"who": "18", "where": "52", "class": "power"},
+        },
+        "switch": {},
+        "none_plat": None,
+        "list_plat": ["a", "b", "c"],
+    }
+    ent_reg.async_get_or_create(
+        domain="list_plat",
+        platform=DOMAIN,
+        unique_id=f"{mac}-1-01",
+        config_entry=entry,
+        suggested_object_id="list_1",
+    )
+
+    mock_handler = MagicMock()
+    mock_handler.gateway = None
+    mock_handler.send_buffer = None
+    mock_handler.bus_monitor = None
+    mock_handler.device_health = None
+    hass.data[DOMAIN] = {mac: {CONF_ENTITY: mock_handler, CONF_PLATFORMS: platforms}}
+    attach_runtime(hass, entry, mac, mock_handler)
+
+    diag = await async_get_config_entry_diagnostics(hass, entry)
+    assert diag["platforms"]["light"] == 4  # 2 in registry (11, 29) + 1 unregistered YAML (99) + 1 headless
+    assert diag["platforms"]["cover"] == 2
+    assert diag["platforms"]["media_player"] == 1
+    assert diag["platforms"]["button"] == 1
+    assert diag["platforms"]["sensor"] == 5  # 4 in registry + 1 unregistered YAML (18-52-power)
+    assert diag["platforms"]["number"] == 1  # domain present in entity registry only
+    assert diag["platforms"]["switch"] == 0
+    assert diag["platforms"]["none_plat"] == 0
+    assert diag["platforms"]["list_plat"] == 3
+
+    # Empty unique_id and registry failure branches
+    dummy_entry = MagicMock(unique_id="", domain="light")
+    assert _registry_device_key(dummy_entry, mac, mac) is None
+    with patch("custom_components.myhome.diagnostics.er.async_get", side_effect=RuntimeError("no registry")):
+        diag_fallback = await async_get_config_entry_diagnostics(hass, entry)
+    assert diag_fallback["platforms"]["cover"] == 0
+

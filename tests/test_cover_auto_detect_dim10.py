@@ -2116,3 +2116,157 @@ async def test_midmove_promotion_handoff_failure_and_delivery_paths(
     assert _relevant_logs() == []
 
 
+@pytest.mark.asyncio
+async def test_calibrated_standard_covers_skip_post_sweep_poll_and_preserve_restored_height(
+    hass: HomeAssistant,
+) -> None:
+    """Calibrated covers answered during *#1*0## / *#2*0## skip redundant *#2*WHERE## polls while keeping restored height."""
+    from custom_components.myhome.discovery import message_has_state
+
+    harness = MockGatewayHarness()
+    port = await harness.start()
+    entry = _make_entry(
+        port,
+        options={
+            CONF_COVER_TRAVEL_TIMES: {
+                "11#4#02": {"down": 28.3, "up": 30.2, "source": "manual"},
+                "12#4#02": {"down": 28.3, "up": 30.2, "source": "manual"},
+                "85": {"down": 61.62, "up": 61.03, "source": "measured"},
+            }
+        },
+    )
+    entry.add_to_hass(hass)
+
+    mock_restore_cache(
+        hass,
+        [
+            State("cover.cover_11i02", "open", {"current_position": 65}),
+            State("cover.cover_12i02", "closed", {"current_position": 0}),
+            State("cover.cover_85", "open", {"current_position": 40}),
+        ],
+    )
+
+    registry = er.async_get(hass)
+    for dev_id, obj_id in (
+        ("11#4#02", "cover_11i02"),
+        ("12#4#02", "cover_12i02"),
+        ("85", "cover_85"),
+    ):
+        registry.async_get_or_create(
+            domain="cover",
+            platform=DOMAIN,
+            unique_id=f"{MAC}-2-{dev_id}",
+            config_entry=entry,
+            suggested_object_id=obj_id,
+        )
+
+    sweep_proceed = asyncio.Event()
+    real_initial_discovery = MyHOMEGatewayHandler.initial_discovery
+
+    async def controlled_initial_discovery(self: MyHOMEGatewayHandler) -> None:
+        await sweep_proceed.wait()
+        await real_initial_discovery(self)
+
+    try:
+        with (
+            patch(
+                "custom_components.myhome.gateway.OWNSession.test_connection",
+                return_value={"Success": True, "Message": None},
+            ),
+            patch("custom_components.myhome.gateway.MyHOMEGatewayHandler.listening_loop"),
+            patch.object(MyHOMEGatewayHandler, "initial_discovery", controlled_initial_discovery),
+        ):
+            setup_task = asyncio.create_task(hass.config_entries.async_setup(entry.entry_id))
+            for _ in range(50):
+                if hass.data.get(DOMAIN, {}).get(MAC) and hass.states.get("cover.cover_11i02"):
+                    break
+                await asyncio.sleep(0.05)
+
+            handler: MyHOMEGatewayHandler = hass.data[DOMAIN][MAC][CONF_ENTITY]
+            handler._on_event_connection_state_change(True)
+
+            # During the sweep, 11#4#02 and 85 report *2*0*WHERE##; 12#4#02 stays silent.
+            await _feed(hass, "*2*0*11#4#02##")
+            await _feed(hass, "*2*0*85##")
+
+            sweep_proceed.set()
+            await setup_task
+            await handler.wait_for_initial_discovery(timeout=5.0)
+            await asyncio.sleep(0.2)
+            await hass.async_block_till_done()
+
+            sent = _drain_sent(handler, harness)
+            assert "*#2*11#4#02##" not in sent
+            assert "*#2*85##" not in sent
+            assert "*#2*12#4#02##" in sent
+
+            # Restored heights remain intact after plain *2*0*WHERE## sweep frames
+            assert hass.states.get("cover.cover_11i02").attributes.get("current_position") == 65
+            assert hass.states.get("cover.cover_85").attributes.get("current_position") == 40
+
+            # Unit verification: plain *2*0*WHERE## BEFORE async_restore_last_state still restores height & tilt,
+            # while a live Dimension 10 position BEFORE async_restore_last_state takes precedence.
+            cov_early = MyHOMECover(
+                hass=hass,
+                name="Cover 91",
+                entity_name=None,
+                device_id="91",
+                who="2",
+                where="91",
+                interface=None,
+                advanced=False,
+                allow_auto_advanced=False,
+                slat_tilt=True,
+                slat_time=1.5,
+                strategy_name="venetian",
+                manufacturer="BTicino",
+                model="F411/2",
+                gateway=handler,
+                travel_time=30,
+            )
+            stop_msg = OWNAutomationEvent.parse("*2*0*91##")
+            assert stop_msg is not None
+            assert message_has_state(cov_early, stop_msg) is True
+            cov_early.handle_event(stop_msg)
+            assert cov_early._bus_state_complete is True
+            assert cov_early._live_position_seen is False
+            await cov_early.async_restore_last_state(
+                State("cover.cover_91", "open", {"current_position": 55, "current_tilt_position": 35})
+            )
+            assert cov_early.current_cover_position == 55
+            assert cov_early.current_cover_tilt_position == 35
+
+            cov_live_pos = MyHOMECover(
+                hass=hass,
+                name="Cover 92",
+                entity_name=None,
+                device_id="92",
+                who="2",
+                where="92",
+                interface=None,
+                advanced=False,
+                allow_auto_advanced=False,
+                slat_tilt=True,
+                slat_time=1.5,
+                strategy_name="venetian",
+                manufacturer="BTicino",
+                model="F411/2",
+                gateway=handler,
+                travel_time=30,
+            )
+            dim10_msg = OWNAutomationEvent.parse("*#2*92*10*10*80*000*0##")
+            assert dim10_msg is not None
+            cov_live_pos.handle_event(dim10_msg)
+            assert cov_live_pos._live_position_seen is True
+            await cov_live_pos.async_restore_last_state(
+                State("cover.cover_92", "open", {"current_position": 20, "current_tilt_position": 10})
+            )
+            assert cov_live_pos.current_cover_position == 80
+    finally:
+        sweep_proceed.set()
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+        await harness.stop()
+
+
+

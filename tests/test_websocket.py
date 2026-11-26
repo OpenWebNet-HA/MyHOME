@@ -210,6 +210,23 @@ async def test_ws_history_with_frames_and_filters(hass: HomeAssistant, mock_ws_c
     assert len(result["frames"]) == 2
     assert all(f["who"] == "1" and f["where"] == "12" and f["direction"] == "rx" for f in result["frames"])
 
+    # 3. Filter by F422 interface-routed WHERE (11#4#02 vs local 11)
+    ev_local = OWNEvent.parse("*2*0*11##")
+    ev_routed = OWNEvent.parse("*2*0*11#4#02##")
+    monitor.record_frame("rx", "*2*0*11##", ev_local)
+    monitor.record_frame("rx", "*2*0*11#4#02##", ev_routed)
+
+    mock_ws_connection.send_result.reset_mock()
+    ws_bus_monitor_history(
+        hass,
+        mock_ws_connection,
+        {"id": 4, "type": "myhome/bus_monitor/history", "who": "2", "where": "11#4#02"},
+    )
+    await hass.async_block_till_done()
+    _, routed_res = mock_ws_connection.send_result.call_args[0]
+    assert [f["raw"] for f in routed_res["frames"]] == ["*2*0*11#4#02##"]
+    assert routed_res["frames"][0]["where"] == "11#4#02"
+
 
 async def test_ws_stream_subscription_and_dispatch(hass: HomeAssistant, mock_ws_connection, attach_gateway):
     """Test real-time bus stream subscription, frame dispatching, and filtering."""

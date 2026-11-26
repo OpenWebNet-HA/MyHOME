@@ -248,10 +248,18 @@ async def async_setup_entry(
         pre_message=route_pseudo_zones(runtime.router),
         route_keys=_sound_route_keys,
         key_suffix="#16",
-        accept=lambda ctx: not _is_source_where(ctx.address.clean_where),
+        accept=lambda ctx: (
+            ctx.address.interface is None
+            and _is_valid_zone_where(ctx.address.clean_where)
+        ),
         reject_registry_entry=(
-            lambda _entry, ctx: _is_source_where(ctx.address.clean_where)
-            and ctx.address.clean_where not in runtime.sound_sources
+            lambda _entry, ctx: not (
+                ctx.address.interface is None
+                and (
+                    _is_valid_zone_where(ctx.address.clean_where)
+                    or ctx.address.clean_where in runtime.sound_sources
+                )
+            )
         ),
     )
     # Audio zones are keyed "<zone>#16" in unique ids; the registry restore reads that key back.
@@ -312,7 +320,12 @@ def _coerce_tuner_station(value: Any) -> int:
 
 def _is_source_where(where: str) -> bool:
     """Return True when ``where`` is a matrix source input address (101-109)."""
-    return where.isdigit() and 101 <= int(where) <= 109
+    return where.isascii() and where.isdigit() and 101 <= int(where) <= 109
+
+
+def _is_valid_zone_where(where: str) -> bool:
+    """Return True when ``where`` is an individual WHO=16 amplifier address (01-99 / 1-99)."""
+    return where.isascii() and where.isdigit() and len(where) <= 2 and 1 <= int(where) <= 99
 
 
 def _prune_unchecked_tuner_entities(

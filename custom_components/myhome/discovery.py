@@ -895,9 +895,19 @@ def message_has_state(entity: MyHOMEEntity, message: Any) -> bool:
     if message is None:
         return False
 
-    # Cover: needs current position or dimension 10 reply
+    # Cover: advanced or auto-promotable covers need current position or dimension 10 reply;
+    # fixed timed/simple covers (calibrated or explicit non-advanced) only query *#2*WHERE##,
+    # which a point-to-point status report (*2*0/1/2*WHERE##) already answers.
     if isinstance(entity, CoverEntity):
-        return getattr(message, "current_position", None) is not None or getattr(message, "dimension", None) == 10
+        if getattr(entity, "_advanced", False) or getattr(entity, "_allow_auto_advanced", True):
+            return getattr(message, "current_position", None) is not None or getattr(message, "dimension", None) == 10
+        return (
+            getattr(message, "current_position", None) is not None
+            or getattr(message, "dimension", None) == 10
+            or getattr(message, "is_opening", False) is True
+            or getattr(message, "is_closing", False) is True
+            or getattr(message, "_what", getattr(message, "what", None)) in (0, 1, 2, 10, "0", "1", "2", "10")
+        )
 
     # Light: a dimmer or colour light needs brightness or a dimension status
     if isinstance(entity, LightEntity):
