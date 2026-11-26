@@ -25,7 +25,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
     
     
       
@@ -2167,7 +2167,7 @@
 <tbody>
 <tr>
 <td style="text-align: left;"><strong>Group, area and general commands from wall switches re-sync with a ~500 ms delay, and only areas with a known light.</strong> (P7, #368)</td>
-<td style="text-align: left;">A <code>500 ms</code> (<code>RESYNC_DEBOUNCE_S = 0.5</code>) debounced re-sync (see <a href="../runtime_behaviour/#broadcast-re-sync-group-area-general">runtime behaviour</a>) only sweeps <code>*#1*A##</code> per area/group, or skips the sweep entirely if the gateway already echoed each member's status; there is still no trace from a gateway that echoes <em>nothing</em> to confirm the fallback is sufficient there.</td>
+<td style="text-align: left;">A <code>500 ms</code> (<code>RESYNC_DEBOUNCE_S = 0.5</code>) debounced re-sync (see <a href="../runtime_behaviour/#broadcast-re-sync-group-area-general">runtime behaviour</a>) only sweeps <code>*#1*A##</code> per area/group on the gateway's own bus and one point request <code>*#1*&lt;APL&gt;#4#&lt;Int&gt;##</code> per known light for an area behind an F422 interface, or skips the sweep entirely if the gateway already echoed each member's status; there is still no trace from a gateway that echoes <em>nothing</em> to confirm the fallback is sufficient there.</td>
 <td style="text-align: left;">Disable <strong>Sweep group/area/general light addresses for status</strong> in the Options Flow if your gateway needs a different cadence, and report a bus trace on #368.</td>
 </tr>
 <tr>
@@ -2184,6 +2184,11 @@
 <td style="text-align: left;"><strong>Native transitions depend on the actuator.</strong></td>
 <td style="text-align: left;">Some dimmers ignore the fade parameter.</td>
 <td style="text-align: left;">Keep the default <code>software_stepped</code> transition mode.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>A light whose status the gateway does not relay can show its old state for about 2 s.</strong></td>
+<td style="text-align: left;">Measured on an <code>F455</code> (firmware <code>1.0.76</code>): its event session leaves some actuator statuses out when commands follow each other within tens of milliseconds. On every gateway model the integration notices the missing status and requests it <code>1.5 s</code> after the command (see <a href="../runtime_behaviour/#a-light-that-does-not-report-after-a-command-is-read-back-once">runtime behaviour</a>).</td>
+<td style="text-align: left;">None needed for lights switched from Home Assistant; the state corrects itself. A burst started elsewhere (another gateway, a scenario module) is not read back.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Physical sensors sharing an actuator address (e.g. 3477 twilight photocell) trigger the actuator directly on the wire.</strong></td>
@@ -2245,19 +2250,24 @@
 <td style="text-align: left;"><code>myhome.send_message</code> with the central-unit mode frame (<code>*4*&lt;mode&gt;*#0##</code>).</td>
 </tr>
 <tr>
-<td style="text-align: left;"><strong>4-zone central unit 4695 (<code>#0#1</code>) is verified on synthetic frames only.</strong></td>
-<td style="text-align: left;">No community trace from a 4695 plant yet.</td>
-<td style="text-align: left;">Please attach a trace to RFC #248 if you own one.</td>
+<td style="text-align: left;"><strong><code>heat</code> / <code>cool</code> on a central unit (<code>#0</code> or <code>#0#N</code>) can start the last weekly program of that season, not a manual setpoint.</strong></td>
+<td style="text-align: left;">On a 99-zone <code>3550</code> (<code>#0</code>), the season frames alone leave the unit in protection or off, so when it has reported protection, off or the other season since Home Assistant started they are followed by <code>*4*3100*#0##</code> (live F461 + F455, 2026-11-18). On a 4-zone <code>4695</code> (<code>#0#N</code>), cross-season <code>heat</code> / <code>cool</code> similarly send <code>*4*1/0*#0#N##</code> followed by <code>*4*3100*#0#N##</code>, while same-season <code>heat</code> / <code>cool</code> write generic manual <code>*#4*#0#N*#14*TTTT*3##</code> when resuming a manual setpoint, or <code>*4*3100*#0#N##</code> when on a weekly program/schedule, carrying only a master-zone Dimension 12 setpoint, or waking with no known setpoint.</td>
+<td style="text-align: left;">For a manual setpoint, use <code>climate.set_temperature</code> on the central unit. After a restart, wait for the central unit's first report (or send <code>heat</code> / <code>cool</code> again once it has reported).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>A 4-zone central unit (<code>4695</code> family, <code>#0#N</code>) has gateway-generation limits and one live community capture so far.</strong></td>
+<td style="text-align: left;">Verified by live F454 2.0.51 capture (<code>#0#1</code> + zones 1, 3, 4, <a href="https://github.com/OpenWebNet-HA/MyHOME/issues/994">#994</a>, <code>tests/fixtures/traces/issue_994/</code>), BTicino <code>LH4695_AM5875_010103.fwz</code> ROM disassembly, and <code>own-firmware-oracle</code> emulation across 13 gateway images (<code>thermo-four-zone-central</code> / <code>plant-cu4695</code>). <strong>Gen A</strong> gateways (<code>MH200</code>, <code>H4684</code>) collapse <code>#0#N</code> (<code>303</code>, <code>3100</code>, <code>#14*T*1..3</code>) onto <code>#0</code> (<code>B1=00</code>, ignored by 4695) and NACK season (<code>*4*1/0*#0#N##</code>) and direct zone writes. <strong>Gen B</strong> gateways (<code>MH200N</code>, <code>F453</code>, <code>F453AV</code>) forward plant-wide <code>#0#N</code> commands but NACK direct subordinate zone writes (<code>*#4*Z*#14*...</code>). <strong>Gen C / D</strong> gateways (<code>F450</code>, <code>F454</code>, <code>F459</code>, <code>F460</code>, <code>F461</code>, <code>MH202</code>, <code>MyHomeServer1</code>, <code>3488</code>) support both <code>#0#N</code> and direct subordinate zone writes. In <code>myhome.yaml</code>, subordinate zones need <code>standalone: true</code> (the default <code>standalone: false</code> targets 99-zone plants).</td>
+<td style="text-align: left;">Use a Gen C/D gateway for full per-zone + plant-wide control, or control plant-wide via the central unit (<code>Central Unit 01</code>..<code>Central Unit 96</code>) on Gen B. Please attach traces from other gateways or cooling season to RFC #248.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>A commanded setpoint (dimension 14) that arrives without a following dimension 12 does not update the slider once the zone has reported a setpoint in force.</strong></td>
-<td style="text-align: left;">The slider follows dimension 12 (the setpoint the thermostat regulates to, knob offset included) as soon as the zone has reported it; a dimension 14 that is not the echo of a write from Home Assistant is kept as the commanded value only. Both captured plants (F461 2.0.11 with a KW4691, MyHomeServer1 3.87.13 with 36 zones) emit dimension 12 after every write and after every local change, so the slider stays current there; a gateway that echoed only dimension 14 for an external change would leave the slider on the previous value until the next dimension 12 report or poll.</td>
-<td style="text-align: left;">Reload the entity (<code>homeassistant.update_entity</code>) to poll <code>*#4*Z##</code>; please attach a trace if you see this.</td>
+<td style="text-align: left;">The slider follows dimension 12 (the setpoint the thermostat regulates to, knob offset included) as soon as the zone has reported it; a dimension 14 that is not the echo of a write from Home Assistant is kept as the commanded value only. The F461 2.0.11 (KW4691) and MyHomeServer1 3.87.13 (36 zones) captures emit dimension 12 after every write and after every local change, so the slider stays current there. A central-unit plant behind an SCS-only gateway can report a new setpoint with dimension 14 alone: on an MH200N (<code>tests/fixtures/traces/issue_466/myhome_sweep_MH200N_all_2026-09-25T14-40-10.json</code>, zone 2) <code>*#4*2*12*0105*3##</code> is followed 9.7 s and 20.6 s later by <code>*#4*2*14*0100*3##</code> and no dimension 12, and the slider stays at 10.5 until the zone reports dimension 12 again. No rule on the frames' timing tells such an update from the dimension 14 that belongs to the same status report (#791, #809).</td>
+<td style="text-align: left;">Send <code>*#4*&lt;zone&gt;*12##</code> with <code>myhome.send_message</code>: the zone answers with dimension 12 and the slider follows (answered by a live F461 2.0.11 and F455 1.0.76; put on the bus by every emulated gateway firmware). <code>homeassistant.update_entity</code> asks the same only where zones are sent the status request <code>*#4*&lt;zone&gt;##</code> (F454, F460, F461, MH202, MyHomeServer1); on F450, F452, F453, F453AV, F455, F458, F459, H4684, MH200, MH200N and MH201 it sends no status request. <code>climate.set_temperature</code> writes a new setpoint and shows its echo. Please attach a trace if you see this.</td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Probes (<code>WHERE ≥ 100</code>) are read-only and push-driven.</strong></td>
-<td style="text-align: left;">They NACK the explicit poll (<code>*#4*ZPP*15##</code>) and push readings on their own schedule.</td>
-<td style="text-align: left;">Nothing needed; a probe that goes silent is polled again after 5 min.</td>
+<td style="text-align: left;">They push readings on their own schedule. An external probe (<code>N00</code>) NACKs the explicit poll (<code>*#4*N00*15##</code>, #308); a slave probe (<code>PZZ</code>) is asked <code>*#4*PZZ*0##</code>.</td>
+<td style="text-align: left;">Nothing needed; a probe that stayed silent for 15 min is polled again.</td>
 </tr>
 </tbody>
 </table>

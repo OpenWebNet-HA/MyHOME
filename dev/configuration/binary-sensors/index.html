@@ -25,7 +25,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
     
     
       
@@ -2084,6 +2084,7 @@
 <li><strong>Hardware</strong>: BTicino <code>3477</code> / <code>F428</code> / <code>3480</code> contact interfaces, magnetic reed switches, mechanical window switches, technical alarm contacts.</li>
 <li><strong>Addresses</strong>: <code>WHERE = 31</code> through <code>3201</code> (or <code>3&lt;A&gt;&lt;PL&gt;</code> alarm/IR contacts).</li>
 <li><strong>Auto-Discovery</strong>: Automatically discovered from SCS bus events and registered <code>3xxx</code> startup sweeps (<code>*#25*3xxx##</code>).</li>
+<li><strong>Address spelling</strong>: an F455 (firmware 1.0.76) writes contacts 1 and 2 as <code>301</code> / <code>302</code> where an F461 (firmware 2.0.11) on the same bus and the WHO 25 specification write <code>31</code> / <code>32</code>; captures of an F454, an MH200N and an MH202 carry the short form, and the other gateway models have no capture of these contacts. <code>30N</code> is read as <code>3N</code>: new contacts are created as <code>31</code>, and a contact an F455 registered earlier as <code>301</code> keeps its entity and follows both spellings. On a shared bus a standby F455 therefore updates the primary's contact during a failover, and a follower's <code>301</code> that duplicates the primary's <code>31</code> is pruned at startup like any other duplicate. The status request is always written with the short spelling (<code>*#25*31##</code>), because the F461 answered the padded one with NACK while the F455 relays the short one.</li>
 </ul>
 <h3 id="2-motion-pir-sensors-who-1">2. Motion / PIR Sensors (WHO = 1)<a class="headerlink" href="#2-motion-pir-sensors-who-1" title="Permanent link">&para;</a></h3>
 <ul>

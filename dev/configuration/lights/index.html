@@ -25,7 +25,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
     
     
       
@@ -828,6 +828,17 @@
     <span class="md-ellipsis">
       
         ⏱️ Native Bus Timers (Temporized Lights)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#actuator-lock-who-14-echo-confirmed-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🔒 Actuator Lock (WHO = 14) &amp; Echo-Confirmed State
       
     </span>
   </a>
@@ -2088,6 +2099,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#actuator-lock-who-14-echo-confirmed-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        🔒 Actuator Lock (WHO = 14) &amp; Echo-Confirmed State
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#lighting-groups-scs-dali-groups" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2235,6 +2257,7 @@
 <ul>
 <li><strong>On / Off</strong>: All discovered fixtures initially support standard switching (<code>turn_on</code>, <code>turn_off</code>).</li>
 <li><strong>Brightness / Dimming</strong>: When the actuator reports a brightness frame (<code>Dimension = 1</code>) or a coarse dimmer preset (<code>WHAT = 2..10</code>, mapped to BTicino's non-linear <code>1, 10, 20, 30, 40, 50, 60, 75, 100 %</code> curve), the integration unlocks the brightness slider in Home Assistant.</li>
+<li><strong>A dimmer that is on at exact level 0</strong>: a dimmer can be on and report level <code>0</code> (live, an <code>F418</code> behind an <code>F461</code> and an <code>F455</code>: status <code>*1*2*0010##</code>, level <code>*#1*0010*1*100*10##</code>). The same frame is how an <code>MH200</code> reports an off with a ramp (<code>*#1*62*1*100*2##</code> and no off status; asked for its status it answers <code>*1*0*62##</code>). So a <code>Dimension 1</code> level <code>0</code> that follows an "on" status of the light is verified with one status request (<code>*#1*&lt;where&gt;##</code>): answered "on" (<code>*1*1*&lt;where&gt;##</code> or <code>*1*2*&lt;where&gt;##</code>), the dimmer is shown <strong>on at the lowest level (1 %)</strong> and stays so at every later level <code>0</code>, verified again in the background at most every 30 s; a request closed without an "on" status means off; a request that could not be made (not written, refused with a NACK, or not closed within 20 s) leaves a dimmer already confirmed on as it is, and any other level <code>0</code> off. Until the answer the level <code>0</code> is shown on only when the "on" status is at most 2 s old. At most 3 such requests in 30 s for one light; beyond that a level <code>0</code> is off, as before. Unchanged: the off status (<code>*1*0*&lt;where&gt;##</code>), a <code>Dimension 4</code> level <code>0</code> (<code>*#1*0010*4*100*5##</code>) and a <code>Dimension 1</code> level <code>0</code> with no "on" status before it mean off. A switch-off from Home Assistant ends the "on" status. A plain "on" (<code>*1*1*&lt;where&gt;##</code>) that answers the status request confirms the dimmer <strong>on at 1 %</strong>; an "on" status that arrives after the request has ended is the light's own status: it shows the light on, at the last known level instead of 0 % for a plain "on", and the next level <code>0</code> is asked about again. Captures: <code>tests/fixtures/traces/dimmer_on_at_level_0_2026_11_20</code>.</li>
 <li><strong>Colour Temperature (Tunable White)</strong>: When a DALI or SCS gateway reports colour temperature telemetry (<code>Dimension = 14</code>), Home Assistant exposes mireds/Kelvin colour temperature control.</li>
 <li><strong>HSV / RGB Colour</strong>: Telemetry reporting hue and saturation (<code>Dimension = 12</code>) dynamically enables the Home Assistant colour picker.</li>
 <li><strong>Additive Retention</strong>: Capabilities are <strong>added, never removed</strong>. A DALI DT8 driver reporting both dimensions <code>12</code> and <code>14</code> ends up with <code>supported_color_modes: [hs, color_temp]</code>, and its active <code>color_mode</code> smoothly tracks incoming bus frames.</li>
@@ -2261,6 +2284,15 @@
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="nt">data</span><span class="p">:</span>
 </span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">  </span><span class="nt">duration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">120</span><span class="w">   </span><span class="c1"># Turn on and automatically turn off after 2 minutes (0.5–918000 s)</span>
 </span></code></pre></div>
+<hr />
+<h2 id="actuator-lock-who-14-echo-confirmed-state">🔒 Actuator Lock (<code>WHO = 14</code>) &amp; Echo-Confirmed State<a class="headerlink" href="#actuator-lock-who-14-echo-confirmed-state" title="Permanent link">&para;</a></h2>
+<p>Each point-to-point <code>WHO = 1</code> light and switch includes <strong>Lock</strong> (<code>*14*0*&lt;WHERE&gt;##</code>) and <strong>Unlock</strong> (<code>*14*1*&lt;WHERE&gt;##</code>) configuration buttons on its device page and stays synchronized with physical bus state even when locked (<a href="https://github.com/OpenWebNet-HA/MyHOME/issues/976">#976</a>):</p>
+<ul>
+<li><strong>Bidirectional <code>actuator_locked</code> Tracking</strong>: Because tested OpenWebNet gateways reject <code>*#14*&lt;WHERE&gt;##</code> status queries with NACK and several gateways/actuators (<code>MH201</code>, legacy <code>MH200</code> / <code>MH200N</code> relays, <code>F422</code> <code>#4#II</code> local-bus interfaces) do not echo <code>WHO = 14</code> on <code>*99*1##</code>, Home Assistant tracks <code>actuator_locked</code> from both inbound non-translation <code>*14*0/1*...##</code> events and <code>*#*1##</code>-acknowledged outbound <code>*14*0/1*...##</code> commands (<code>button.&lt;name&gt;_lock</code> / <code>unlock</code>, <code>myhome.send_message</code>, scenes, and automations, across published <code>WHO_1.pdf</code> §4.2 point, Area <code>00</code> / <code>1</code>–<code>9</code> / <code>100</code>, and General <code>0</code> scopes — plus defensive resolution of configured <code>#G</code> groups — isolated per <code>#4#&lt;Int&gt;</code> local-bus interface per §2.3). Once observed, <code>actuator_locked: true | false</code> is exposed in <code>extra_state_attributes</code> and soft-restored across Home Assistant restarts, including when saved while <code>unavailable</code> (<code>*#*0##</code> NACKs are ignored).</li>
+<li><strong>Non-Optimistic Parameterized Confirmation</strong>: Plain <code>turn_on</code> / <code>turn_off</code> as well as parameterized writes — brightness (<code>Dimension 1</code> and coarse <code>WHAT = 2..10</code>), HSV/RGB colour (<code>Dimension 12</code>), colour temperature (<code>Dimension 14</code>), native hardware transitions, <code>myhome.turn_on_timed</code>, and step 1 of <code>software_stepped</code> fades (which anchors its <code>2.5 s</code> first-echo window on socket delivery rather than queue enqueue so <code>LightEchoWatchdog</code>'s <code>1.5 s</code> read-back can confirm dropped echoes, and sends a single target write when <code>actuator_locked: true</code>) — update Home Assistant state only when confirmed by the actuator's bus echo (<code>~90–330 ms</code>). Moving a brightness/colour slider on a locked dimmer produces <strong>zero UI bounce</strong> and fires <strong>zero <code>state_changed</code> events</strong> to automations or <code>expose:</code> follower entities, even on cold boot before <code>WHO = 14</code> has been seen.</li>
+<li><strong>Dimension-Aware Read-Back (<code>LightEchoWatchdog</code>)</strong>: If an acknowledged point-to-point command receives no matching event echo within <code>1.5 s</code> (e.g. under <code>F455</code> burst load) and the endpoint is not known to be locked, the gateway reads back <code>*#1*&lt;WHERE&gt;##</code> together with any written dimension (<code>Dimension 1</code> brightness, <code>Dimension 12</code> HSV, or <code>Dimension 14</code> colour temperature), recovering dropped echoes without leaving stale slider values (<a href="https://github.com/OpenWebNet-HA/MyHOME/pull/964">#964</a>, <a href="https://github.com/OpenWebNet-HA/MyHOME/issues/976">#976</a>).</li>
+<li><strong>State-Diff Self-Healing</strong>: Outbound commands still transmit when <code>actuator_locked: true</code> because physical actuator lock RAM resets on a mains power cycle. Since locked 2nd-gen actuators (<code>F411/4</code>, <code>F418U2</code>) continue answering <code>*#1*&lt;WHERE&gt;##</code> / <code>*#1*&lt;WHERE&gt;*1##</code> status reads with their frozen state, <code>actuator_locked</code> clears to <code>false</code> only when a point-to-point non-translation <code>WHO = 1</code> event reports an actual state change (<code>is_on</code>, brightness, colour temperature, or HSV colour) — never on an unchanged poll reply.</li>
+</ul>
 <hr />
 <h2 id="lighting-groups-scs-dali-groups">💡 Lighting Groups (SCS &amp; DALI Groups)<a class="headerlink" href="#lighting-groups-scs-dali-groups" title="Permanent link">&para;</a></h2>
 <p>In MyHOME systems, lighting actuators can be grouped physically via configurators or MyHOME Suite into <strong>SCS Groups</strong> (<code>WHERE = #1</code> through <code>#255</code>), which is also the standard mechanism used to group fixtures on DALI gateway interfaces such as the <strong>F429G</strong>.</p>

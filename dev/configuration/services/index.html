@@ -25,7 +25,7 @@
       
       
       <link rel="icon" href="../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
     
     
       
@@ -3395,6 +3395,10 @@ Non-split <code>WHO = 4</code> Dimension 22 frames whose <code>WHERE</code> carr
 </tr>
 </tbody>
 </table>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><strong>Nothing sent means an error, not a log line.</strong> An empty <code>message</code> is refused by the service schema. The action raises <code>ServiceValidationError</code> and queues nothing when <code>message</code> is not a frame (characters other than <code>0-9</code>, <code>*</code> and <code>#</code>, no leading <code>*</code> or trailing <code>##</code>, or not parsable: <code>send_message_invalid_frame</code>), when it is a refused destructive/crash frame (<code>WHO = 4</code> Dimension 22 crash forms, <code>WHO = 18</code> Dimension 52 crash forms, or bare <code>WHO = 22</code> power frames: <code>send_message_refused_frame</code>), when <code>gateway</code> matches no loaded gateway (<code>gateway_not_found</code>), or when no MyHOME gateway is set up (<code>no_gateway_loaded</code>). A frame that was queued and that the gateway later answers with <code>NACK</code> is still only logged.</p>
+</div>
 <h3 id="example-yaml-call">Example YAML Call<a class="headerlink" href="#example-yaml-call" title="Permanent link">&para;</a></h3>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">action</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myhome.send_message</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">data</span><span class="p">:</span>
@@ -3480,11 +3484,12 @@ Non-split <code>WHO = 4</code> Dimension 22 frames whose <code>WHERE</code> carr
 </span></code></pre></div>
 <hr />
 <h2 id="3-myhomesync_time">3. <code>myhome.sync_time</code><a class="headerlink" href="#3-myhomesync_time" title="Permanent link">&para;</a></h2>
-<p>Synchronizes the gateway's real-time clock (RTC) with Home Assistant's local time using <code>WHO = 13</code> dimension frames. This ensures scheduled events programmed directly inside physical gateways (e.g. MH200N/MH202 schedules) run in lockstep with real time.</p>
+<p>Asks the gateway to set its real-time clock (RTC) to Home Assistant's local time: it queues the <code>WHO = 13</code> dimension frames on the named gateway, or on every primary gateway when <code>gateway</code> is omitted. It does not wait for the gateway's answer and does not verify the clock afterwards. The clock matters for scheduled events programmed directly inside physical gateways (e.g. MH200N/MH202 schedules).</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <ul>
 <li><strong>Shared-Bus Topology</strong>: When <code>gateway</code> is omitted, follower (<code>secondary</code> / <code>standby</code>) gateways on a shared SCS bus are automatically skipped so only primary gateways broadcast clock updates.</li>
+<li><strong>Unknown or Missing Gateway</strong>: A <code>gateway</code> MAC that matches no loaded gateway raises <code>ServiceValidationError</code> (<code>gateway_not_found</code>), and calling the action while no MyHOME gateway is set up raises <code>no_gateway_loaded</code>; no frame is queued in either case.</li>
 <li><strong>Whole-Hour UTC Offset Requirement</strong>: Because the OpenWebNet <code>WHO = 13</code> timezone offset field (<code>0HH</code> / <code>1HH</code>) only encodes whole hours, calling <code>myhome.sync_time</code> when Home Assistant is configured in a fractional-hour timezone (such as <code>Asia/Kolkata</code> <code>+05:30</code>) raises <code>ServiceValidationError</code> (<code>sync_time_unsupported_offset</code>) rather than transmitting a truncated offset.</li>
 </ul>
 </div>
