@@ -5,6 +5,7 @@ import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 
+from custom_components.myhome import services
 from custom_components.myhome.const import (
     ATTR_GATEWAY,
     ATTR_MESSAGE,
@@ -705,3 +706,181 @@ def test_send_message_and_sync_time_have_selectors() -> None:
         for name, field in services[service]["fields"].items():
             assert "selector" in field, f"{service}.{name}"
     assert services[SERVICE_SEND_MESSAGE]["fields"][ATTR_MESSAGE]["required"] is True
+
+
+# ── send_message / sync_time tell the caller when nothing was sent (#805 follow-up) ──
+
+
+@pytest.fixture
+async def sending_gateway(hass: HomeAssistant, attach_gateway):
+    """One loaded gateway whose queue methods record what the actions hand over."""
+    from unittest.mock import AsyncMock
+
+    await async_setup_services(hass)
+    handler = MagicMock()
+    handler.log_id = "[F461]"
+    handler.send = AsyncMock()
+    handler.send_status_request = AsyncMock()
+    attach_gateway("00:03:50:aa:bb:cc", handler)
+    return handler
+
+
+def test_send_message_schema_refuses_an_empty_message() -> None:
+    """An empty frame is a missing one: refused by the registration schema, like `None` (#805 review)."""
+    import voluptuous as vol
+
+    from custom_components.myhome.services import SEND_MESSAGE_SCHEMA
+
+    with pytest.raises(vol.Invalid):
+        SEND_MESSAGE_SCHEMA({ATTR_MESSAGE: ""})
+    assert SEND_MESSAGE_SCHEMA({ATTR_MESSAGE: "*1*1*12##"}) == {ATTR_MESSAGE: "*1*1*12##"}
+
+
+@pytest.mark.parametrize("frame", ["garbage", "*1*1*", " ", "*1*1*12#", "*##", "*1*1##"])
+async def test_send_message_raises_for_a_frame_that_does_not_parse(
+    hass: HomeAssistant, sending_gateway, frame: str, caplog
+) -> None:
+    """B7-3: `garbage` / `*1*1*` used to log an ERROR and return success (local F461 HA, 2026-11-18)."""
+    with pytest.raises(ServiceValidationError) as err:
+        await hass.services.async_call(DOMAIN, SERVICE_SEND_MESSAGE, {ATTR_MESSAGE: frame}, blocking=True)
+    assert err.value.translation_key == "send_message_invalid_frame"
+    assert err.value.translation_domain == DOMAIN
+    assert err.value.translation_placeholders == {"message": frame}
+    assert f"Could not parse message `{frame}`, not sending it." in caplog.text
+    sending_gateway.send.assert_not_awaited()
+    sending_gateway.send_status_request.assert_not_awaited()
+
+
+async def test_send_message_and_sync_time_raise_for_an_unknown_gateway(hass: HomeAssistant, sending_gateway) -> None:
+    """A MAC that matches no loaded gateway sends nothing: the caller gets `gateway_not_found`."""
+    for service, data in (
+        (SERVICE_SEND_MESSAGE, {ATTR_GATEWAY: "00:03:50:99:99:99", ATTR_MESSAGE: "*1*1*12##"}),
+        (SERVICE_SYNC_TIME, {ATTR_GATEWAY: "00:03:50:99:99:99"}),
+    ):
+        with pytest.raises(ServiceValidationError) as err:
+            await hass.services.async_call(DOMAIN, service, data, blocking=True)
+        assert err.value.translation_key == "gateway_not_found"
+        assert err.value.translation_placeholders == {"gateway": "00:03:50:99:99:99"}
+    sending_gateway.send.assert_not_awaited()
+
+
+async def test_send_message_and_sync_time_raise_when_no_gateway_is_set_up(hass: HomeAssistant) -> None:
+    """With no loaded entry both actions raise `no_gateway_loaded` instead of logging and returning."""
+    await async_setup_services(hass)
+    for service, data in ((SERVICE_SEND_MESSAGE, {ATTR_MESSAGE: "*1*1*12##"}), (SERVICE_SYNC_TIME, {})):
+        with pytest.raises(ServiceValidationError) as err:
+            await hass.services.async_call(DOMAIN, service, data, blocking=True)
+        assert err.value.translation_key == "no_gateway_loaded"
+
+
+async def test_valid_calls_still_queue_their_frames(hass: HomeAssistant, sending_gateway) -> None:
+    """The error paths change nothing for a valid call: one command, one request, two clock frames."""
+    await hass.services.async_call(DOMAIN, SERVICE_SEND_MESSAGE, {ATTR_MESSAGE: "*1*1*12##"}, blocking=True)
+    assert [str(c.args[0]) for c in sending_gateway.send.await_args_list] == ["*1*1*12##"]
+    await hass.services.async_call(DOMAIN, SERVICE_SEND_MESSAGE, {ATTR_MESSAGE: "*#13**15##"}, blocking=True)
+    assert [str(c.args[0]) for c in sending_gateway.send_status_request.await_args_list] == ["*#13**15##"]
+    sending_gateway.send.reset_mock()
+    sending_gateway.is_follower = False
+    await hass.services.async_call(DOMAIN, SERVICE_SYNC_TIME, {}, blocking=True)
+    await hass.services.async_call(DOMAIN, SERVICE_SYNC_TIME, {ATTR_GATEWAY: "00:03:50:aa:bb:cc"}, blocking=True)
+    frames = [str(c.args[0]) for c in sending_gateway.send.await_args_list]
+    assert len(frames) == 4
+    assert all(f.startswith(("*#13**#22*", "*#13**#0*")) for f in frames)
+
+
+async def test_newline_after_frame(hass, sending_gateway):
+    # Deliberately invalid service input: published frame (test_services.py:777) plus a pasted newline.
+    with pytest.raises(ServiceValidationError) as exc:
+        await hass.services.async_call(
+            DOMAIN, SERVICE_SEND_MESSAGE, {ATTR_MESSAGE: "*1*1*12##" + "\n"}, blocking=True
+        )
+    assert exc.value.translation_key == "send_message_invalid_frame"
+    sending_gateway.send.assert_not_awaited()
+
+
+async def test_non_ascii_digits_not_sent(hass, sending_gateway):
+    # Localized decimal WHERE substituted into the good service example (tests/test_services.py:777).
+    message = "*1*1*12##".replace("12", "\u0661\u0662")
+    with pytest.raises(ServiceValidationError) as exc:
+        await hass.services.async_call(
+            DOMAIN, SERVICE_SEND_MESSAGE, {ATTR_MESSAGE: message}, blocking=True
+        )
+    assert exc.value.translation_key == "send_message_invalid_frame"
+    sending_gateway.send.assert_not_awaited()
+
+
+async def test_truncated_time_is_invalid(hass, sending_gateway):
+    frame = "*#13**#0*15*00##"  # ownd/tests/test_message_protocol.py:256
+    try:
+        await hass.services.async_call(
+            DOMAIN, SERVICE_SEND_MESSAGE, {ATTR_MESSAGE: frame}, blocking=True
+        )
+    except Exception as exc:
+        assert isinstance(exc, ServiceValidationError), repr(exc)
+        assert exc.translation_key == "send_message_invalid_frame"
+        assert exc.translation_placeholders == {"message": frame}
+    else:
+        pytest.fail("accepted truncated clock")
+    sending_gateway.send.assert_not_awaited()
+    sending_gateway.send_status_request.assert_not_awaited()
+
+
+@pytest.mark.parametrize("frame", ["*#18*51*52#2026#10##", "*22*1*1##"])
+async def test_send_message_refuses_all_ownd_destructive_crash_frames(
+    hass, sending_gateway, frame: str
+) -> None:
+    """WHO 18 dim 52 crash forms and bare WHO 22 power frames are refused before queueing."""
+    with pytest.raises(ServiceValidationError) as err:
+        await hass.services.async_call(
+            DOMAIN, SERVICE_SEND_MESSAGE, {ATTR_MESSAGE: frame}, blocking=True
+        )
+    assert err.value.translation_key == "send_message_refused_frame"
+    sending_gateway.send.assert_not_awaited()
+    sending_gateway.send_status_request.assert_not_awaited()
+
+
+async def test_send_message_rejects_signaling_nonce_frame(hass, sending_gateway) -> None:
+    """OWNSignaling NONCE frames (*#123456789##) are rejected instead of sent as status requests."""
+    with pytest.raises(ServiceValidationError) as err:
+        await hass.services.async_call(
+            DOMAIN, SERVICE_SEND_MESSAGE, {ATTR_MESSAGE: "*#123456789##"}, blocking=True
+        )
+    assert err.value.translation_key == "send_message_invalid_frame"
+    sending_gateway.send.assert_not_awaited()
+    sending_gateway.send_status_request.assert_not_awaited()
+
+
+async def test_gateway_not_found_preserves_caller_input(hass, sending_gateway) -> None:
+    """Unknown non-MAC gateway strings are echoed verbatim in gateway_not_found placeholders."""
+    with pytest.raises(ServiceValidationError) as err:
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SEND_MESSAGE,
+            {ATTR_GATEWAY: "not-a-mac", ATTR_MESSAGE: "*1*1*12##"},
+            blocking=True,
+        )
+    assert err.value.translation_key == "gateway_not_found"
+    assert err.value.translation_placeholders == {"gateway": "not-a-mac"}
+
+
+async def test_precautionary_refusal_is_not_a_confirmed_firmware_fault(
+    hass, sending_gateway, monkeypatch
+):
+    # Safe split read from tests/test_dimension22_guard.py:43-48, intentionally blocked when the detector is absent.
+    monkeypatch.setattr(services, "_is_dimension_22_crash_form", None)
+    frame = "*#4*3#2#1*22##"
+    with pytest.raises(ServiceValidationError) as err:
+        await hass.services.async_call(
+            DOMAIN, SERVICE_SEND_MESSAGE, {ATTR_MESSAGE: frame}, blocking=True
+        )
+    sending_gateway.send.assert_not_awaited()
+    sending_gateway.send_status_request.assert_not_awaited()
+    assert "crashes the thermostat service" not in str(err.value), (
+        "precautionary compatibility refusal presented as a confirmed crash"
+    )
+
+
+def test_destructive_frame_reason_returns_none_without_ownd_classifier(monkeypatch) -> None:
+    """When running against an older OWNd without destructive_frame_reason, helper returns None."""
+    monkeypatch.setattr(services, "_ownd_destructive_frame_reason", None)
+    assert services.destructive_frame_reason("*22*1*1##") is None

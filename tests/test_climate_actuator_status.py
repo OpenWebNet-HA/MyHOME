@@ -25,7 +25,8 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from OWNd.message import OWNHeatingEvent, OWNMessage
 from OWNd.profiles import GenericGatewayProfile, get_gateway_profile
 
-from custom_components.myhome.climate import MyHOMEClimate, _zone_address
+from custom_components.myhome.climate import MyHOMEClimate
+from custom_components.myhome.climate_discovery import _zone_address
 from custom_components.myhome.const import (
     CONF_ENTITY,
     CONF_FIRMWARE,
@@ -36,6 +37,7 @@ from custom_components.myhome.const import (
 from custom_components.myhome.discovery import Address
 from custom_components.myhome.gateway import MyHOMEGatewayHandler
 from tests.conftest import attach_platform, attach_runtime
+from tests.test_thermo_discovery_at_start import _acknowledged
 
 MAC = "00:03:50:00:00:44"
 
@@ -164,7 +166,7 @@ async def test_f461_asks_every_zone_s_actuators_with_one_frame(hass, fast_bus_pa
     handler.watch_zone_actuators("2")
     handler.watch_zone_actuators("5")
     await _settle(hass)
-    assert _drain(handler) == ["*#4*#0*20##"]
+    assert _drain(handler) == ["*#4*0#0*20##"]
 
 
 async def test_routed_zone_is_withheld_by_default_and_asked_when_profile_opts_in(hass, fast_bus_pacing):
@@ -173,7 +175,7 @@ async def test_routed_zone_is_withheld_by_default_and_asked_when_profile_opts_in
     handler.watch_zone_actuators("2")
     handler.watch_zone_actuators("3#4#01")
     await _settle(hass)
-    assert _drain(handler) == ["*#4*#0*20##"]
+    assert _drain(handler) == ["*#4*0#0*20##"]
 
     handler.gateway.profile = SimpleNamespace(
         model_name=handler.gateway.profile.model_name, supports_interface_zone_requests=True
@@ -181,7 +183,7 @@ async def test_routed_zone_is_withheld_by_default_and_asked_when_profile_opts_in
     handler.request_zone_dimension("2", 20)
     handler.request_zone_dimension("3#4#01", 20)
     await _settle(hass)
-    assert _drain(handler) == ["*#4*#0*20##", "*#4*3#4#01*20##"]
+    assert _drain(handler) == ["*#4*0#0*20##", "*#4*3#4#01*20##"]
 
 
 async def test_forwarding_gateway_asks_each_zone(hass, fast_bus_pacing):
@@ -222,19 +224,22 @@ def test_profile_flag_wins_over_the_table(hass, flag):
 async def test_actuators_are_asked_after_the_startup_sweep(hass, fast_bus_pacing, monkeypatch):
     # A quiet bus never waits for the cap; it only sizes how long a request waits for the sweep.
     monkeypatch.setattr("custom_components.myhome.gateway.BUS_QUIET_CAP", 5.0)
-    handler = _handler(hass, "F461")
+    handler = _acknowledged(_handler(hass, "F461"))
     handler.watch_zone_actuators("2")
     await hass.async_block_till_done()
     assert _drain(handler) == []  # waiting for the sweep
     await handler.initial_discovery()
     await _settle(hass)
     queued = _drain(handler)
-    assert queued[-1] == "*#4*#0*20##"
-    assert queued.count("*#4*#0*20##") == 1
+    # The sweep itself asks every actuator in the place of the dropped *#4*0##: the zone that
+    # was waiting for it is served by that request and does not put a second burst on the bus.
+    assert queued.count("*#4*0#0*20##") == 1
+    assert queued[-1] == "*#18*51*113##"
 
 
 async def test_reconnect_asks_the_actuators_again(hass, fast_bus_pacing):
     handler = _handler(hass, "F454")
+    handler.central_season = "heating"  # forgotten with the connection: it may change meanwhile
     handler._initial_discovery_done.set()
     handler.is_connected = True
     unwatch = handler.watch_zone_actuators("2")
@@ -244,11 +249,13 @@ async def test_reconnect_asks_the_actuators_again(hass, fast_bus_pacing):
     handler._on_event_connection_state_change(True)  # already connected: nothing new
     await _settle(hass)
     assert _drain(handler) == []
+    assert handler.central_season == "heating"
 
     handler._on_event_connection_state_change(False)
     handler._on_event_connection_state_change(True)
     await _settle(hass)
     assert _drain(handler) == ["*#4*2*20##"]
+    assert handler.central_season is None
 
     unwatch()
     handler._on_event_connection_state_change(False)
@@ -430,14 +437,47 @@ async def test_dimension_19_revealing_the_fan_coil_itself_asks_the_fan_speed(has
     assert [c.args for c in zone._gateway_handler.request_zone_dimension.call_args_list] == [("2", 11)]
 
 
-async def test_a_fan_coil_revealed_after_its_side_asks_the_fan_speed(hass):
-    """Dimension 19 before dimension 20: the side is known when the fan coil shows up; ask the speed then."""
+async def test_dimension_19_reveals_a_fan_coil_at_rest_on_the_cooling_side_too(hass):
+    """CA5-11: ``*#4*2*19*5*0##`` before any dimension 20 (an F455 start: no actuator list).
+
+    "CV, HV = 5 → OFF Fan Coil" holds for both values (WHO 4 p. 21); the OFF code counted on the
+    heating side only (the test above), so the F461 plant's zone 2 (heating valve, cooling fan
+    coil) had no ``fan_mode`` until an actuator reported. The speed is asked once, when the side
+    becomes known; the actuator report that follows asks nothing more.
+    """
     zone = _zone(hass)
-    _feed(zone, *F461_POLL_REPLY, "*4*0*2##", "*#4*2*19*5*0##")  # cooling season; the valve side's report
-    assert zone._fan is False
-    zone._gateway_handler.request_zone_dimension.assert_not_called()
+    _feed(zone, *F461_POLL_REPLY, "*4*0*2##", "*#4*2*19*5*0##")  # cooling season, cooling fan coil at rest
+    assert zone._fan is True and zone.fan_mode == "auto"
+    assert zone.extra_state_attributes["fan_coil_cooling"] is True
+    assert zone.extra_state_attributes["fan_coil_heating"] is False
+    assert zone.extra_state_attributes["running_fan_speed"] == "off"
+    assert [c.args for c in zone._gateway_handler.request_zone_dimension.call_args_list] == [("2", 11)]
     _feed(zone, "*#4*2#2*20*5##", "*#4*2#2*20*5##")
     assert [c.args for c in zone._gateway_handler.request_zone_dimension.call_args_list] == [("2", 11)]
+
+
+@pytest.mark.parametrize(
+    ("where", "frame"),
+    [
+        ("2", "*#4*2*19*5*0##"),  # F461 plant, zone 2 (f461_live_2026-10-23 and others)
+        ("60", "*#4*60*19*5*0##"),  # MyHomeServer1 fan-coil zone (myhomeserver1_live_2026-10-25)
+        ("2", "*#4*2*19*5*5##"),  # F455 (issue_466/F455_direct_requests_zone3_2026-11-06.jsonl)
+        ("1", "*#4*1*19*0*14##"),  # emulated MyHomeServer1, #908 (issue_908 ..._extended_fancoil_off_14_16)
+        ("1", "*#4*1*19*14*0##"),  # the same code as CV: built for the test
+        ("2", "*#4*2*19*0*5##"),  # 5 as HV: built, as in the test above
+    ],
+)
+async def test_a_fan_coil_off_code_counts_on_either_side(hass, where, frame):
+    """The same OFF code enabled ``fan_mode`` as HV and not as CV."""
+    zone = _zone(hass, where)
+    _feed(zone, frame)
+    assert zone._fan is True and zone.fan_mode == "auto"
+
+
+async def test_valves_on_both_sides_still_give_no_fan_mode(hass):
+    zone = _zone(hass, "6")
+    _feed(zone, "*#4*6*19*0*0##")  # F455 valve zone (issue_674 trace)
+    assert zone._fan is False and zone.fan_mode is None
 
 
 async def test_a_request_held_by_the_sweep_starts_its_wait_at_the_first_check_after_it(hass, monkeypatch):
@@ -546,6 +586,7 @@ async def test_central_off_keeps_the_actuators_attribute(hass):
     [
         "", "2*22", "2 ", "a", "*#0", "2#1*20", "#", "2##", "##2", "2#",
         "2#4#", "2#1#2#3", "3#4#001", "105", "001", "2#10", "#4#1", "#4#01",
+        "2\n", "2#1\n", "2#4#01\n", " 2",  # whitespace is not part of an address (``$`` let the newline pass)
     ],
 )
 def test_an_invalid_zone_address_is_refused_at_once(hass, where):
@@ -644,19 +685,19 @@ async def test_a_gateway_identified_late_as_refusing_is_not_asked(hass, fast_bus
 async def test_a_gateway_identified_late_as_supported_is_asked(hass, fast_bus_pacing, monkeypatch):
     """Entities are added as a misconfigured MH200N; WHO 13 then corrects it to F461."""
     monkeypatch.setattr("custom_components.myhome.gateway.BUS_QUIET_CAP", 5.0)  # the wait for the sweep must not time out
-    handler = _handler(hass, "MH200N")
+    handler = _acknowledged(_handler(hass, "MH200N"))
     handler.watch_zone_actuators("2")
     await hass.async_block_till_done()
     handler.gateway.profile = get_gateway_profile("F461")
     await handler.initial_discovery()
     await _settle(hass)
-    assert _drain(handler)[-1] == "*#4*#0*20##"
+    assert _drain(handler).count("*#4*0#0*20##") == 1  # asked by the sweep of the corrected model
 
     handler.is_connected = True
     handler._on_event_connection_state_change(False)
     handler._on_event_connection_state_change(True)
     await _settle(hass)
-    assert _drain(handler) == ["*#4*#0*20##"]
+    assert _drain(handler) == ["*#4*0#0*20##"]
 
 
 # ------------------------------------------------------------------ gateway: profile, topology and probes (review 5639409551, 5)
@@ -666,7 +707,7 @@ def test_a_generic_profile_with_a_vendor_prefixed_name_still_finds_its_tables(ha
     handler = _handler(hass, "BTicino F461")
     assert isinstance(handler.gateway.profile, GenericGatewayProfile)
     assert handler._model_key == "F461"
-    assert handler.all_zone_request(20) == "*#4*#0*20##"
+    assert handler.all_zone_request(20) == "*#4*0#0*20##"
     assert handler.actuator_request_refused is False
 
 
@@ -735,7 +776,7 @@ async def test_myhomeserver1_asks_every_zone_s_actuators_with_one_frame(hass, fa
     handler.watch_zone_actuators("35")
     handler.watch_zone_actuators("36")
     await _settle(hass)
-    assert _drain(handler) == ["*#4*#0*20##"]
+    assert _drain(handler) == ["*#4*0#0*20##"]
 
 
 # ------------------------------------------------------------------ gateway: coalescing after the sweep (review 5639409551, 6)
@@ -754,7 +795,7 @@ async def test_zones_discovered_after_the_sweep_share_one_all_zone_request(hass,
     await asyncio.sleep(0.05)
     handler.watch_zone_actuators("7#4#01")
     await _settle(hass)
-    assert _drain(handler) == ["*#4*#0*20##", "*#4*7#4#01*20##"]
+    assert _drain(handler) == ["*#4*0#0*20##", "*#4*7#4#01*20##"]
 
 
 async def test_the_startup_run_does_not_wait_the_coalesce_window(hass, fast_bus_pacing, monkeypatch):
@@ -762,11 +803,11 @@ async def test_the_startup_run_does_not_wait_the_coalesce_window(hass, fast_bus_
     monkeypatch.setattr("custom_components.myhome.gateway.BUS_QUIET_CAP", 5.0)  # the wait for the sweep must not time out
     monkeypatch.setattr("custom_components.myhome.gateway.ZONE_REQUEST_COALESCE", 5.0)
     handler = _handler(hass, "F461")
-    handler.watch_zone_actuators("2")
+    handler.request_zone_dimension("2", 60)  # the actuators are asked by the sweep itself
     await hass.async_block_till_done()
     await handler.initial_discovery()
     await _settle(hass)
-    assert _drain(handler)[-1] == "*#4*#0*20##"
+    assert _drain(handler)[-1] == "*#4*0*60##"
 
 
 # ------------------------------------------------------------------ cross-check follow-ups
@@ -1188,7 +1229,7 @@ def test_is_actuator_where_distinguishes_actuators_from_central_and_routed():
     assert is_actuator_where("0#0") is True
     assert is_actuator_where("0#1") is True
     assert is_actuator_where("#0#0") is True
-    assert is_actuator_where("#0#9") is True
+    assert is_actuator_where("#0#9") is False  # 4-zone central unit #0#1..#0#99
     assert is_actuator_where("2#1#4#01") is True
     assert is_actuator_where("2#4#4#01") is True
     assert is_actuator_where("2#4#4#1") is True
@@ -1253,10 +1294,12 @@ async def test_actuator_where_never_sends_status_or_zone_dimension_polls(hass, f
         await zone.async_update()
         await _settle(hass)
         sent = [str(c.args[0]) for c in handler.send_status_request.await_args_list]
-        if where == "3#2#1" or model in ("MH202", "H4684"):
+        if where == "3#2#1" or model == "H4684":
+            # H4684 drops the actuator form too; the MH202 only the zone form (thermo-actuator.tsv:
+            # *#4*1#1*20## "ack / out", *#4*1*20## "nack / silent").
             expected: list[str] = []
         elif where == "2#1" and model == "F461":
-            expected = ["*#4*#0*20##"]
+            expected = ["*#4*0#0*20##"]
         else:
             expected = [f"*#4*{where}*20##"]
         assert sent == expected
@@ -1340,9 +1383,57 @@ async def test_inline_routed_where_and_routed_central_withhold_polls_and_writes(
         assert len([r for r in caplog.records if "not writing to local" in r.message and r.levelname == "WARNING"]) == 5
 
 
+async def test_a_zone_behind_an_interface_is_not_written_where_the_gateway_routes_requests(hass, fast_bus_pacing, caplog):
+    """CA5-6: the writes are built without the interface, so they stay refused when polls are not.
+
+    No OWNd profile sets ``supports_interface_zone_requests`` today. With one that does, the
+    zone polled ``*#4*3#4#01##`` and wrote ``*#4*#3*#14*0210*3##``, ``*4*303*#3##`` and
+    ``*#4*3*#11*1##``: zone 3 of the local bus (the case #816 refuses on every other gateway).
+    """
+    handler = _handler(hass, "F461")
+    handler.gateway.profile = SimpleNamespace(model_name="F461", supports_interface_zone_requests=True)
+    handler._initial_discovery_done.set()
+    handler.send = AsyncMock()
+    assert handler.interface_zone_request_refused is False
+
+    def _climate(where: str, interface: str | None, central: bool = False) -> MyHOMEClimate:
+        entity = MyHOMEClimate(
+            hass=hass, name=f"Zone {where}", device_id=f"4-{where}", who="4", where=where, interface=interface,
+            heating=True, cooling=True, fan=True, humidity=False, standalone=None, central=central,
+            manufacturer="BTicino", model="Heating Zone", gateway=handler,
+        )
+        entity.hass = hass
+        entity.entity_id = "climate.routed"
+        entity.async_write_ha_state = MagicMock()
+        return entity
+
+    routed = _climate("3", "01")
+    assert routed._interface_poll_refused is False  # the polls go out with the interface
+    routed_central = _climate("#0", "01", central=True)
+    with caplog.at_level("WARNING", logger="custom_components.myhome"):
+        await routed.async_set_temperature(temperature=21.0)
+        await routed.async_set_hvac_mode(HVACMode.OFF)
+        await routed.async_set_hvac_mode(HVACMode.HEAT)
+        await routed.async_set_fan_mode("low")
+        await routed_central.async_set_hvac_mode(HVACMode.OFF)
+        await routed_central.async_set_temperature(temperature=20.0)
+    handler.send.assert_not_awaited()
+    assert len([r for r in caplog.records if "no WHO 4 write names an interface; not writing to local" in r.message]) == 6
+
+    # A zone of the local bus on the same gateway is written as before.
+    local = _climate("3", None)
+    local._attr_hvac_mode = HVACMode.HEAT
+    await local.async_set_fan_mode("low")
+    assert [str(call.args[0]) for call in handler.send.await_args_list] == ["*#4*3*#11*1##"]
+
+
 @pytest.mark.parametrize("where", ["#0#1", "#0#2", "#0#3", "#0#4", "4-#0#4"])
-async def test_four_zone_central_channels_1_to_4_are_central_and_never_polled(hass, fast_bus_pacing, where):
-    """4-zone central unit channels (#0#1..#0#4) are central even when restored without central=True."""
+async def test_four_zone_central_channels_1_to_4_are_central_and_poll_own_status(hass, fast_bus_pacing, where):
+    """4-zone central unit channels (#0#1..#0#4) are central and poll *#4*#0#N## plus unified
+    master-zone temperature/actuators (*#4*N*0## / *#4*N*20##), never *#4*#0#N*14## or *#4*#0#N*20##.
+    """
+    clean = where.removeprefix("4-")
+    master = clean.rsplit("#", 1)[1]
     for model in ("Generic", "F461", "F454", "MH202"):
         handler = _handler(hass, model)
         handler._initial_discovery_done.set()
@@ -1350,7 +1441,7 @@ async def test_four_zone_central_channels_1_to_4_are_central_and_never_polled(ha
         cu = MyHOMEClimate(
             hass=hass,
             name=f"Central {where}",
-            device_id=f"4-{where.removeprefix('4-')}",
+            device_id=f"4-{clean}",
             who="4",
             where=where,
             heating=True,
@@ -1367,16 +1458,23 @@ async def test_four_zone_central_channels_1_to_4_are_central_and_never_polled(ha
         cu.entity_id = "climate.cu_4zone"
         cu.async_write_ha_state = MagicMock()
         assert cu._central is True
-        assert cu._poll_on_add is False
+        assert cu._poll_on_add is True
         await cu.async_added_to_hass()
-        await cu.async_update()
         await _settle(hass)
-        handler.send_status_request.assert_not_awaited()
-        assert handler._actuator_zones == {}
+        sent = [str(call.args[0]) for call in handler.send_status_request.await_args_list]
+        assert f"*#4*{clean}*14##" not in sent
+        assert f"*#4*{clean}*20##" not in sent
+        expected = [f"*#4*{clean}##", f"*#4*{master}*0##"]
+        if model == "F461":
+            expected.append("*#4*0#0*20##")
+        elif not handler.actuator_request_refused and not handler.zone_actuator_request_refused:
+            expected.append(f"*#4*{master}*20##")
+        assert set(sent) == set(expected) and len(sent) == len(expected)
+        assert handler._actuator_zones == {master: 1}
 
 
-async def test_four_zone_central_configured_channels_use_4695_model_and_skip_polls(hass, fast_bus_pacing):
-    """Configuring #0#2..#0#4 sets Central Unit (4695), default Central Unit name, and _central=True via climate.build()."""
+async def test_four_zone_central_configured_channels_use_4695_model_and_poll_status(hass, fast_bus_pacing):
+    """Configuring #0#2..#0#4 sets Central Unit (4695), default Central Unit name, and polls *#4*#0#N##."""
     from pytest_homeassistant_custom_component.common import MockConfigEntry
 
     from custom_components.myhome.climate import async_setup_entry
@@ -1401,7 +1499,7 @@ async def test_four_zone_central_configured_channels_use_4695_model_and_skip_pol
         "central_2": {CONF_WHERE: "#0#2"},
         "central_3": {CONF_WHERE: "#0#3"},
         "central_4": {CONF_WHERE: "#0#4"},
-        "local_02": {CONF_WHERE: "02"},
+        "local_02": {CONF_WHERE: "02", "standalone": True},
     }
 
     added: list[MyHOMEClimate] = []
@@ -1413,17 +1511,20 @@ async def test_four_zone_central_configured_channels_use_4695_model_and_skip_pol
         assert ent._central is True
         assert ent._model == "Central Unit (4695)"
         assert ent._device_name.startswith("Central Unit ")
-        assert ent._poll_on_add is False
+        assert ent._poll_on_add is True
         ent.hass = hass
         ent.entity_id = f"climate.central_{ch[-1]}"
         ent.async_write_ha_state = MagicMock()
-        await ent.async_added_to_hass()
+        handler.send_status_request.reset_mock()
         await ent.async_update()
+        sent = [str(call.args[0]) for call in handler.send_status_request.await_args_list]
+        # #0#2 has standalone local_02 -> no master-zone temp poll; #0#3/#0#4 unify master zone -> poll *#4*N*0##
+        assert sent == ([f"*#4*{ch}##"] if ch == "#0#2" else [f"*#4*{ch}##", f"*#4*{ch[-1]}*0##"])
     # Zero-padded local zone "02" (zone_number == "02") must stay a regular Heating Zone, not central.
     assert by_where["02"]._central is False
     assert by_where["02"]._model == "Heating Zone"
     await _settle(hass)
-    handler.send_status_request.assert_not_awaited()
+    assert handler._actuator_zones == {}
 
 
 @pytest.mark.parametrize("where", ["2#4#100", "3#4#001", "#4#01"])
@@ -1499,3 +1600,36 @@ async def test_gateway_events_dim14_echo_guards_routed_central_and_actuator_addr
     assert routed_msg is not None
     await dispatcher.process_message(routed_msg)
     assert [str(c.args[0]) for c in handler.send_status_request.await_args_list] == ["*#4*2#4#01##"]
+
+
+@pytest.mark.parametrize(
+    "where",
+    ["2", "#2", "2#1", "2#0", "0#0", "0", "99", "#0", "#0#1", "#2#1", "3#4#01", "#3#4#01", "2#1#4#01", "12#4#15"],
+)
+def test_the_dimension_20_request_is_the_ownd_builder_s_frame(where: str) -> None:
+    """#792 item 6: the strings were temporary until ``OWNHeatingCommand.actuators_status`` was released.
+
+    The addresses are the ones OWNd#140's own tests build (``2``, ``#2``, ``2#1``, ``#0``, ``#0#1``,
+    ``#2#1``, ``2#0``, ``0#0``, ``0``, ``99`` and the routed ``3#4#01``, ``#3#4#01``, ``2#1#4#01``,
+    ``12#4#15``).
+    """
+    from OWNd.message import OWNHeatingCommand
+
+    from custom_components.myhome.gateway import _zone_request_frame
+
+    assert _zone_request_frame(where, 20) == str(OWNHeatingCommand.actuators_status(where)) == f"*#4*{where}*20##"
+
+
+@pytest.mark.parametrize("where", ["", "2*22", "2##", "#", "105", "2#10", "3#4#001"])
+def test_an_address_the_builder_refuses_is_refused_for_every_dimension(where: str) -> None:
+    from custom_components.myhome.gateway import _zone_request_frame
+
+    for dimension in (11, 19, 20, 60):
+        with pytest.raises(ValueError):
+            _zone_request_frame(where, dimension)
+
+
+def test_a_one_digit_interface_is_still_written_with_two() -> None:
+    from custom_components.myhome.gateway import _zone_request_frame
+
+    assert _zone_request_frame("3#4#1", 20) == "*#4*3#4#01*20##"  # the builder alone refuses 3#4#1

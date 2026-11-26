@@ -4,7 +4,9 @@ The F455 refuses the zone form of the actuator request (``*#4*Z*20##``) at once,
 silent-zone poll asked for actuator 1 only. On a physical F455 1.0.76 plant zone 4 has a valve
 on actuator 1 and a fan coil on actuator 2: ``*#4*4#1*20##`` answered ``*#4*4#1*20*0##`` (off)
 while the fan coil ran, and nothing tells which actuators a zone has (``*#4*4#0*20##`` was NACKed
-after 9 s, ``*#4*#0*20##`` at once, the read of an absent actuator ``*#4*2#2*20##`` after 8.9 s).
+after 9 s, ``*#4*#0*20##`` at once, the read of an absent actuator ``*#4*2#2*20##`` after 8.9 s;
+none of these three reads is in a committed capture. What is: ``*#4*3*19##`` NACKed after 9.014 s,
+``issue_466/F455_direct_requests_zone3_2026-11-06.jsonl`` line 8).
 
 Two things replace a blind read of actuator 2, 3, ...:
 
@@ -296,7 +298,7 @@ async def test_a_restart_asks_for_every_actuator_the_zone_had(hass) -> None:
 
 
 async def test_a_zone_with_one_actuator_is_never_asked_for_a_second_one(hass) -> None:
-    """The F455 NACKs the read of an absent actuator only after 8.9 s."""
+    """The F455 holds a read nothing answers about 9 s before its NACK (``*#4*3*19##``: 9.014 s, issue_466 zone 3 capture)."""
     handler = _handler(hass, "F455")
     _ready(handler)
     zone = _zone(hass, handler, "2")

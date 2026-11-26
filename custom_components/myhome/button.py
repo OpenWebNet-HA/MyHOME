@@ -25,32 +25,26 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
+from .command_delivery import async_send_confirmed
 from .const import (
-    CONF_ADVANCED_SHUTTER,
     CONF_BUS_INTERFACE,
     CONF_DEVICE_MODEL,
     CONF_MANUFACTURER,
     CONF_SOURCE_NAME,
     CONF_SOURCE_SLOTS,
     CONF_SOURCE_TUNER,
-    CONF_STRATEGY,
     CONF_WHERE,
     CONF_WHO,
     DOMAIN,
     LOGGER,
     SERVICE_CALIBRATE_COVER,
 )
-from .cover import (
-    _can_auto_promote_advanced,
-    _is_stored_advanced_cover,
-    _stored_calibration,
-)
+from .cover import is_native_point_cover
 from .cover_scope import CoverScope
 from .data import MyHOMEConfigEntry, get_runtime_data
 from .discovery import (
     Address,
     actuator_only_on_primary,
-    config_for,
     parse_unique_id,
     prune_orphaned_companions,
 )
@@ -78,34 +72,9 @@ def _is_non_calibratable_cover(
     address = Address.from_device_id(device_id)
     if CoverScope.of(address.where, address.interface) is not None:
         return True
-    if hass is not None:
-        if entity_id is None:
-            entity_id = er.async_get(hass).async_get_entity_id(
-                "cover", DOMAIN, f"{gateway_mac}-2-{device_id}"
-            )
-        if entity_id and (state := hass.states.get(entity_id)) is not None:
-            if (
-                "min_position_delta" in state.attributes
-                and "travel_time" not in state.attributes
-            ):
-                return True
-    runtime = get_runtime_data(config_entry) if config_entry is not None else None
-    cover_platforms = runtime.platforms.get("cover", {}) if runtime is not None else {}
-    cfg = config_for(
-        cover_platforms, address, device_id, f"2-{address.key}", f"2-{address.clean_key}"
+    return is_native_point_cover(
+        hass, config_entry, gateway_mac, device_id, entity_id=entity_id
     )
-    if cfg.get(CONF_STRATEGY) == "native":
-        return True
-    if (
-        bool(cfg.get(CONF_ADVANCED_SHUTTER, cfg.get("advanced_shutter", False)))
-        and cfg.get(CONF_STRATEGY) not in ("timed", "simple", "venetian")
-    ):
-        return True
-    if _is_stored_advanced_cover(config_entry, device_id):
-        return _can_auto_promote_advanced(
-            cfg, _stored_calibration(config_entry, device_id), None
-        )
-    return False
 
 
 async def async_setup_entry(
@@ -353,7 +322,7 @@ async def async_setup_entry(
         config_entry.async_on_unload(
             async_dispatcher_connect(
                 hass,
-                f"myhome_new_device_{mac}",
+                f"myhome_new_device_{dr.format_mac(mac)}",
                 _async_new_device_listener,
             )
         )
@@ -428,10 +397,12 @@ class DisableCommandButtonEntity(ButtonEntity, MyHOMEEntity):
         self._unregister_entity_ref("disable")
 
     async def async_press(self) -> None:
-        """Press the button."""
+        """Press the button; raise when the gateway rejects or never receives the frame."""
         cmd = OWNCommand.parse(f"*14*0*{self._full_where}##")
         if cmd is not None:
-            await self._gateway_handler.send(cmd)
+            # A live F455 1.0.76 answered this frame with NACK (an F461 2.0.11 acknowledged it;
+            # why the F455 refused is unknown): the press must fail visibly, not return success.
+            await async_send_confirmed(self._gateway_handler, cmd, name=self._display_name)
 
 
 class EnableCommandButtonEntity(ButtonEntity, MyHOMEEntity):
@@ -489,10 +460,12 @@ class EnableCommandButtonEntity(ButtonEntity, MyHOMEEntity):
         self._unregister_entity_ref("enable")
 
     async def async_press(self) -> None:
-        """Press the button."""
+        """Press the button; raise when the gateway rejects or never receives the frame."""
         cmd = OWNCommand.parse(f"*14*1*{self._full_where}##")
         if cmd is not None:
-            await self._gateway_handler.send(cmd)
+            # A live F455 1.0.76 answered this frame with NACK (an F461 2.0.11 acknowledged it;
+            # why the F455 refused is unknown): the press must fail visibly, not return success.
+            await async_send_confirmed(self._gateway_handler, cmd, name=self._display_name)
 
 
 class CalibrateCoverButtonEntity(ButtonEntity, MyHOMEEntity):

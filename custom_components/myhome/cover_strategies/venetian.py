@@ -86,6 +86,18 @@ class VenetianTiltStrategy(TimedCurtainStrategy):
         remaining = (100 - curr) if opening else curr
         return max(0.0, (remaining / 100.0) * self.slat_time_for())
 
+    def remaining_travel_for(
+        self,
+        start: int,
+        opening: bool,
+        *,
+        entity: Any = None,
+    ) -> float | None:
+        """Return remaining slat lead plus linear curtain travel; subclasses opt in explicitly."""
+        if type(self) is not VenetianTiltStrategy:
+            return None
+        return self._linear_remaining_travel(start, opening, entity=entity)
+
     def carry_overshoot_into_curtain(
         self,
         start_position: int,

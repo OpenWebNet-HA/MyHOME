@@ -22,16 +22,18 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dis
 from OWNd.message import OWNEvent, OWNHeatingCommand, OWNHeatingEvent
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.myhome.climate import (
-    MyHOMEClimate,
+from custom_components.myhome.climate import MyHOMEClimate, async_setup_entry, async_unload_entry
+from custom_components.myhome.climate_discovery import (
     _calling_zones,
     _zone_address,
+    _zone_config,
     _zone_route_keys,
-    async_setup_entry,
-    async_unload_entry,
 )
 from custom_components.myhome.const import DOMAIN
 from custom_components.myhome.device_health import DeviceHealth, FaultKind, fault_issue_id
+from custom_components.myhome.discovery import Address
+from custom_components.myhome.legacy_yaml import _apply_yaml_platforms
+from custom_components.myhome.validate import climate_schema
 from tests.conftest import attach_runtime
 
 MAC = "00:03:50:44:55:66"
@@ -98,7 +100,7 @@ def test_3550_frames_never_resolve_to_zone_99(raw_frame: str) -> None:
 
 @pytest.mark.parametrize("raw_frame", BTICINO_4695_FRAMES)
 def test_4695_frames_never_resolve_to_zone_99(raw_frame: str) -> None:
-    """Assert that 4695 4-zone central unit frames route to subordinate zone 1 and never resolve to zone 99 (#582)."""
+    """4695 frames are the central unit ``#0#N``'s (#994), still reach zone N, and never resolve to zone 99 (#582)."""
     message = OWNEvent.parse(raw_frame)
     assert message is not None
 
@@ -108,13 +110,15 @@ def test_4695_frames_never_resolve_to_zone_99(raw_frame: str) -> None:
 
     address = _zone_address(message)
     assert address is not None
-    assert address.where == "1"
-    assert address.clean_where == "1"
+    assert address.where == "#0#1"
+    assert address.clean_where == "#0#1"
 
     route_keys = _zone_route_keys(message, address)
     assert "99" not in route_keys
     assert "1" in route_keys
-    assert "#0" in route_keys
+    # The frame's own WHERE is ``#0#1``; ``#0`` is the 99-zone central unit's key (CA5-8).
+    assert "#0#1" in route_keys
+    assert "#0" not in route_keys
 
 
 async def test_3550_bus_traffic_never_discovers_phantom_climate_zone_99(hass: HomeAssistant) -> None:
@@ -147,15 +151,32 @@ async def test_3550_bus_traffic_never_discovers_phantom_climate_zone_99(hass: Ho
     assert len(discovered_entities) == 1
     assert discovered_entities[0]._where == "#0"
     assert discovered_entities[0]._central is True
-    # Without yaml, bus discovery names a central unit 'Climate Zone {suffix}' (suffix='0')
-    assert discovered_entities[0]._device_name == "Climate Zone 0"
+    # Without yaml, bus discovery names a central unit as a restart will: 'Central Unit 0'
+    assert discovered_entities[0]._device_name == "Central Unit 0"
+    assert discovered_entities[0]._model == "Central Unit (3550)"
     assert not any(getattr(e, "_where", None) == "99" for e in discovered_entities)
     assert not any("99" in (getattr(e, "_device_name", "") or "") for e in discovered_entities)
 
-    # 4. Positive control: genuine subordinate zone traffic (e.g. Zone 5) MUST trigger dynamic discovery
+    # 4. Positive control: genuine subordinate zone traffic (e.g. Zone 5) confirms on 2nd frame
     async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*4*110*5##"))
+    assert len(discovered_entities) == 1
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*5*0*0210##"))
     assert len(discovered_entities) == 2
     assert any(getattr(e, "_where", None) == "5" for e in discovered_entities)
+    assert {e._where: e._device_name for e in discovered_entities} == {"#0": "Central Unit 0", "5": "Climate Zone 5"}
+
+    # 5. After a restart the registry entry gives the central unit the same name (CA5-10).
+    entity_reg = er.async_get(hass)
+    entity_reg.async_get_or_create(domain="climate", platform=DOMAIN, unique_id=f"{MAC}-4-#0", config_entry=entry)
+    await async_unload_entry(hass, entry)
+    while entry._on_unload:
+        entry._on_unload.pop()()
+    runtime.platforms["climate"] = {}
+    restored_entities: list[MyHOMEClimate] = []
+    await async_setup_entry(hass, entry, restored_entities.extend)
+    assert [(e._where, e._device_name, e._model) for e in restored_entities] == [
+        ("#0", "Central Unit 0", "Central Unit (3550)")
+    ]
 
 
 async def test_ghost_zone_99_deletion_permanently_clears_repair_and_prevents_resurrection(
@@ -253,9 +274,11 @@ async def test_ghost_zone_99_deletion_permanently_clears_repair_and_prevents_res
     assert issue_reg.async_get_issue(DOMAIN, issue_id) is None
     assert entity_reg.async_get_entity_id("climate", DOMAIN, f"{MAC}-4-99") is None
 
-    # Positive control: if genuine on-wire traffic for Zone 99 arrives (*4*110*99##),
+    # Positive control: if genuine on-wire traffic for Zone 99 arrives (*4*110*99## + confirmation),
     # discovery recognizes it as a valid subordinate zone.
     async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*4*110*99##"))
+    assert len(reloaded_entities) == 1
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*99*0*0210##"))
     assert len(reloaded_entities) == 2
     discovered_z99 = reloaded_entities[-1]
     assert discovered_z99._where == "99"
@@ -307,8 +330,8 @@ async def test_central_unit_event_driven_synchronization(hass: HomeAssistant) ->
     assert str(gateway.send_status_request.call_args[0][0]) == "*#4*#0##"
 
     # 2. Command path: setting mode via HA emits central commands and dispatches signal.
-    # HEAT / COOL only change the season: the mode shown comes from the 3550's answer
-    # (antifreeze / thermal protection, live 3550 2026-11-08).
+    # Nothing is known about the central unit at this point, so HEAT sends the season
+    # frame only; the mode shown comes from the 3550's answer (live 3550 2026-11-08).
     await cu.async_set_hvac_mode(HVACMode.HEAT)
     sent_cmd = gateway.send.call_args[0][0]
     assert str(sent_cmd) == "*4*1*#0##"
@@ -318,8 +341,7 @@ async def test_central_unit_event_driven_synchronization(hass: HomeAssistant) ->
     assert central_mode_events[-1] == HVACMode.HEAT
 
     await cu.async_set_hvac_mode(HVACMode.COOL)
-    sent_cmd = gateway.send.call_args[0][0]
-    assert str(sent_cmd) == "*4*0*#0##"
+    assert [str(call.args[0]) for call in gateway.send.call_args_list[-2:]] == ["*4*0*#0##", "*4*3100*#0##"]
     assert cu.hvac_mode == HVACMode.HEAT
     cu.handle_event(OWNHeatingEvent("*4*202*#0##"))
     assert cu.hvac_mode == HVACMode.COOL
@@ -393,7 +415,7 @@ async def test_yaml_central_unit_and_bus_traffic_coalesce_without_duplicate_enti
           zone: "#0"
           name: Centrale termoregolazione
     Proves that physical bus traffic addressed to #0 updates the YAML entity directly
-    and NEVER spawns a duplicate bus-discovered entity ('Climate Zone 0' or 'Climate Zone 99').
+    and NEVER spawns a duplicate bus-discovered entity ('Central Unit 0' or 'Climate Zone 99').
     """
     entry = MockConfigEntry(domain=DOMAIN, data={"mac": MAC}, unique_id=MAC)
     entry.add_to_hass(hass)
@@ -432,10 +454,12 @@ async def test_yaml_central_unit_and_bus_traffic_coalesce_without_duplicate_enti
     # 3. Assert NO duplicate entity is created: entities list remains length 1
     assert len(entities) == 1
     assert not any(getattr(e, "_where", None) == "99" for e in entities)
-    assert not any(getattr(e, "_device_name", None) == "Climate Zone 0" for e in entities)
+    assert not any(getattr(e, "_device_name", None) in ("Central Unit 0", "Climate Zone 0") for e in entities)
 
-    # 4. Bus frame for subordinate zone (Zone 5) creates Zone 5 alongside the central unit
+    # 4. Bus frame for subordinate zone (Zone 5) creates Zone 5 once confirmed alongside the central unit
     async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*4*110*5##"))
+    assert len(entities) == 1
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*5*0*0210##"))
     assert len(entities) == 2
     assert any(getattr(e, "_where", None) == "5" for e in entities)
     assert any(getattr(e, "_where", None) == "#0" for e in entities)
@@ -1072,3 +1096,122 @@ async def _settle_burst(hass: HomeAssistant) -> None:
 
     async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=2))
     await hass.async_block_till_done()
+
+
+# ── A four-zone central unit and the zone with the same number (myhome.yaml) ──
+
+
+@pytest.mark.parametrize("order", [("zona1", "centrale"), ("centrale", "zona1")])
+def test_zone_entry_keeps_its_number_beside_a_four_zone_central_unit(order):
+    """``central: true`` + ``zone: "1"`` (``#0#1``) took the keys ``4-1``, ``1`` and ``zone_1`` of zone 1.
+
+    Which of the two entries the zone's frames found depended on their order in the file.
+    """
+    raw = {
+        "zona1": {"zone": "1", "name": "Zona 1"},
+        "centrale": {"zone": "1", "central": True, "name": "Centrale 4695"},
+    }
+    validated = climate_schema({key: raw[key] for key in order})
+    assert {key: cfg["name"] for key, cfg in validated.items()} == {
+        "zona1": "Zona 1", "4-1": "Zona 1", "1": "Zona 1", "zone_1": "Zona 1",
+        "centrale": "Centrale 4695", "#0#1": "Centrale 4695",
+    }
+    configured: dict[str, dict] = {"climate": {}}
+    _apply_yaml_platforms({"climate": validated}, configured)
+    assert _zone_config(configured["climate"], Address("1"), "1")["name"] == "Zona 1"
+    assert _zone_config(configured["climate"], Address("#0#1"), "#0#1")["name"] == "Centrale 4695"
+
+
+def test_four_zone_central_unit_alone_still_answers_to_its_zone_number():
+    """The documented single entry (docs-v0.9 climate.md: the master unit is the central unit and zone 1)."""
+    validated = climate_schema({"central_unit": {"zone": "1", "central": True}})
+    assert validated["4-1"]["zone"] == "#0#1" and validated["1"] is validated["zone_1"] is validated["#0#1"]
+    configured: dict[str, dict] = {"climate": {}}
+    _apply_yaml_platforms({"climate": validated}, configured)
+    assert _zone_config(configured["climate"], Address("#0#1"), "#0#1")["zone"] == "#0#1"
+    # zone 1 found on the bus is a zone of its own, not a second central unit (#994)
+    assert _zone_config(configured["climate"], Address("1"), "1") == {}
+    # behind an F422 the alias carries the interface, as before
+    routed = climate_schema({"c": {"zone": "2", "central": True, "interface": "01"}})
+    assert set(routed) == {"c", "#0#2#4#01", "4-2#4#01", "2#4#01"}
+    configured = {"climate": {}}
+    _apply_yaml_platforms({"climate": routed}, configured)
+    assert configured["climate"]["2#4#01"]["zone"] == "#0#2"
+
+
+# ── WHERE ``0`` and ``#0#N`` are not the 99-zone central unit ──
+
+
+@pytest.mark.parametrize(
+    ("raw", "keys"),
+    [
+        ("*4*202*#0##", {"#0"}),  # the 3550 itself (issue #629 trace)
+        ("*4*303*0##", {"0"}),  # WHERE 0: "General probes (all probes)", WHO 4 p. 6
+        ("*#4*0*0*0215##", {"0"}),
+        ("*4*4001#5*0##", {"0", "5"}),  # the zone is in the parameter (async_setup_entry docstring)
+        ("*4*103*#0#4##", {"4", "#0#4"}),
+        # through an interface: interface-qualified keys only (#408, ``_zone_route_keys``)
+        ("*4*31*#0#4#4#01##", {"#0#4#4#01", "4#4#01"}),
+        ("*4*31*#0#4#01##", {"#0#4#01"}),  # the 99-zone central unit behind interface 01
+    ],
+)
+def test_only_the_central_units_own_where_is_routed_to_it(raw: str, keys: set[str]) -> None:
+    """CA5-8. Apart from the first, the frames are built for the test: none is in the trace corpus."""
+    message = OWNEvent.parse(raw)
+    assert set(_zone_route_keys(message, _zone_address(message))) == keys
+
+
+async def test_general_and_four_zone_frames_leave_the_99_zone_central_unit_alone(hass: HomeAssistant) -> None:
+    """A general ``*4*303*0##`` switched the ``#0`` entity off, a ``#0#1`` frame set its mode."""
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": MAC}, unique_id=MAC)
+    entry.add_to_hass(hass)
+    gateway = MagicMock()
+    gateway.mac = MAC
+    gateway.is_connected = True
+    gateway.log_id = "[test where 0]"
+    gateway.send = AsyncMock()
+    gateway.send_status_request = AsyncMock()
+    runtime = attach_runtime(hass, entry, MAC, gateway)
+    # Both orders of F15's alias fix leave the number 1 to the zone; the 4-zone unit keeps ``#0#1``.
+    validated = climate_schema(
+        {
+            "centrale": {"zone": "#0", "central": True, "name": "Centrale"},
+            "zona1": {"zone": "1", "name": "Zona 1"},
+            "quattro": {"zone": "1", "central": True, "name": "Centrale 4695"},
+        }
+    )
+    configured: dict[str, dict] = {"climate": {}}
+    _apply_yaml_platforms({"climate": validated}, configured)
+    runtime.platforms["climate"] = configured["climate"]
+
+    entities: list[MyHOMEClimate] = []
+    await async_setup_entry(hass, entry, entities.extend)
+    by_where = {entity._where: entity for entity in entities}
+    assert set(by_where) == {"#0", "1", "#0#1"}
+    for entity in entities:
+        entity.hass = hass
+        entity.entity_id = f"climate.{entity._where.replace('#', 'c')}"
+        entity.async_write_ha_state = MagicMock()
+
+    def _send(raw: str) -> None:
+        async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent(raw))
+
+    _send("*4*102*#0##")  # antifreeze: the central unit shows the heating season
+    assert by_where["#0"].hvac_mode == HVACMode.HEAT
+    # The 99-zone central unit also listens under its zone number, ``0``: the general WHERE.
+    assert entry.runtime_data.router.subscribers("4", "0") == 1
+
+    _send("*4*303*0##")
+    _send("*4*103*#0#1##")
+    assert by_where["#0"].hvac_mode == HVACMode.HEAT
+    assert len(entities) == 3  # nothing discovered from either frame
+
+    # The 4-zone unit's entity takes the frame under its own WHERE, with zone 1 beside it.
+    assert by_where["#0#1"].hvac_mode == HVACMode.OFF
+    _send("*4*110*#0#1##")
+    assert by_where["#0#1"].hvac_mode == HVACMode.HEAT
+    assert by_where["#0"].hvac_mode == HVACMode.HEAT
+
+    # Its own reports still reach the 99-zone central unit.
+    _send("*4*303*#0##")
+    assert by_where["#0"].hvac_mode == HVACMode.OFF

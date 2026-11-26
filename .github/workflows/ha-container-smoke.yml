@@ -8,12 +8,8 @@ on:
       - "v2-*"
       - "feat/*"
   pull_request:
-    branches:
-      - main
-      - master
-      - "v2-*"
   schedule:
-    - cron: "0 4 * * 1"  # Weekly run every Monday at 04:00 UTC
+    - cron: "0 4 * * *"  # Daily run at 04:00 UTC to catch upstream HA beta and dev container images
   workflow_dispatch:
 
 permissions:
@@ -48,7 +44,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
 

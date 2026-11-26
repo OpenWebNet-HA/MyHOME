@@ -23,11 +23,14 @@ END_MARKER = "<!-- END_COVERAGE_TABLE -->"
 COMPONENT_NOTES = {
     "custom_components/myhome/__init__.py": "Setup/unload lifecycle, static Lovelace card registration & cleanup, and migrations",
     "custom_components/myhome/access_policy.py": "Human-in-the-loop approval, pre-warning, and watchdog policy for impulse gates/doors",
+    "custom_components/myhome/actuator_lock.py": "Bidirectional WHO=14 and WHO=2 Dimension 10 actuator lock state tracker with scope resolution",
     "custom_components/myhome/alarm_control_panel.py": "Read-only WHO=5 burglar alarm central unit status (3485/3486) and broadcast sync",
     "custom_components/myhome/binary_sensor.py": "WHO=1 PIR motion, WHO=9 AUX channels, and WHO=25 dry contacts with state inversion",
     "custom_components/myhome/bus_monitor.py": "In-band 500-frame circular ring buffer tap (0 extra gateway sockets)",
     "custom_components/myhome/button.py": "WHO=14 actuator lock/unlock, WHO=2 cover calibration, and WHO=16/22 FM tuner seek",
     "custom_components/myhome/climate.py": "WHO=4 zone thermostats, 4-pipe/fancoil controls, and Central Unit 3550/4695 sync",
+    "custom_components/myhome/climate_discovery.py": "WHO=4 zone discovery: registry, myhome.yaml and bus frames, held actuator-only frames (#785), and the thermostat reads at start",
+    "custom_components/myhome/command_delivery.py": "Delivery confirmation for entity actions: translated errors on gateway NACK, lost or unconfirmed commands",
     "custom_components/myhome/config_flow.py": "Gateway onboarding, manual/SSDP setup, and subentry flow registration",
     "custom_components/myhome/config_flow_audio.py": "Audio matrix sources, FM tuner flags, environment defaults, and decoder slot options",
     "custom_components/myhome/config_flow_discovery.py": "SSDP discovery, connection probing, reauthentication, and reconfiguration steps",
@@ -56,6 +59,7 @@ COMPONENT_NOTES = {
     "custom_components/myhome/discovery.py": "Shared entity restore, YAML overlay merge, dynamic bus discovery, and dispatcher",
     "custom_components/myhome/expose.py": "Virtual OpenWebNet responder projecting HA entities and system clock onto SCS",
     "custom_components/myhome/gateway.py": "Gateway coordinator, profile capability gates, startup sweeps, and bus lifecycle",
+    "custom_components/myhome/gateway_confirm.py": "Point-to-point WHO=1 status read-back when a light's status does not follow an acknowledged command",
     "custom_components/myhome/gateway_events.py": "Inbound OpenWebNet frame classification, event bus emission, and doorbell routing",
     "custom_components/myhome/gateway_resync.py": "Debounced lighting status resync sweeps after group, area, and general broadcasts",
     "custom_components/myhome/gateway_sessions.py": "Persistent event session watchdog, priority command queue, and paced worker pool",
@@ -194,6 +198,23 @@ def normalize_coverage_filename(fn: str) -> str:
     return fn
 
 
+def _collapse_line_ranges(line_numbers: list[str]) -> str:
+    """Convert string line numbers into compact human-readable ranges (e.g. '667-668, 670')."""
+    if not line_numbers:
+        return ""
+    nums = sorted({int(n) for n in line_numbers})
+    ranges: list[str] = []
+    start = prev = nums[0]
+    for n in nums[1:]:
+        if n == prev + 1:
+            prev = n
+        else:
+            ranges.append(f"{start}-{prev}" if start != prev else f"{start}")
+            start = prev = n
+    ranges.append(f"{start}-{prev}" if start != prev else f"{start}")
+    return ", ".join(ranges)
+
+
 def update_readme_and_svg():
     if not os.path.exists(COVERAGE_XML):
         print(f"Error: {COVERAGE_XML} not found. Run pytest with --cov-report=xml first.")
@@ -204,6 +225,7 @@ def update_readme_and_svg():
 
     # ── 1. Collect per-component coverage & enforce strict 100% ─────────────
     file_rates = {}
+    file_missed_lines: dict[str, list[str]] = {}
     for p in root.findall(".//package"):
         for c in p.findall(".//class"):
             raw_fn = c.attrib.get("filename", "")
@@ -212,16 +234,29 @@ def update_readme_and_svg():
             if fn in ("custom_components/myhome/ownd/__main__.py", "custom_components/myhome/ownd/__init__.py"):
                 continue
             cr = float(c.attrib.get("line-rate", 0)) * 100
+            missed = [
+                ln.attrib["number"]
+                for ln in c.findall(".//line")
+                if int(ln.attrib.get("hits", "1")) == 0 and "number" in ln.attrib
+            ]
             file_rates[fn] = cr
+            if missed:
+                file_missed_lines[fn] = missed
 
-    # Fail immediately if any module dropped below 100% coverage
-    failing = [(fn, rate) for fn, rate in file_rates.items() if rate < 100.0]
+    # Fail immediately if any module dropped below 100% coverage or missed any line
+    failing = [
+        (fn, rate, file_missed_lines.get(fn, []))
+        for fn, rate in file_rates.items()
+        if rate < 100.0 or fn in file_missed_lines
+    ]
     if failing:
         print("\n" + "=" * 78)
         print("[CRITICAL] COVERAGE ENFORCEMENT ERROR: Test coverage dropped below strict 100.0%!")
         print("=" * 78)
-        for fn, rate in failing:
-            print(f"  [MISS] {fn}: {rate:.1f}%")
+        for fn, rate, missed in failing:
+            shown_rate = min(rate, 99.99)
+            suffix = f" (missing lines: {_collapse_line_ranges(missed)})" if missed else ""
+            print(f"  [MISS] {fn}: {shown_rate:.2f}%{suffix}")
         print("=" * 78)
         print("Refusing to commit degraded coverage table or badge to Git repository.")
         print("Failing CI step immediately.")

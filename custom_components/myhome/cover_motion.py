@@ -1,11 +1,17 @@
 """Pure travel-time position math and echo window checks for MyHome covers."""
 from __future__ import annotations
 
-# Timed-cover echo model (issue #302). After a direction/stop frame is written,
-# the gateway relays our own command back on the monitor session: a stop status
-# within ~0.1 s, the WHAT=1000 translation, and the real direction status once the
-# motor starts (~0.55 s on a MyHOMEServer1). Frames for this cover inside the
-# window are treated as echoes of our command, not as keypad presses.
+# Timed-cover echo window after socket write (empirical: 1.5 s; #302, #753, #959):
+# - Issue #302 (live MyHomeServer1): gateway relays pre-move *2*0*WHERE## within
+#   ~0.10 s, *2*1000#<dir>*WHERE## at ~0.15 s, and motor-start *2*<dir>*WHERE##
+#   at ~0.55 s after socket write.
+# - PR #753 (tests/fixtures/traces/f461_live_2026-10-18/, live F461 2.0.11 + F411/2)
+#   and tests/golden/frames/who02_automation.yaml (MH200 2.1.0): gateways whose
+#   coso (libplug_automation_tr.so) or bt_luci daemon injects an SCS STOP (12 0A)
+#   ahead of UP/DOWN (12 08/12 09) emit *2*0*WHERE## ~0.4-0.6 s before *2*1/*2*2.
+# - 1.5 s (~0.55 s motor-start lag + ~0.95 s LAN/SCS arbitration & event-session
+#   scheduling margin) covers that full echo burst while bounding how long an
+#   unfollowed *2*0*WHERE## (#959 terminal stop when no *2*1/*2*2 follows) waits.
 ECHO_WINDOW: float = 1.5
 
 # Time from the write of a direction frame to the motor start when the gateway
@@ -46,6 +52,31 @@ MIN_MOTOR_PULSE: float = 0.4
 # default stays 2% (configurable in 1..5%).
 MIN_POSITION_DELTA: int = 2
 
+# Interlocked relay & motor capacitor settle pause between a pre-move STOP socket
+# write and the subsequent direction frame on gateways without SCS pre-STOP (MH201,
+# MH202) (empirical: 0.6 s; #959):
+# - Native MH201 firmware scenario STOP -> MOVE bus spacing: 0.587 s measured
+#   between *2*0*#1## and *2*2*#1## in
+#   tests/fixtures/plants/mh201_physical_plant/diagnostic_summary.json.
+# - Live MH201 (fw 3.3.6) + 35x BTicino L4671/2 verification in Issue #959
+#   (Encyclopedia OWN-DEV-0098/0022/0023/0153 Object 7 interlocked 230 Vac motor
+#   relays): waiting 0.6 s after the STOP write made every mid-run reversal and
+#   every post-arrival move inside the ~60 s relay hold succeed cleanly.
+PRE_MOVE_STOP_SETTLE_DELAY: float = 0.6
+
+# Post-start hold window during which a factory M=0 timed relay actuator's coil
+# may remain energized after HA settled the curtain at 0% / 100% (empirical: 65.0 s;
+# #319, #565, #959, #961):
+# - Encyclopedia OWN-DEV-0098 (H4671/2, L4671/2, AM5851/2), OWN-DEV-0022 (F411/2),
+#   OWN-DEV-0023 (F411/4), and OWN-DEV-0153 (F411U2): factory configurator M=0
+#   sets internal relay cutoff STOP_TIME = 60 s.
+# - Measured M=0 hardware oscillator drift: 60.05-61.5 s on MH200N / MyHomeServer1
+#   (const.CALIBRATION_CUTOFFS[0] + CALIBRATION_CUTOFF_LATE_PER_MIN = 65.0 s) and
+#   61.38 s on MH201 3.3.6 + L4671/2 in mh201_l4671_reversal_2026-11-18 frame [9].
+# - 65.0 s (60.0 s M=0 STOP_TIME + ~1.5 s oscillator drift + ~3.5 s bus/scheduler
+#   margin) covers the full energized tail and clears early on rx *2*0*WHERE##.
+M0_RELAY_HOLD_WINDOW: float = 65.0
+
 # Slack after the stored travel time before a timed full run (0% / 100%) is
 # reported as arrived. No stop frame is sent for those runs, and the actuator's
 # own stop status may come a minute late or never (#466 review, MyHOMEServer1).
@@ -76,6 +107,16 @@ END_SETTLE_MARGIN: float = 2.0
 # inside the 1 s early window of the calibration cutoff rule (#843,
 # CALIBRATION_CUTOFF_EARLY) and does not treat any configurator limit as a stop.
 END_STOP_TOLERANCE: float = 0.5
+
+# Upper-bound drift added per unconfirmed timed movement segment (#973):
+# - Fixed start/stop anchor uncertainty per segment (0.5 s): covers tubular motor
+#   start-up lag variance (~0.2-0.4 s, #466), stop relay release (~0.04-0.12 s,
+#   #705), and unrelayed write-to-bus arbitration jitter.
+# - Proportional non-linear speed / roll-diameter variance (15% of segment motor
+#   time): covers roller-shutter roll radius change and slat-gathering slack
+#   between endpoints (~15-22% midpoint deviation in docs/configuration/covers.md).
+SEGMENT_STOP_DRIFT: float = 0.5
+SEGMENT_TRAVEL_DRIFT_FACTOR: float = 0.15
 
 
 def quantize_position_delta(
@@ -173,3 +214,51 @@ def compute_freeze_position(
     if pos is not None:
         return pos
     return current_position if current_position is not None else start_position
+
+
+def accumulate_drift_bound(
+    current_drift: float | None,
+    segment_seconds: float,
+    max_travel: float,
+    *,
+    stop_drift: float = SEGMENT_STOP_DRIFT,
+    travel_factor: float = SEGMENT_TRAVEL_DRIFT_FACTOR,
+) -> float | None:
+    """Accumulate position-drift upper bound (seconds) after an unconfirmed segment.
+
+    Returns ``None`` (unbounded: full ``travel_time + END_SETTLE_MARGIN`` required)
+    when ``current_drift`` is already ``None``, ``max_travel <= 0``, or the updated
+    bound reaches ``max_travel``.
+    """
+    if current_drift is None or max_travel <= 0:
+        return None
+    if segment_seconds <= 0:
+        return current_drift if current_drift < max_travel else None
+    updated = current_drift + max(0.0, stop_drift) + max(0.0, travel_factor) * segment_seconds
+    if updated >= max_travel:
+        return None
+    return updated
+
+
+def compute_bounded_settle_travel(
+    start_position: int | None,
+    opening: bool,
+    full_travel: float,
+    nominal_remaining: float,
+    drift_bound: float | None,
+) -> float:
+    """Return full-run settle duration (before ``END_SETTLE_MARGIN``) for #973.
+
+    Falls back to full ``full_travel`` when ``start_position`` or ``drift_bound`` is
+    ``None`` (unknown start, restored state, reconnect, edited travel time, or
+    saturated drift) or on endpoint re-homes (opening from ``>= 100`` or closing
+    from ``<= 0``).
+    """
+    if full_travel <= 0:
+        return 0.0
+    if start_position is None or drift_bound is None:
+        return full_travel
+    if (opening and start_position >= 100) or (not opening and start_position <= 0):
+        return full_travel
+    bounded = max(0.0, nominal_remaining) + max(0.0, drift_bound)
+    return min(full_travel, bounded)

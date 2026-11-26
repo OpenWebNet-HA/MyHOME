@@ -1138,3 +1138,143 @@
     trace; MyHOME trace discussion_770_f453_n4692/myhome_sweep_F453_all_2026-11-14T13-34-42.json,
     @DinoMesina Discussion #770 comment 19616515)'
   roundtrip: true
+
+- id: thermo.capture.dim20.proportional_20pct.zone1.act3
+  frame: "*#4*1#3*20*120##"
+  direction: dimension_response
+  who: 4
+  what: null
+  where: "1"
+  where_param: ["3"]
+  dimension: 20
+  dimension_values: ["120"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Thermoregulation: Dimension 20 proportional 0-10 V 20% active output (code 120 in 101..200) on zone 1 actuator 3 from @xmavgithub's live MyHomeServer1 2.87.13 Sabiana fan-coil heating ramp (120 -> 123 -> 150 -> 180 -> 200 -> 100, paired with #20 writes; MyHOME#949)"
+  roundtrip: true
+
+- id: thermo.capture.dim20.proportional_100pct.zone1.act3
+  frame: "*#4*1#3*20*200##"
+  direction: dimension_response
+  who: 4
+  what: null
+  where: "1"
+  where_param: ["3"]
+  dimension: 20
+  dimension_values: ["200"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Thermoregulation: Dimension 20 proportional 0-10 V 100% full output (code 200) on zone 1 actuator 3 from @xmavgithub's live MyHomeServer1 2.87.13 Sabiana fan-coil heating ramp (MyHOME#949)"
+  roundtrip: true
+
+- id: thermo.capture.cu4.status.manual_heating
+  frame: "*4*110#0160*#0#1##"
+  direction: event
+  who: 4
+  what: "110#0160"
+  where: "#0"
+  where_param: ["1"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Thermoregulation: 4-zone central unit #0#1 behind an F454 2.0.51 reports WHAT 110 ('Manual-adjustment Mode - Heating' in the WHO 4 PDF WHAT table, p. 5) with setpoint 0160: first frame of its answer to *#4*#0#1##, 0.14 s after the request, followed by *4*21*#0#1## and *4*31*#0#1## (MyHOME#994, tests/fixtures/traces/issue_994/myhome_trace_F454_all_2026-11-22T21-40-54.json, frames 1-4)"
+  roundtrip: true
+
+- id: thermo.capture.cu4.status.flag21
+  frame: "*4*21*#0#1##"
+  direction: event
+  who: 4
+  what: 21
+  where: "#0"
+  where_param: ["1"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Thermoregulation: 4-zone central unit #0#1 behind an F454 2.0.51 reports WHAT 21 ('Remote control enabled', WHO 4 PDF WHAT table p. 5) after its mode frame in every status burst of the capture (MyHOME#994, tests/fixtures/traces/issue_994/myhome_trace_F454_all_2026-11-22T21-40-54.json, frames 3, 7, 21, 40, 67)"
+  roundtrip: true
+
+- id: thermo.capture.cu4.status.flag31
+  frame: "*4*31*#0#1##"
+  direction: event
+  who: 4
+  what: 31
+  where: "#0"
+  where_param: ["1"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Thermoregulation: 4-zone central unit #0#1 behind an F454 2.0.51 reports WHAT 31 ('Central Unit battery KO', WHO 4 PDF WHAT table p. 5) after WHAT 21 in every status burst of the capture (MyHOME#994, tests/fixtures/traces/issue_994/myhome_trace_F454_all_2026-11-22T21-40-54.json, frames 4, 8, 22, 41, 68)"
+  roundtrip: true
+
+- id: thermo.capture.cu4.status.flag22
+  frame: "*4*22*#0#1##"
+  direction: event
+  who: 4
+  what: 22
+  where: "#0"
+  where_param: ["1"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Thermoregulation: 4-zone central unit #0#1 behind an F454 2.0.51 reports WHAT 22 ('At least one probe OFF', WHO 4 PDF WHAT table p. 5) once, at the end of the burst that follows *4*1103*#0#1## (MyHOME#994, tests/fixtures/traces/issue_994/myhome_trace_F454_all_2026-11-22T21-40-54.json, frame 69)"
+  roundtrip: true
+
+- id: thermo.capture.cu4.setpoint.write
+  frame: "*#4*#0#1*#14*0170*3##"
+  direction: dimension_write
+  who: 4
+  what: null
+  where: "#0"
+  where_param: ["1"]
+  dimension: 14
+  dimension_values: ["0170", "3"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Thermoregulation: 4-zone central unit #0#1 behind an F454 2.0.51: setpoint write to the central unit itself, sent by hand through the gateway; 0.17 s later the central unit reported *4*110#0170*#0#1## and within 3 s zones 3 and 4 reported *#4*3*12*0170*3## and *#4*4*12*0170*3## (MyHOME#994, tests/fixtures/traces/issue_994/myhome_trace_F454_all_2026-11-22T21-40-54.json, frames 5-16; the gateway's ACK or NACK is not in the capture). The same write with mode 1, *#4*#0#1*#14*0175*1##, was answered the same way (frames 19-31)"
+  roundtrip: true
+
+- id: thermo.capture.cu4.zone_via_central.setpoint.unanswered
+  frame: "*#4*#3#1*#14*0175*3##"
+  direction: dimension_write
+  who: 4
+  what: null
+  where: "#3"
+  where_param: ["1"]
+  dimension: 14
+  dimension_values: ["0175", "3"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Thermoregulation: 4-zone central unit #0#1 behind an F454 2.0.51: setpoint write addressed #3#1, sent by hand through the gateway: no frame at all in the 47.9 s until the next send, while the direct write *#4*3*#14*0170*3## 19 s earlier was answered by zone 3 within 0.21 s with *#4*3*12*0170*3## (MyHOME#994, tests/fixtures/traces/issue_994/myhome_trace_F454_all_2026-11-22T21-40-54.json, frames 33-38; the gateway's ACK or NACK is not in the capture)"
+  roundtrip: true
+
+- id: thermo.capture.cu4.mode.off
+  frame: "*4*303*#0#1##"
+  direction: command
+  who: 4
+  what: 303
+  where: "#0"
+  where_param: ["1"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Thermoregulation: 4-zone central unit #0#1 behind an F454 2.0.51: WHAT 303 ('OFF (Generic)', WHO 4 PDF WHAT table p. 5) sent by hand to the central unit; 0.17 s later it reported *4*103*#0#1##, and zones 1, 3 and 4 reported *4*303*1##, *4*303*3##, *4*303*4## within 4 s (MyHOME#994, tests/fixtures/traces/issue_994/myhome_trace_F454_all_2026-11-22T21-40-54.json, frames 38-52; the gateway's ACK or NACK is not in the capture)"
+  roundtrip: true
+
+- id: thermo.capture.cu4.status.off_heating
+  frame: "*4*103*#0#1##"
+  direction: event
+  who: 4
+  what: 103
+  where: "#0"
+  where_param: ["1"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Thermoregulation: 4-zone central unit #0#1 behind an F454 2.0.51 reports WHAT 103 ('OFF - Heating Mode', WHO 4 PDF WHAT table p. 5) 0.17 s after *4*303*#0#1## was sent to it (MyHOME#994, tests/fixtures/traces/issue_994/myhome_trace_F454_all_2026-11-22T21-40-54.json, frames 38-39)"
+  roundtrip: true
+
+- id: thermo.capture.cu4.program.heating_3
+  frame: "*4*1103*#0#1##"
+  direction: event
+  who: 4
+  what: 1103
+  where: "#0"
+  where_param: ["1"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Thermoregulation: 4-zone central unit #0#1 behind an F454 2.0.51: WHAT 1103 ('Heating program x (x=1...3)' is 11xx in the WHO 4 PDF WHAT table, p. 5) sent by hand to the central unit while it was off; zones 1, 3 and 4 reported *4*1*1##, *4*1*3##, *4*1*4## and setpoint 0140 within 3 s, and the central unit reported this same frame 3.3 s after the send, followed by WHAT 21, 31 and 22 (MyHOME#994, tests/fixtures/traces/issue_994/myhome_trace_F454_all_2026-11-22T21-40-54.json, frames 55-69; the gateway's ACK or NACK is not in the capture)"
+  roundtrip: true

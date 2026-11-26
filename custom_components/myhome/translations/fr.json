@@ -108,70 +108,158 @@
       "step": {
         "user": {
           "title": "Exposer une entité Home Assistant sur le bus SCS",
-          "description": "Émuler un appareil OpenWebNet virtuel sur le bus SCS piloté par une entité Home Assistant.",
+          "description": "Sélectionnez le sous-système OpenWebNet WHO à émuler sur le bus SCS. L'étape suivante affiche uniquement les champs d'adressage et de contrôle correspondants.",
           "data": {
-            "who": "Sous-système WHO",
-            "where": "Adresse WHERE",
-            "entity_id": "Entité source",
-            "attribute": "Attribut d'état (optionnel)",
-            "dimension": "Dimension OpenWebNet (optionnel)",
-            "cooldown": "Délai minimal entre envois (secondes)",
-            "min_delta": "Seuil minimal de variation (optionnel)",
-            "periodic_send": "Intervalle de diffusion périodique (secondes)",
-            "respond_to_read": "Répondre aux requêtes d'état/dimension du bus",
-            "bidirectional": "Bidirectionnel (agir sur les commandes reçues du bus)",
-            "brightness_step_pct": "Pas de luminosité par appui variateur (%)",
-            "on_states": "États 'on' personnalisés (séparés par des virgules, optionnel)",
-            "value_template": "Modèle de valeur (Jinja2, optionnel)",
-            "turn_on_action": "Action d'allumage / montée (optionnel)",
-            "turn_off_action": "Action d'extinction / descente (optionnel)",
-            "step_up_action": "Action d'incrément variateur (optionnel)",
-            "step_down_action": "Action de décrément variateur (optionnel)"
+            "who": "Sous-système WHO"
           },
           "data_description": {
-            "turn_on_action": "Pris en charge uniquement pour WHO 1 (éclairage/interrupteur) et WHO 2 (volet/automatisme).",
-            "turn_off_action": "Pris en charge uniquement pour WHO 1 (éclairage/interrupteur) et WHO 2 (volet/automatisme).",
-            "step_up_action": "Pris en charge uniquement pour WHO 1 (éclairage/variateur).",
-            "step_down_action": "Pris en charge uniquement pour WHO 1 (éclairage/variateur)."
+            "who": "WHO 1 (éclairage/interrupteur) et WHO 2 (volets) proposent des sélecteurs A / PL ainsi qu'un champ WHERE brut optionnel ; WHO 4, 13 et 18 n'affichent que leurs propres champs."
           }
         },
         "reconfigure": {
           "title": "Reconfigurer l'entité exposée",
-          "description": "Mettre à jour l'adresse OpenWebNet, l'entité source, les paramètres de régulation ou les actions personnalisées de cette exposition.",
+          "description": "Confirmez ou modifiez le sous-système OpenWebNet WHO pour cette liaison, puis mettez à jour son adresse, son entité source ou ses actions à l'étape suivante.",
           "data": {
-            "who": "Sous-système WHO",
-            "where": "Adresse WHERE",
+            "who": "Sous-système WHO"
+          },
+          "data_description": {
+            "who": "Basculer entre WHO 1 et WHO 2 conserve votre adresse A / PL ; basculer vers un autre WHO ouvre les champs de ce sous-système."
+          }
+        },
+        "who_1": {
+          "title": "WHO 1 — Éclairage / Interrupteur / Actionneur virtuel",
+          "description": "Choisissez la Zone (A) et le Point (PL) configurés dans MyHOME_Suite (ex. A = 8, PL = 8 ou A = 8, PL = 12), ou laissez-les vides pour saisir une adresse WHERE OpenWebNet brute ci-dessous.",
+          "data": {
+            "area": "Zone (A, 0–10)",
+            "point": "Point (PL, 1–15)",
+            "interface": "Interface bus local (optionnel)",
+            "where": "Adresse WHERE brute (optionnel)",
             "entity_id": "Entité source",
             "attribute": "Attribut d'état (optionnel)",
-            "dimension": "Dimension OpenWebNet (optionnel)",
             "cooldown": "Délai minimal entre envois (secondes)",
-            "min_delta": "Seuil minimal de variation (optionnel)",
             "periodic_send": "Intervalle de diffusion périodique (secondes)",
             "respond_to_read": "Répondre aux requêtes d'état/dimension du bus",
             "bidirectional": "Bidirectionnel (agir sur les commandes reçues du bus)",
             "brightness_step_pct": "Pas de luminosité par appui variateur (%)",
             "on_states": "États 'on' personnalisés (séparés par des virgules, optionnel)",
             "value_template": "Modèle de valeur (Jinja2, optionnel)",
-            "turn_on_action": "Action d'allumage / montée (optionnel)",
-            "turn_off_action": "Action d'extinction / descente (optionnel)",
+            "turn_on_action": "Action d'allumage (optionnel)",
+            "turn_off_action": "Action d'extinction (optionnel)",
             "step_up_action": "Action d'incrément variateur (optionnel)",
             "step_down_action": "Action de décrément variateur (optionnel)"
           },
           "data_description": {
-            "turn_on_action": "Pris en charge uniquement pour WHO 1 (éclairage/interrupteur) et WHO 2 (volet/automatisme).",
-            "turn_off_action": "Pris en charge uniquement pour WHO 1 (éclairage/interrupteur) et WHO 2 (volet/automatisme).",
-            "step_up_action": "Pris en charge uniquement pour WHO 1 (éclairage/variateur).",
-            "step_down_action": "Pris en charge uniquement pour WHO 1 (éclairage/variateur)."
+            "area": "Zone / Ambiente MyHOME_Suite (A = 0–10). Ignoré si une adresse WHERE brute est renseignée.",
+            "point": "Point lumineux MyHOME_Suite (l'exposition applique la plage de spécification OpenWebNet PL = 1–15).",
+            "interface": "Interface de bus local F422 optionnelle (#4#01–#4#09 ou #4#11–#4#15) pour le routage vers un bus local.",
+            "where": "Champ optionnel pour utilisateurs avancés (ex. 88, 08, 0812, 0012, 1008 ou 88#4#01). Lorsqu'il est renseigné, il remplace A, PL et Interface.",
+            "entity_id": "Entité source Home Assistant (optionnelle si au moins une action personnalisée est configurée ci-dessous).",
+            "attribute": "Attribut optionnel tel que 'brightness' pour refléter les niveaux de variation.",
+            "turn_on_action": "Séquence d'actions personnalisée exécutée lors d'une commande ON reçue du bus.",
+            "turn_off_action": "Séquence d'actions personnalisée exécutée lors d'une commande OFF reçue du bus.",
+            "step_up_action": "Séquence d'actions personnalisée exécutée lors d'un appui long d'augmentation du variateur.",
+            "step_down_action": "Séquence d'actions personnalisée exécutée lors d'un appui long de diminution du variateur."
+          }
+        },
+        "who_2": {
+          "title": "WHO 2 — Automatisme / Volet",
+          "description": "Choisissez la Zone (A) et le Point (PL) configurés dans MyHOME_Suite (ex. A = 3, PL = 1 ou A = 8, PL = 12), ou laissez-les vides pour saisir une adresse WHERE OpenWebNet brute ci-dessous.",
+          "data": {
+            "area": "Zone (A, 0–10)",
+            "point": "Point (PL, 1–15)",
+            "interface": "Interface bus local (optionnel)",
+            "where": "Adresse WHERE brute (optionnel)",
+            "entity_id": "Entité source",
+            "attribute": "Attribut d'état (optionnel)",
+            "cooldown": "Délai minimal entre envois (secondes)",
+            "periodic_send": "Intervalle de diffusion périodique (secondes)",
+            "respond_to_read": "Répondre aux requêtes d'état/dimension du bus",
+            "bidirectional": "Bidirectionnel (agir sur les commandes reçues du bus)",
+            "value_template": "Modèle de valeur (Jinja2, optionnel)",
+            "turn_on_action": "Action de montée / ouverture (optionnel)",
+            "turn_off_action": "Action de descente / fermeture (optionnel)"
+          },
+          "data_description": {
+            "area": "Zone / Ambiente MyHOME_Suite (A = 0–10). Ignoré si une adresse WHERE brute est renseignée.",
+            "point": "Point MyHOME_Suite (l'exposition applique la plage de spécification OpenWebNet PL = 1–15).",
+            "interface": "Interface de bus local F422 optionnelle (#4#01–#4#09 ou #4#11–#4#15) pour le routage vers un bus local.",
+            "where": "Champ optionnel pour utilisateurs avancés (ex. 31, 08, 0812, 0012, 1008 ou 31#4#01). Lorsqu'il est renseigné, il remplace A, PL et Interface.",
+            "entity_id": "Entité cover source Home Assistant (optionnelle si des actions personnalisées sont configurées ci-dessous).",
+            "attribute": "Attribut optionnel tel que 'current_position' pour refléter la position du volet.",
+            "turn_on_action": "Séquence d'actions personnalisée exécutée lors d'une commande MONTÉE / ouverture reçue du bus.",
+            "turn_off_action": "Séquence d'actions personnalisée exécutée lors d'une commande DESCENTE / fermeture reçue du bus."
+          }
+        },
+        "who_4": {
+          "title": "WHO 4 — Sonde de température (Dimension 0)",
+          "description": "Publiez un capteur de température Home Assistant sur une adresse de sonde OpenWebNet inutilisée (sonde maître de zone 1–99, sonde externe 100–900 ou PZZ 101–899 ; 1–99 requis sur passerelles F461 / bt_termo).",
+          "data": {
+            "where": "Adresse WHERE de la sonde",
+            "entity_id": "Entité de température source",
+            "attribute": "Attribut d'état (optionnel)",
+            "cooldown": "Délai minimal entre envois (secondes)",
+            "min_delta": "Seuil minimal de variation (optionnel)",
+            "periodic_send": "Intervalle de diffusion périodique (secondes)",
+            "respond_to_read": "Répondre aux requêtes de température du bus",
+            "value_template": "Modèle de valeur (Jinja2, optionnel)"
+          },
+          "data_description": {
+            "where": "Adresse de sonde maître de zone inutilisée (1–99, ex. 50) ou adresse de sonde (100–900 / 101–899)."
+          }
+        },
+        "who_13": {
+          "title": "WHO 13 — Horloge du bus et heure d'été",
+          "description": "Synchronisez les écrans muraux et thermostats SCS avec l'heure locale, la date et l'heure d'été de Home Assistant.",
+          "data": {
+            "dimension": "Dimension d'horloge",
+            "periodic_send": "Intervalle de diffusion périodique (secondes)",
+            "respond_to_read": "Répondre aux requêtes d'horloge du bus"
+          },
+          "data_description": {
+            "periodic_send": "Laissez vide pour une synchronisation quotidienne (86400 s), définissez par ex. 3600 pour un envoi horaire, ou 0 pour répondre uniquement aux requêtes."
+          }
+        },
+        "who_18": {
+          "title": "WHO 18 — Compteur d'énergie / puissance",
+          "description": "Exposez un capteur Home Assistant de puissance (W / kW) ou d'énergie (Wh / kWh) sur une adresse de compteur OpenWebNet inutilisée (5N ou 7N#0 avec N = 1–255, c.-à-d. 51–59, 510–599, 5100–5255 ou 71#0–79#0, 710#0–799#0, 7100#0–7255#0).",
+          "data": {
+            "where": "Adresse WHERE du compteur",
+            "dimension": "Dimension énergie/puissance OpenWebNet",
+            "entity_id": "Entité énergie/puissance source",
+            "attribute": "Attribut d'état (optionnel)",
+            "cooldown": "Délai minimal entre envois (secondes)",
+            "min_delta": "Seuil minimal de variation (optionnel)",
+            "periodic_send": "Intervalle de diffusion périodique (secondes)",
+            "respond_to_read": "Répondre aux requêtes de compteur du bus",
+            "value_template": "Modèle de valeur (Jinja2, optionnel)"
+          },
+          "data_description": {
+            "where": "Adresse de compteur inutilisée au format 5N ou 7N#0 (N = 1–255, ex. 51, 512, 5255 ou 71#0)."
           }
         }
       },
       "error": {
         "invalid_who": "Sous-système WHO non pris en charge (pris en charge : 1, 2, 4, 13, 18).",
+        "area_required": "Sélectionnez la Zone (A, 0–10) ou saisissez une adresse WHERE brute.",
+        "point_required": "Sélectionnez le Point (PL, 1–15) ou saisissez une adresse WHERE brute.",
+        "invalid_area": "La Zone (A) doit être comprise entre 0 et 10.",
+        "invalid_point": "Le Point (PL) doit être compris entre 1 et 15.",
+        "invalid_bus_interface": "L'interface de bus local doit être 'Bus SCS principal', 01–09 ou 11–15.",
         "where_required": "Une adresse WHERE est requise pour ce sous-système WHO.",
+        "invalid_where_use_2_digits": "\"{raw}\" utilise 4 chiffres, ce qui n'est valide que lorsque A = 10 ou PL = 10–15. Pour A = {area}, PL = {point}, utilisez \"{suggested}\" (2 chiffres).",
+        "invalid_where_use_4_digits": "\"{raw}\" utilise 3 chiffres, ce qui n'est pas valide en OpenWebNet. Pour A = {area}, PL = {point}, utilisez \"{suggested}\" (4 chiffres avec zéro initial).",
+        "invalid_where_pl_zero": "\"{raw}\" indique PL = 0 ; l'exposition applique la plage de spécification OpenWebNet PL = 1–15 (PL = 0 est la valeur par défaut non configurée dans MyHOME_Suite).",
+        "invalid_where_apl_range": "\"{raw}\" est en dehors de la plage point à point valide (A = 0–10, PL = 1–15).",
+        "invalid_where_group_or_scope": "L'exposition exige une adresse point à point A / PL ; les adresses générales ('0'), de zone ('00', '1'..'9', '100') et de groupe ('#N') ne sont pas autorisées.",
+        "invalid_where_interface": "Suffixe d'interface bus local non valide. Attendu : #4#01–#4#09 ou #4#11–#4#15 (ex. 88#4#01 ou 0812#4#01).",
+        "invalid_where_apl": "Adresse WHERE point à point non valide. Sélectionnez A (0–10) et PL (1–15) ci-dessus, ou saisissez une adresse WHERE canonique telle que 88, 08, 0812, 0012, 1008 ou 88#4#01.",
+        "invalid_where_who4": "Adresse WHERE de sonde WHO 4 non valide. Attendu : sonde maître de zone 1–99 (ex. 50), sonde externe 100–900 ou PZZ 101–899.",
+        "invalid_where_who18": "Adresse WHERE de compteur WHO 18 non valide. Attendu : 5N ou 7N#0 avec N = 1–255 (c.-à-d. 51–59, 510–599, 5100–5255 ou 71#0–79#0, 710#0–799#0, 7100#0–7255#0).",
         "entity_required": "Une entité Home Assistant source (ou une action personnalisée pour WHO 1 / WHO 2) est requise.",
         "action_not_supported_for_who": "Les actions personnalisées ne sont prises en charge que pour WHO 1 (allumage/extinction et pas +/-) et WHO 2 (allumage/extinction uniquement) ; effacez les actions non prises en charge ou modifiez le WHO.",
         "invalid_dimension": "Dimension non valide pour le sous-système WHO sélectionné.",
-        "invalid_expose": "Configuration non valide ou liaison WHO/WHERE/dimension déjà existante.",
+        "already_configured": "Une liaison exposée avec ce WHO, ce WHERE et cette dimension est déjà configurée sur cette passerelle.",
+        "invalid_expose": "Configuration d'exposition non valide.",
         "who_injection_unsupported": "Le firmware de cette passerelle ne permet pas d'injecter des trames pour le sous-système WHO sélectionné sur le bus SCS (pris en charge sur toutes les passerelles : WHO 1, 2, 13).",
         "who4_probe_where_unsupported": "Cette passerelle ne traduit les écritures de température WHO 4 #0 que sur les adresses maîtres de zone inutilisées 1..99 (ex. 50) ; les adresses de sonde à 3 chiffres (100..900) sont rejetées par le firmware."
       },
@@ -494,11 +582,11 @@
     },
     "central_remote_control_disabled": {
       "title": "Contrôle à distance désactivé sur la centrale de chauffage {device} ({gateway})",
-      "description": "La centrale 99 zones {device} (WHO {who}, adresse `{where}`) sur {gateway} a signalé l'état OpenWebNet `*4*20*#0##` (`Remote control disabled` / *Telegestione disabilitata*).\n\nTant que le contrôle à distance est désactivé sur la centrale physique (ex. BTicino 3550), la passerelle acquitte les commandes OpenWebNet avec `*#*1##`, mais la centrale ignore les modifications de consigne et de mode envoyées par Home Assistant.\n\nActivez le **Contrôle à distance** (*Telegestione*) dans le menu des paramètres de la centrale physique. Ce problème se résout automatiquement dès que la centrale signale `*4*21*#0##` (`Remote control enabled`)."
+      "description": "La centrale {device} (WHO {who}, adresse `{where}`) sur {gateway} a signalé l'état OpenWebNet `*4*20*{where}##` (`Remote control disabled` / *Telegestione disabilitata*).\n\nTant que le contrôle à distance est désactivé sur la centrale physique (ex. BTicino 3550 / 4695), la passerelle acquitte les commandes OpenWebNet avec `*#*1##`, mais la centrale ignore les modifications de consigne et de mode envoyées par Home Assistant.\n\nActivez le **Contrôle à distance** (*Telegestione*) dans le menu des paramètres de la centrale physique. Ce problème se résout automatiquement dès que la centrale signale `*4*21*{where}##` (`Remote control enabled`)."
     },
     "central_battery_fault": {
       "title": "Défaut de batterie de secours sur la centrale de chauffage {device} ({gateway})",
-      "description": "La centrale 99 zones {device} (WHO {who}, adresse `{where}`) sur {gateway} a signalé l'état OpenWebNet `*4*31*#0##` (`Central unit battery KO`).\n\nVérifiez ou remplacez la batterie de secours de la centrale physique (ex. BTicino 3550) afin de préserver les programmes hebdomadaires et l'horloge en cas de coupure de courant. Ce problème se résout automatiquement au prochain rapport d'état (`*#4*#0##`) lorsque `*4*31*#0##` n'est plus émis."
+      "description": "La centrale {device} (WHO {who}, adresse `{where}`) sur {gateway} a signalé l'état OpenWebNet `*4*31*{where}##` (`Central unit battery KO`).\n\nVérifiez ou remplacez la batterie de secours de la centrale physique (ex. BTicino 3550 / 4695) afin de préserver les programmes hebdomadaires et l'horloge en cas de coupure de courant. Ce problème se résout automatiquement au prochain rapport d'état (`*#4*{where}##`) lorsque `*4*31*{where}##` n'est plus émis."
     },
     "unmapped_device_status": {
       "title": "{device} signale un état non documenté",
@@ -671,11 +759,53 @@
     "lock_command_rejected": {
       "message": "{name} : la passerelle {gateway} a refusé ou ignoré la commande d'ouverture WHO=6 ({frame})"
     },
+    "impulse_pulse_not_sent": {
+      "message": "{name} : l'impulsion n'a pas été envoyée (dans le délai de garde de {deadband} s, ou une autre impulsion est en cours d'écriture)"
+    },
+    "impulse_pulse_send_failed": {
+      "message": "{name} : l'impulsion n'a pas été envoyée ({error})"
+    },
+    "impulse_pulse_unconfirmed": {
+      "message": "{name} : l'impulsion n'a pas été confirmée par la passerelle ({error}) ; le relais a pu commuter ou non : vérifiez la porte avant de réessayer"
+    },
+    "impulse_relay_not_released": {
+      "message": "{name} : l'impulsion n'a pas été envoyée : le relais de l'impulsion précédente n'a pas pu être relâché"
+    },
+    "impulse_stop_not_sent": {
+      "message": "{name} : l'impulsion d'arrêt n'a pas été envoyée"
+    },
+    "impulse_stop_unconfirmed": {
+      "message": "{name} : l'impulsion d'arrêt n'a pas été confirmée par la passerelle ; la porte est peut-être encore en mouvement : vérifiez-la"
+    },
     "lock_command_timeout": {
       "message": "{name} : la commande d'ouverture portier n'a pas été confirmée dans un délai de {timeout} s ; elle a été retirée si elle n'avait pas encore été envoyée"
     },
     "lock_command_failed": {
       "message": "{name} : échec de la commande d'ouverture portier : {error}"
+    },
+    "command_rejected": {
+      "message": "{name} : la passerelle {gateway} a rejeté la commande ({frame}) avec NACK"
+    },
+    "command_not_delivered": {
+      "message": "{name} : la commande ({frame}) n'a pas pu être envoyée à la passerelle {gateway}, ou la connexion a été perdue avant sa réponse ; elle a peut-être été exécutée"
+    },
+    "command_not_confirmed": {
+      "message": "{name} : la passerelle {gateway} n'a pas confirmé la commande ({frame}) à temps ; elle a peut-être été exécutée"
+    },
+    "gateway_not_found": {
+      "message": "Passerelle « {gateway} » introuvable"
+    },
+    "no_gateway_loaded": {
+      "message": "Aucune passerelle MyHOME n'est configurée"
+    },
+    "send_message_invalid_frame": {
+      "message": "« {message} » n'est pas une trame OpenWebNet valide ; rien n'a été envoyé"
+    },
+    "send_message_refused_frame": {
+      "message": "Refus d'envoyer « {message} » : cette trame est bloquée par mesure de sécurité ; rien n'a été envoyé"
+    },
+    "sync_time_unsupported_offset": {
+      "message": "Impossible de synchroniser l'horloge de la passerelle pour le fuseau horaire « {timezone} » : {error}. OpenWebNet ne prend en charge que les décalages UTC d'heures entières."
     }
   },
   "entity": {
@@ -702,6 +832,9 @@
     "number": {
       "tuner_frequency": {
         "name": "Fréquence"
+      },
+      "min_position_delta": {
+        "name": "Pas de position minimal"
       }
     },
     "sensor": {
@@ -710,6 +843,9 @@
       },
       "energy_month": {
         "name": "Énergie (mois en cours)"
+      },
+      "actuator_output_level": {
+        "name": "Niveau de sortie actionneur {actuator}"
       }
     },
     "switch": {
@@ -746,6 +882,50 @@
         "18": "18 - Gestion de l'énergie",
         "22": "22 - Diffusion sonore (matrice audio)",
         "25": "25 - Scénarios CEN+"
+      }
+    },
+    "expose_who": {
+      "options": {
+        "1": "WHO 1 — Éclairage / Interrupteur / Actionneur virtuel",
+        "2": "WHO 2 — Automatisme / Volet",
+        "4": "WHO 4 — Sonde de température (Dimension 0)",
+        "13": "WHO 13 — Horloge du bus et heure d'été",
+        "18": "WHO 18 — Compteur d'énergie / puissance"
+      }
+    },
+    "expose_bus_interface": {
+      "options": {
+        "none": "Bus SCS principal (sans interface F422)",
+        "01": "Interface 01 (#4#01)",
+        "02": "Interface 02 (#4#02)",
+        "03": "Interface 03 (#4#03)",
+        "04": "Interface 04 (#4#04)",
+        "05": "Interface 05 (#4#05)",
+        "06": "Interface 06 (#4#06)",
+        "07": "Interface 07 (#4#07)",
+        "08": "Interface 08 (#4#08)",
+        "09": "Interface 09 (#4#09)",
+        "11": "Interface 11 (#4#11)",
+        "12": "Interface 12 (#4#12)",
+        "13": "Interface 13 (#4#13)",
+        "14": "Interface 14 (#4#14)",
+        "15": "Interface 15 (#4#15)"
+      }
+    },
+    "expose_who13_dimension": {
+      "options": {
+        "22": "22 - Heure, date et calendrier (recommandé)",
+        "0": "0 - Heure uniquement",
+        "1": "1 - Date uniquement"
+      }
+    },
+    "expose_who18_dimension": {
+      "options": {
+        "113": "113 - Puissance active (W)",
+        "51": "51 - Énergie totale (Wh)",
+        "52": "52 - Totalisateur d'énergie mensuel (Wh)",
+        "53": "53 - Énergie partielle du mois en cours (Wh)",
+        "54": "54 - Énergie partielle du jour en cours (Wh)"
       }
     }
   }

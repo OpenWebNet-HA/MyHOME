@@ -1,5 +1,6 @@
 """Test issue #368 PR A: debounced re-sync for group / area / general frames."""
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import homeassistant.util.dt as dt_util
@@ -15,12 +16,14 @@ from pytest_homeassistant_custom_component.common import (
 
 from custom_components.myhome.const import (
     CONF_BROADCAST_RESYNC,
+    CONF_IGNORED_ADDRESSES,
     DOMAIN,
     RESYNC_DEBOUNCE_S,
     RESYNC_LEADING_WINDOW_S,
     area_of_where,
 )
 from custom_components.myhome.gateway import MyHOMEGatewayHandler
+from custom_components.myhome.gateway_sessions import FrameScheduler
 
 MAC = "00:03:50:00:00:01"
 
@@ -251,7 +254,7 @@ async def test_known_light_areas_from_registry(hass: HomeAssistant, entry: MockC
         registry.async_get_or_create(
             "light", DOMAIN, f"{MAC}-1-{where}", config_entry=entry,
         )
-    # Routed address: Address.from_device_id("12#4#01") extracts where="12", yielding area "1".
+    # Routed address: area 1 of the bus behind F422 interface 01, a scope of its own.
     registry.async_get_or_create(
         "light", DOMAIN, f"{MAC}-1-12#4#01", config_entry=entry,
     )
@@ -268,7 +271,9 @@ async def test_known_light_areas_from_registry(hass: HomeAssistant, entry: MockC
         "light", DOMAIN, f"{MAC}-", config_entry=entry,
     )
 
-    assert handler._known_light_areas() == ["00", "1", "100", "2"]
+    assert handler._known_light_areas() == ["00", "1", "1#4#01", "100", "2"]
+    assert handler._resync_manager.known_area_entities("1") == {"12"}
+    assert handler._resync_manager.known_area_entities("1#4#01") == {"12#4#01"}
 
 
 @pytest.mark.asyncio
@@ -833,6 +838,109 @@ async def test_group_resync_preserves_bus_interface_on_members_and_group_key(
     assert assumed_routed.is_on is True
 
 
+def _sent(handler: MyHOMEGatewayHandler) -> list[str]:
+    return [str(call[0][0]) for call in handler.send_status_request.call_args_list]
+
+
+@pytest.mark.asyncio
+async def test_area_sweep_stays_on_the_bus_of_the_area_frame(
+    hass: HomeAssistant, entry: MockConfigEntry
+) -> None:
+    """An area behind an F422 interface is not the gateway's own area (#749, #740).
+
+    `*1*1*1#4#01##` / `*1*0*1#4#01##` are captured on a physical F461
+    (`tests/fixtures/traces/f461_live_2026-10-15`). Area 1 behind interface 01 is read
+    light by light (`*#1*<APL>#4#01##`, answered live on an F461 and an F455); the
+    gateway's own area 1 is not asked, and the other way round.
+    """
+    handler = _handler(hass, entry)
+    mgr = handler._resync_manager
+    registry = er.async_get(hass)
+    for where in ("11", "11#4#01", "12#4#01", "13#4#02"):
+        registry.async_get_or_create("light", DOMAIN, f"{MAC}-1-{where}", config_entry=entry)
+    assert mgr.known_light_areas() == ["1", "1#4#01", "1#4#02"]
+
+    # 1. Area 1 behind interface 01: its two lights are asked, nothing on the gateway's own bus.
+    await handler._process_message(OWNMessage.parse("*1*0*1#4#01##"))
+    assert list(handler._resync_timers) == ["1#4#01"]
+    # The gateway's own light 11 echoing is not an echo of area 1 behind the interface.
+    await handler._process_message(OWNMessage.parse("*1*0*11##"))
+    assert "1#4#01" in handler._resync_timers
+    await _advance(hass)
+    assert _sent(handler) == ["*#1*11#4#01##", "*#1*12#4#01##"]
+
+    # 2. Both lights of the interface area echo the command: nothing to ask.
+    handler.send_status_request.reset_mock()
+    mgr.cancel_all()
+    await handler._process_message(OWNMessage.parse("*1*1*1#4#01##"))
+    await handler._process_message(OWNMessage.parse("*1*1*11#4#01##"))
+    assert "1#4#01" in handler._resync_timers
+    await handler._process_message(OWNMessage.parse("*1*1*12#4#01##"))
+    assert not handler._resync_timers
+    await _advance(hass)
+    assert _sent(handler) == []
+
+    # 3. The gateway's own area 1: an echo from behind the interface does not cancel
+    # its sweep, and the lights behind the interface are not waited for.
+    mgr.cancel_all()
+    await handler._process_message(OWNMessage.parse("*1*0*1##"))
+    assert list(handler._resync_timers) == ["1"]
+    await handler._process_message(OWNMessage.parse("*1*0*11#4#01##"))
+    assert "1" in handler._resync_timers
+    await _advance(hass)
+    assert _sent(handler) == ["*#1*1##"]
+
+    handler.send_status_request.reset_mock()
+    mgr.cancel_all()
+    await handler._process_message(OWNMessage.parse("*1*1*1##"))
+    await handler._process_message(OWNMessage.parse("*1*1*11##"))
+    assert not handler._resync_timers
+    await _advance(hass)
+    assert _sent(handler) == []
+
+    # 4. An interface area with no known light has nothing to read.
+    mgr.cancel_all()
+    await handler._process_message(OWNMessage.parse("*1*0*2#4#01##"))
+    assert list(handler._resync_timers) == ["2#4#01"]
+    await _advance(hass)
+    assert _sent(handler) == []
+
+
+@pytest.mark.asyncio
+async def test_general_sweep_follows_the_bus_of_the_general_frame(
+    hass: HomeAssistant, entry: MockConfigEntry
+) -> None:
+    """`0#4#<Int>` is the general of one local bus, `0` the general of the system.
+
+    Live, 2026-11-18, F461 and F455: `*1*1*0#4#01##` switched `09#4#01` and `03#4#01`
+    on with no status frame from either, MyHOME asked `*#1*00##` (the gateway's own
+    area) and both lights stayed `off` in Home Assistant.
+    """
+    handler = _handler(hass, entry)
+    mgr = handler._resync_manager
+    registry = er.async_get(hass)
+    for where in ("05", "07", "09#4#01", "03#4#01", "21#4#02"):
+        registry.async_get_or_create("light", DOMAIN, f"{MAC}-1-{where}", config_entry=entry)
+
+    # General of the bus behind interface 01: only its lights.
+    await handler._process_message(OWNMessage.parse("*1*1*0#4#01##"))
+    assert list(handler._resync_timers) == ["00#4#01"]
+    await _advance(hass)
+    assert _sent(handler) == ["*#1*03#4#01##", "*#1*09#4#01##"]
+
+    # General of the system: every known scope, each on its own bus.
+    handler.send_status_request.reset_mock()
+    mgr.cancel_all()
+    await handler._process_message(OWNMessage.parse("*1*0*0##"))
+    assert sorted(handler._resync_timers) == ["00", "00#4#01", "2#4#02"]
+    # The local lights echo: area 00 is done without the lights behind the interface.
+    await handler._process_message(OWNMessage.parse("*1*0*05##"))
+    await handler._process_message(OWNMessage.parse("*1*0*07##"))
+    assert sorted(handler._resync_timers) == ["00#4#01", "2#4#02"]
+    await _advance(hass)
+    assert sorted(_sent(handler)) == ["*#1*03#4#01##", "*#1*09#4#01##", "*#1*21#4#02##"]
+
+
 @pytest.mark.asyncio
 async def test_multi_entity_area_sweep_waits_for_all_known_entities(
     hass: HomeAssistant, entry: MockConfigEntry
@@ -1088,3 +1196,232 @@ async def test_point_to_point_dim_steps_are_not_member_echoes(
     assert "#6" not in handler._resync_timers
     await _advance(hass)
     handler.send_status_request.assert_not_called()
+
+
+# A blocked routed sweep is a producer even after its timer has fired.
+async def test_unload_cancels_remaining_routed_point_reads(hass):
+    entry = _entry(hass)
+    handler = _handler(hass, entry)
+    for where in ("11#4#01", "12#4#01"):
+        er.async_get(hass).async_get_or_create(
+            "light", DOMAIN, f"{MAC}-1-{where}", config_entry=entry
+        )
+    queue = handler._command_pool.send_buffer = FrameScheduler(maxsize=2)
+    # One occupied slot: only the first of the two point reads fits.
+    queue.put_nowait(
+        {"message": OWNMessage.parse("*1*0*11##")}
+    )
+    handler.send_status_request = handler._command_pool.send_status_request
+    sweep = asyncio.create_task(handler._resync_broadcast("1#4#01"))
+    await asyncio.sleep(0)
+    assert queue.status_qsize == 1 and not sweep.done()
+    await handler.close_listener()
+    await asyncio.sleep(0)
+    assert queue.status_qsize == 0, list(queue._queue)
+    await asyncio.gather(sweep, return_exceptions=True)
+
+
+async def test_sweep_after_registry_refused_canonical_rename(hass):
+    entry = _entry(hass)
+    handler = _handler(hass, entry)
+    # Registry spelling left on a rename conflict (tests/test_canonical_point_where.py:248-259).
+    # Routed spellings: tests/test_canonical_point_where.py:96.
+    er.async_get(hass).async_get_or_create(
+        "light", DOMAIN, f"{MAC}-1-0009#4#01", config_entry=entry
+    )
+    await handler._process_message(
+        OWNMessage.parse("*1*1*0#4#01##")
+    )
+    await _advance(hass)
+    # tests/fixtures/traces/issue_466/F455_direct_requests_2026-11-06.jsonl:44
+    assert _sent(handler) == ["*#1*09#4#01##"]
+
+
+async def test_routed_thermo_switch_not_polled_as_an_unregistered_light(hass):
+    entry = _entry(hass)
+    handler = _handler(hass, entry)
+    handler.gateway.serial = "001122334455"  # live identity != config-entry identity
+    assert handler.mac != MAC
+    # A supported routed thermo switch: tests/test_issue_785_thermo_actuator_switch.py:1494.
+    er.async_get(hass).async_get_or_create(
+        "switch", DOMAIN, f"{MAC}-4-12#1#4#01", config_entry=entry
+    )
+    await handler._process_message(
+        OWNMessage.parse("*1*0*1#4#01##")
+    )
+    await _advance(hass)
+    assert _sent(handler) == []  # no WHO 1 point is registered here
+
+
+async def test_a_routed_sweep_stops_between_point_reads_once_the_gateway_is_closing(hass):
+    """A routed scope is read light by light; no further read is sent once the listener is closing."""
+    entry = _entry(hass)
+    handler = _handler(hass, entry)
+    for where in ("11#4#01", "12#4#01"):
+        er.async_get(hass).async_get_or_create("light", DOMAIN, f"{MAC}-1-{where}", config_entry=entry)
+
+    async def _close_after_the_first_read(_message: object) -> None:
+        handler._terminate_listener = True
+
+    handler.send_status_request = AsyncMock(side_effect=_close_after_the_first_read)
+    await handler._resync_broadcast("1#4#01")
+
+    # The first of the two reads of `test_area_sweep_stays_on_the_bus_of_the_area_frame`.
+    assert _sent(handler) == ["*#1*11#4#01##"]
+
+
+@pytest.mark.asyncio
+async def test_pl_zero_points_included_in_routed_sweeps_and_echo_suppression(hass: HomeAssistant) -> None:
+    """PL=0 points (10..90, 1000) are included in routed F422 sweeps and echo suppression."""
+    entry = _entry(hass)
+    handler = _handler(hass, entry)
+    mgr = handler._resync_manager
+
+    # Direct area-mapping checks for PL=0 points vs broadcasts/invalid inputs.
+    for area_digit in range(1, 10):
+        assert mgr._point_area(f"{area_digit}0") == str(area_digit)
+        assert mgr._point_area(f"{area_digit}0#4#01") == str(area_digit)
+    assert mgr._point_area("1000") == "100"
+    assert mgr._point_area("1000#4#01") == "100"
+    for non_point in (None, "0", "00", "0000", "100", "1", "#1", "invalid"):
+        assert mgr._point_area(non_point) is None
+
+    # Register real-world PL=0 routed points (F454/F459/F461/MHS1 patterns: 10, 20#4#02, 80#4#01, 1000).
+    registry = er.async_get(hass)
+    for where in ("10#4#01", "80#4#01", "1000#4#01", "20#4#02"):
+        registry.async_get_or_create("light", DOMAIN, f"{MAC}-1-{where}", config_entry=entry)
+
+    assert mgr.known_light_areas() == ["1#4#01", "100#4#01", "2#4#02", "8#4#01"]
+    assert mgr.known_area_entities("1#4#01") == {"10#4#01"}
+    assert mgr.known_area_entities("100#4#01") == {"1000#4#01"}
+
+    # 1. Routed area 1 and area 10 sweeps poll their PL=0 lights.
+    await handler._process_message(OWNMessage.parse("*1*0*1#4#01##"))
+    await _advance(hass)
+    assert _sent(handler) == ["*#1*10#4#01##"]
+
+    handler.send_status_request.reset_mock()
+    mgr.cancel_all()
+    await handler._process_message(OWNMessage.parse("*1*0*100#4#01##"))
+    await _advance(hass)
+    assert _sent(handler) == ["*#1*1000#4#01##"]
+
+    # 2. Routed general sweep for interface 01 polls all three PL=0 points on interface 01 only.
+    handler.send_status_request.reset_mock()
+    mgr.cancel_all()
+    await handler._process_message(OWNMessage.parse("*1*1*0#4#01##"))
+    await _advance(hass)
+    assert sorted(_sent(handler)) == ["*#1*10#4#01##", "*#1*1000#4#01##", "*#1*80#4#01##"]
+
+    # 3. Trailing echoes from PL=0 points cancel their routed area sweeps.
+    handler.send_status_request.reset_mock()
+    mgr.cancel_all()
+    await handler._process_message(OWNMessage.parse("*1*0*1#4#01##"))
+    assert "1#4#01" in handler._resync_timers
+    await handler._process_message(OWNMessage.parse("*1*0*10#4#01##"))
+    assert "1#4#01" not in handler._resync_timers
+
+    await handler._process_message(OWNMessage.parse("*1*0*100#4#01##"))
+    assert "100#4#01" in handler._resync_timers
+    await handler._process_message(OWNMessage.parse("*1*0*1000#4#01##"))
+    assert "100#4#01" not in handler._resync_timers
+
+    # 4. Leading echo from a PL=0 point suppresses the routed area sweep.
+    await handler._process_message(OWNMessage.parse("*1*1*80#4#01##"))
+    await handler._process_message(OWNMessage.parse("*1*1*8#4#01##"))
+    assert "8#4#01" not in handler._resync_timers
+    await _advance(hass)
+    assert _sent(handler) == []
+
+
+@pytest.mark.asyncio
+async def test_routed_sweep_skips_disabled_and_ignored_lights(hass: HomeAssistant) -> None:
+    """Disabled entities and ignored_addresses are omitted from _known_area_map and routed sweeps."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={
+            CONF_HOST: "192.168.1.5",
+            CONF_PORT: 20000,
+            CONF_PASSWORD: "open",
+            CONF_MAC: MAC,
+        },
+        options={
+            CONF_BROADCAST_RESYNC: True,
+            CONF_IGNORED_ADDRESSES: ["1/13#4#01", "1/09#4#01"],
+        },
+    )
+    entry.add_to_hass(hass)
+    handler = _handler(hass, entry)
+    mgr = handler._resync_manager
+    registry = er.async_get(hass)
+
+    registry.async_get_or_create("light", DOMAIN, f"{MAC}-1-11#4#01", config_entry=entry)
+    registry.async_get_or_create(
+        "light",
+        DOMAIN,
+        f"{MAC}-1-12#4#01",
+        config_entry=entry,
+        disabled_by=er.RegistryEntryDisabler.USER,
+    )
+    registry.async_get_or_create("light", DOMAIN, f"{MAC}-1-13#4#01", config_entry=entry)
+    # Registry spelling before canonical rename, ignored via canonical "1/09#4#01".
+    registry.async_get_or_create("light", DOMAIN, f"{MAC}-1-0009#4#01", config_entry=entry)
+    # Area with only a disabled light must not appear in known scopes.
+    registry.async_get_or_create(
+        "light",
+        DOMAIN,
+        f"{MAC}-1-21#4#01",
+        config_entry=entry,
+        disabled_by=er.RegistryEntryDisabler.USER,
+    )
+
+    assert mgr.known_light_areas() == ["1#4#01"]
+    assert mgr.known_area_entities("1#4#01") == {"11#4#01"}
+
+    # Routed area sweep polls only the enabled, non-ignored light.
+    await handler._process_message(OWNMessage.parse("*1*0*1#4#01##"))
+    await _advance(hass)
+    assert _sent(handler) == ["*#1*11#4#01##"]
+
+    # Routed general sweep also polls only 11#4#01.
+    handler.send_status_request.reset_mock()
+    mgr.cancel_all()
+    await handler._process_message(OWNMessage.parse("*1*1*0#4#01##"))
+    await _advance(hass)
+    assert _sent(handler) == ["*#1*11#4#01##"]
+
+    # Echo from the single active light suffices to cancel the sweep.
+    handler.send_status_request.reset_mock()
+    mgr.cancel_all()
+    await handler._process_message(OWNMessage.parse("*1*0*1#4#01##"))
+    await handler._process_message(OWNMessage.parse("*1*0*11#4#01##"))
+    assert "1#4#01" not in handler._resync_timers
+
+
+@pytest.mark.asyncio
+async def test_resync_stops_when_sender_is_terminating(hass: HomeAssistant) -> None:
+    """_terminate_sender stops both scheduling, initial execute_resync, and mid-sweep routed reads."""
+    entry = _entry(hass)
+    handler = _handler(hass, entry)
+    for where in ("11#4#01", "12#4#01"):
+        er.async_get(hass).async_get_or_create("light", DOMAIN, f"{MAC}-1-{where}", config_entry=entry)
+
+    # 1. Terminating sender before schedule_resync arms no timer.
+    handler._terminate_sender = True
+    await handler._process_message(OWNMessage.parse("*1*0*1#4#01##"))
+    assert not handler._resync_timers
+
+    # 2. Terminating sender on entry to execute_resync sends nothing.
+    await handler._resync_broadcast("1#4#01")
+    await handler._resync_broadcast("1")
+    assert _sent(handler) == []
+
+    # 3. Terminating sender between routed point reads stops before the next point.
+    handler._terminate_sender = False
+
+    async def _stop_sender_after_first(_message: object) -> None:
+        handler._terminate_sender = True
+
+    handler.send_status_request = AsyncMock(side_effect=_stop_sender_after_first)
+    await handler._resync_broadcast("1#4#01")
+    assert _sent(handler) == ["*#1*11#4#01##"]

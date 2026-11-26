@@ -120,7 +120,7 @@ def _make_temp_sensor(hass, gateway, where):
 
 
 async def test_probe_sensor_starts_receive_only(hass, mock_gateway):
-    """A ZPP >= 100 probe sends no *#4*ZPP*15## on add; a zone sensor still polls (#308)."""
+    """A ZPP >= 100 probe sends no read on add; a zone sensor still polls (#308)."""
     hass.data[DOMAIN] = {mock_gateway.mac: {"platforms": {"sensor": {}}}}
 
     probe = _make_temp_sensor(hass, mock_gateway, "101")
@@ -148,7 +148,8 @@ async def test_probe_sensor_polls_only_when_push_stream_is_silent(hass, mock_gat
     # Nothing received yet -> the periodic update polls the probe
     await probe.async_update()
     mock_gateway.send_status_request.assert_awaited_once()
-    assert str(mock_gateway.send_status_request.call_args.args[0]) == "*#4*101*15##"
+    # Slave probe 1 of zone 01: the dimension 0 read of the WHO 4 PDF (1.5.1), not *#4*101*15##.
+    assert str(mock_gateway.send_status_request.call_args.args[0]) == "*#4*101*0##"
 
     # Unsolicited frame from the F454 / L4577 (dimension 0, secondary sensor)
     probe.handle_event(OWNHeatingEvent("*#4*101*0*0215*3##"))
@@ -277,14 +278,14 @@ async def test_discovery_skips_unsupported_who(gateway_handler, fast_bus_pacing)
     reason="installed OWNd omits WHO 16 from MH200N (OWNd#63)",
 )
 async def test_discovery_asks_an_mh200n_for_its_amplifiers(gateway_handler, fast_bus_pacing):
-    """A live MH200N answers *#16*0*5## with every amplifier and source (OWNd#63)."""
+    """A live MH200N answers *#16*0*5## with every amplifier and source (OWNd#63), and its energy meter (OWNd 184)."""
     gateway_handler.gateway.profile = get_gateway_profile("MH200N")
     await gateway_handler.initial_discovery()
 
     queued = []
     while not gateway_handler.send_buffer.empty():
         queued.append(str(gateway_handler.send_buffer.get_nowait()["message"]))
-    assert queued == ["*#1*0##", "*#2*0##", "*#4*0##", "*#16*0*5##"]
+    assert queued == ["*#1*0##", "*#2*0##", "*#4*0##", "*#16*0*5##", "*#18*51*51##", "*#18*51*113##"]
 
 
 # OWNd up to 2.0.0b8 gives the MH200 the MH200N profile, which advertises no WHO 16.

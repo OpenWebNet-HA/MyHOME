@@ -123,6 +123,7 @@ from .const import (
     CONF_STATE_SENSOR,
     CONF_STEP_DOWN_ACTION,
     CONF_STEP_UP_ACTION,
+    CONF_STOP_BEFORE_MOVE,
     CONF_STRATEGY,
     CONF_TRAVEL_TIME,
     CONF_TURN_OFF_ACTION,
@@ -146,8 +147,12 @@ from .const import (
     TYPE_IMPULSE_RELAY,
 )
 from .where_grammar import (
+    canonical_central_zone,
     canonical_point_spelling,
+    canonical_thermo_zone,
+    is_four_zone_central_where,
     parse_thermo_actuator_where,
+    split_zone_routing,
     validate_thermo_trigger_command,
 )
 
@@ -216,7 +221,7 @@ class Group(object):
         self.msg = msg
 
     def __call__(self, v):  # type: ignore
-        if isinstance(v, str) and v.startswith("#") and v[1:].isdigit() and int(v[1:]) >= 1 and int(v[1:]) <= 255:
+        if isinstance(v, str) and v.startswith("#") and v[1:].isascii() and v[1:].isdigit() and int(v[1:]) >= 1 and int(v[1:]) <= 255:
             return f"#{int(v[1:])}"
         else:
             raise Invalid(f"Invalid Group WHERE {v}, it must be a string like '#[1-255]'.")
@@ -258,7 +263,7 @@ class PointToPoint:
         self.canonical = canonical
 
     def __call__(self, v: typing.Any) -> typing.Any:
-        if isinstance(v, str) and v.isdigit():
+        if isinstance(v, str) and v.isascii() and v.isdigit():
             _length = len(v)
             if _length == 2 or _length == 4:
                 _a = v[0 : _length // 2]
@@ -281,7 +286,7 @@ class SpecialWhere(object):
         self.msg = msg
 
     def __call__(self, v):  # type: ignore
-        if isinstance(v, str) and v.isdigit():
+        if isinstance(v, str) and v.isascii() and v.isdigit():
             return v
         else:
             raise Invalid(f"Invalid WHERE {v}, it must be a string of digits.")
@@ -298,7 +303,7 @@ class BusInterface(object):
         if v is None:
             return v
         # ``interface: 3`` and an unquoted ``interface: 03`` both reach here as "3"
-        if isinstance(v, str) and v.isdigit() and 1 <= len(v) <= 2:
+        if isinstance(v, str) and v.isascii() and v.isdigit() and 1 <= len(v) <= 2:
             if int(v) > 15:
                 raise Invalid(f"Invalid Bus Interface number {v}, it must be between 00 and 15.")
             return v.zfill(2)
@@ -359,6 +364,13 @@ class MyHomeDeviceSchema(Schema):
         }
         data = super().__call__(data)  # type: ignore
         _rekeyed_data = {}
+        # A 4-zone central unit (``central: true``, ``zone: "1"`` -> ``#0#1``) also answers to
+        # its bare zone number. Where the file has a zone with that number too, the number
+        # is the zone's whatever the order of the two entries: filed last, without replacing.
+        _central_aliases: list[tuple[str, typing.Any]] = []
+        # The number of a zone written ``#1`` or ``01`` (``1``, ``zone_1``, ``4-1``): the zone's,
+        # ahead of a central unit's alias, behind an entry that is written with that number.
+        _zone_numbers: list[tuple[str, str, typing.Any]] = []
 
         for device in data:
             data[device][CONF_EXPLICIT_KINEMATICS] = str(device) in explicit_kinematics
@@ -369,18 +381,42 @@ class MyHomeDeviceSchema(Schema):
             if CONF_WHERE in data[device]:
                 _rekeyed_data[f"{data[device][CONF_WHO]}-{data[device][CONF_WHERE]}{routing}"] = data[device]
             elif CONF_ZONE in data[device]:
-                _new_key = f"{data[device][CONF_WHO]}-{data[device][CONF_ZONE]}{routing}"
-                data[device][CONF_ZONE] = f"#0#{data[device][CONF_ZONE]}" if data[device][CONF_CENTRAL] and data[device][CONF_ZONE] != "#0" else data[device][CONF_ZONE]
+                raw_base, raw_routing = split_zone_routing(str(data[device][CONF_ZONE]), routing)
+                _new_key = f"{data[device][CONF_WHO]}-{raw_base}{raw_routing}"
+                zone = str(data[device][CONF_ZONE])
+                if data[device][CONF_CENTRAL] or is_four_zone_central_where(zone):
+                    # 0, #0 and #0#0 are the 99-zone central unit (#0); #0#N / #0#0N is the
+                    # 4-zone one (canonicalized and marked central even when ``central: true``
+                    # is omitted); an interface written inside the zone (0#4#01) stays behind it.
+                    zone = canonical_central_zone(zone)
+                    data[device][CONF_CENTRAL] = True
+                base_zone, eff_routing = split_zone_routing(zone, routing)
+                full_zone = f"{base_zone}{eff_routing}"
+                data[device][CONF_ZONE] = base_zone if routing else full_zone
                 data[device][CONF_NAME] = (
                     data[device][CONF_NAME] if CONF_NAME in data[device] else "Central unit" if data[device][CONF_ZONE].startswith("#0") else f"Zone {data[device][CONF_ZONE]}"
                 )
-                _rekeyed_data[_new_key] = data[device]
                 _rekeyed_data[str(device)] = data[device]
-                clean_zone = str(data[device][CONF_ZONE]).split("#")[-1]
-                _rekeyed_data[f"{clean_zone}{routing}"] = data[device]
-                _rekeyed_data[f"{data[device][CONF_ZONE]}{routing}"] = data[device]
-                if not routing:
-                    _rekeyed_data[f"zone_{clean_zone}"] = data[device]
+                clean_zone = base_zone.split("#")[-1]
+                _rekeyed_data[full_zone] = data[device]
+                _zone_aliases = [_new_key, f"{clean_zone}{eff_routing}"]
+                if not eff_routing:
+                    _zone_aliases.append(f"zone_{clean_zone}")
+                if base_zone.startswith("#0#"):
+                    _central_aliases.extend((alias, data[device]) for alias in _zone_aliases)
+                else:
+                    _rekeyed_data.update(dict.fromkeys(_zone_aliases, data[device]))
+                    # ``1``, ``01`` and ``#1`` are zone 1; ``001`` is all the probes of zone 1, another address.
+                    if (
+                        (digits := base_zone.removeprefix("#")).isdigit()
+                        and len(digits) <= 2
+                        and (canon := canonical_thermo_zone(base_zone)) is not None
+                    ):
+                        _bare = f"{canon}{eff_routing}"
+                        _numbers = [_bare, f"{data[device][CONF_WHO]}-{_bare}"]
+                        if not eff_routing:
+                            _numbers.append(f"zone_{canon}")
+                        _zone_numbers.extend((alias, _bare, data[device]) for alias in _numbers if alias not in _zone_aliases)
             if CONF_DEVICE_MODEL not in data[device]:
                 data[device][CONF_DEVICE_MODEL] = None
             if CONF_ICON not in data[device]:
@@ -396,6 +432,11 @@ class MyHomeDeviceSchema(Schema):
             if CONF_DEVICE_CLASS not in data[device]:
                 data[device][CONF_DEVICE_CLASS] = SwitchDeviceClass.SWITCH
 
+        for alias, _bare, entry in _zone_numbers:
+            # ``4-1`` and ``zone_1`` are whose ``1`` is: one zone under all three.
+            _rekeyed_data.setdefault(alias, _rekeyed_data.get(_bare, entry))
+        for alias, central in _central_aliases:
+            _rekeyed_data.setdefault(alias, central)
         return _rekeyed_data
 
 
@@ -642,7 +683,7 @@ cover_schema = MyHomeDeviceSchema(
             Optional(CONF_MIN_CYCLE_TIME, default=5.0): All(Coerce(float), Range(min=1.0, max=120.0)),
             Optional(CONF_ACCESS): access_schema,
             Optional(CONF_ADVANCED_SHUTTER, default=False): Boolean(),
-            Optional("advanced_shutter", default=False): Boolean(),
+            Optional("advanced_shutter"): Boolean(),
             Optional(CONF_STRATEGY): In(list(COVER_STRATEGIES)),
             Optional(CONF_SLAT_TILT, default=False): Boolean(),
             Optional(CONF_SLAT_TIME): All(
@@ -656,6 +697,7 @@ cover_schema = MyHomeDeviceSchema(
                 Coerce(float), Range(min=CALIBRATION_MIN_MOTOR_PULSE, max=CALIBRATION_MAX_MOTOR_PULSE)
             ),
             Optional(CONF_MIN_POSITION_DELTA): All(Coerce(int), Range(min=1, max=MAX_MIN_POSITION_DELTA)),
+            Optional(CONF_STOP_BEFORE_MOVE): Boolean(),
             Optional(CONF_MANUFACTURER, default="BTicino S.p.A."): str,
             Optional(CONF_DEVICE_MODEL): Coerce(str),
             Optional(CONF_MEMBERS): [All(Coerce(str), PointToPoint())],
@@ -692,7 +734,20 @@ def _validate_cover_members(data: dict[str, typing.Any]) -> dict[str, typing.Any
             raise Invalid("slat_time can only be defined on a cover with slat_tilt enabled")
         if CONF_MIN_POSITION_DELTA in cfg and not cfg.get(CONF_ADVANCED_SHUTTER) and not advanced:
             raise Invalid("min_position_delta only applies to an advanced cover (use min_motor_pulse on a timed cover)")
-        cfg.setdefault(CONF_SLAT_TIME, DEFAULT_SLAT_TIME)
+        if CONF_STOP_BEFORE_MOVE in cfg and (cfg.get(CONF_ADVANCED_SHUTTER) or advanced):
+            raise Invalid(
+                "stop_before_move only applies to a timed cover (an advanced cover runs its own level write)"
+            )
+        if cfg.get(CONF_ADVANCED_SHUTTER):
+            if not cfg.get(CONF_EXPLICIT_TRAVEL_TIME):
+                cfg.pop(CONF_TRAVEL_TIME, None)
+            if not cfg.get(CONF_SLAT_TILT):
+                if cfg.get(CONF_MIN_MOTOR_PULSE) == DEFAULT_MIN_MOTOR_PULSE:
+                    cfg.pop(CONF_MIN_MOTOR_PULSE, None)
+            else:
+                cfg.setdefault(CONF_SLAT_TIME, DEFAULT_SLAT_TIME)
+        else:
+            cfg.setdefault(CONF_SLAT_TIME, DEFAULT_SLAT_TIME)
     return data
 
 
@@ -706,6 +761,8 @@ def _validate_impulse_covers(data: dict[str, typing.Any]) -> dict[str, typing.An
         if is_impulse and cover_type in ("shutter", "standard"):
             raise Invalid(f"{device}: who: 1 is an impulse relay; type: {cover_type} only applies to who: 2")
         if is_impulse:
+            if CONF_STOP_BEFORE_MOVE in cfg:
+                raise Invalid(f"{device}: stop_before_move only applies to WHO 2 covers (not impulse covers on who: 1)")
             try:
                 PointToPoint()(str(cfg[CONF_WHERE]))
             except Invalid as err:
@@ -715,6 +772,11 @@ def _validate_impulse_covers(data: dict[str, typing.Any]) -> dict[str, typing.An
                 ) from err
             if float(cfg.get(CONF_MIN_CYCLE_TIME, 5.0)) <= float(cfg.get(CONF_PULSE_DURATION, 0.5)):
                 raise Invalid(f"{device}: min_cycle_time must be greater than pulse_duration")
+            if float(cfg.get(CONF_TRAVEL_TIME, 25)) <= 0:
+                raise Invalid(
+                    f"{device}: an impulse cover needs a travel_time (how long the door takes to open or close); "
+                    "0 only applies to WHO 2 covers"
+                )
             if CONF_PIN_CODE in cfg and CONF_ACCESS not in cfg:
                 raise Invalid(f"{device}: pin_code is checked by the access policy; add an access: block or remove it")
         elif CONF_ACCESS in cfg or CONF_PIN_CODE in cfg or CONF_STATE_SENSOR in cfg:
@@ -735,11 +797,44 @@ def _canonical_who1_point(device: dict[str, typing.Any]) -> dict[str, typing.Any
     return device
 
 
+def _validate_binary_sensor_entry(device: dict[str, typing.Any]) -> dict[str, typing.Any]:
+    """Validate binary sensor WHERE, optional F422 bus routing, and WHO=1 canonical point."""
+    who = str(device.get(CONF_WHO, "25"))
+    device[CONF_WHO] = who
+    raw_where = str(device[CONF_WHERE])
+    inline_iface: str | None = None
+    if BUS_ROUTING in raw_where:
+        base, _, tail = raw_where.partition(BUS_ROUTING)
+        if not base or "#" in base or "#" in tail:
+            raise Invalid(
+                f"Invalid WHERE {raw_where}, it must be '<digits>' or '<digits>#4#<interface>'."
+            )
+        raw_where = SpecialWhere()(base)  # type: ignore[no-untyped-call]
+        inline_iface = BusInterface()(tail)  # type: ignore[no-untyped-call]
+    else:
+        raw_where = SpecialWhere()(raw_where)  # type: ignore[no-untyped-call]
+
+    explicit_iface = device.get(CONF_BUS_INTERFACE)
+    if inline_iface is not None:
+        if explicit_iface is not None and explicit_iface != inline_iface:
+            raise Invalid(
+                f"Conflicting bus interface between where '{device[CONF_WHERE]}' and interface '{explicit_iface}'."
+            )
+        device[CONF_BUS_INTERFACE] = inline_iface
+
+    if who == "9" and device.get(CONF_BUS_INTERFACE) is not None:
+        raise Invalid("WHO=9 auxiliary channels do not support bus interface routing.")
+
+    device[CONF_WHERE] = raw_where
+    return _canonical_who1_point(device)
+
+
 binary_sensor_schema = MyHomeDeviceSchema(
     {
         Required(str): All({
             Optional(CONF_WHO, default="25"): All(Coerce(str), In(["1", "9", "25"])),
-            Required(CONF_WHERE): All(Coerce(str), SpecialWhere()),  # type: ignore
+            Required(CONF_WHERE): Coerce(str),
+            Optional(CONF_BUS_INTERFACE): All(Coerce(str), BusInterface()),  # type: ignore
             Required(CONF_NAME): str,
             Optional(CONF_ENTITY_NAME): str,
             Optional(CONF_INVERTED, default=False): Boolean(),
@@ -801,7 +896,7 @@ binary_sensor_schema = MyHomeDeviceSchema(
             ),
             Optional(CONF_MANUFACTURER, default="BTicino S.p.A."): str,
             Optional(CONF_DEVICE_MODEL): Coerce(str),
-        }, _canonical_who1_point)
+        }, _validate_binary_sensor_entry)
     }
 )
 
@@ -927,9 +1022,11 @@ def _finite_float(v: typing.Any) -> float:
 
 
 def _non_bool_int(v: typing.Any) -> int:
-    """Coerce ``v`` to an int, rejecting booleans, non-finite floats, and fractional floats."""
-    if isinstance(v, bool) or (
-        isinstance(v, float) and (not math.isfinite(v) or not v.is_integer())
+    """Coerce ``v`` to an int, rejecting booleans, non-ASCII strings, non-finite floats, and fractional floats."""
+    if (
+        isinstance(v, bool)
+        or (isinstance(v, str) and not v.isascii())
+        or (isinstance(v, float) and (not math.isfinite(v) or not v.is_integer()))
     ):
         raise Invalid(f"expected an integer, got {v!r}")
     try:
@@ -978,15 +1075,19 @@ def _validate_expose_action(val: typing.Any) -> list[dict[str, typing.Any]]:
 # N00 (N = 1..9), or individual probe PZZ (P = 1..8, ZZ = 01..99).
 # 0 and 001..099 address all probes and all probes of a zone, and #Z addresses
 # the central unit's zone object, so a virtual probe must not answer on them.
-_WHO4_EXPOSE_PROBE_RE = re.compile(r"(?:[1-9]\d?|[1-9]00|[1-8](?:0[1-9]|[1-9]\d))")
+_WHO4_EXPOSE_PROBE_RE = re.compile(
+    r"(?:[1-9]\d?|[1-9]00|[1-8](?:0[1-9]|[1-9]\d))",
+    re.ASCII,
+)
 _WHO18_EXPOSE_WHERE_RE = re.compile(
-    r"(?:5(?:[1-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])(?:#\d)?|7(?:[1-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])#0)"
+    r"(?:5(?:[1-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])(?:#\d)?|7(?:[1-9]|[1-9]\d|1\d\d|2[0-4]\d|25[0-5])#0)",
+    re.ASCII,
 )
 
 
 def _validate_expose_entry(item: dict[str, typing.Any]) -> dict[str, typing.Any]:
     """Validate cross-field constraints on a single expose entry."""
-    from .where_grammar import is_apl_address, normalize_expose_where
+    from .where_grammar import diagnose_apl_where, normalize_expose_where
 
     who = int(item[CONF_WHO])
     raw_where_val = item.get(CONF_WHERE)
@@ -1015,9 +1116,6 @@ def _validate_expose_entry(item: dict[str, typing.Any]) -> dict[str, typing.Any]
             f"expose entry for WHO={who} requires a non-empty 'where' address without '*'"
         )
 
-    where = normalize_expose_where(who, raw_where)
-    item[CONF_WHERE] = where
-
     has_entity = bool(item.get(CONF_ENTITY_ID))
     action_keys = (
         CONF_TURN_ON_ACTION,
@@ -1036,16 +1134,32 @@ def _validate_expose_entry(item: dict[str, typing.Any]) -> dict[str, typing.Any]
     if who in (1, 2):
         if dim is not None:
             raise Invalid(f"WHO={who} expose does not support 'dimension' (got {dim})")
-        base_where, sep, suffix = where.partition("#")
-        if (
-            where.startswith("#")
-            or not is_apl_address(base_where)
-            or (sep and not re.fullmatch(r"4#(0\d|1[0-5])", suffix))
-        ):
+        diag = diagnose_apl_where(raw_where)
+        if diag is not None:
+            hint = ""
+            err_key, placeholders = diag
+            if err_key in (
+                "invalid_where_use_2_digits",
+                "invalid_where_use_4_digits",
+            ):
+                hint = (
+                    f"; for A={placeholders['area']}, PL={placeholders['point']} "
+                    f"use '{placeholders['suggested']}'"
+                )
+            elif err_key == "invalid_where_pl_zero":
+                hint = "; PL=0 is invalid, PL must be 1..15"
+            elif err_key == "invalid_where_interface":
+                hint = "; local-bus suffix must be #4#01..#4#09 or #4#11..#4#15"
             raise Invalid(
-                f"WHO={who} expose 'where' must be a point-to-point actuator address (got {raw_where!r})"
+                f"WHO={who} expose 'where' must be a point-to-point actuator address (got {raw_where!r}){hint}"
             )
-    elif who == 4:
+        item[CONF_WHERE] = normalize_expose_where(who, raw_where)
+        return item
+
+    where = normalize_expose_where(who, raw_where)
+    item[CONF_WHERE] = where
+
+    if who == 4:
         if not _WHO4_EXPOSE_PROBE_RE.fullmatch(where):
             raise Invalid(
                 f"WHO=4 expose 'where' must be a probe address (zone master probe '1'..'99', external probe '100'..'900', or probe PZZ '101'..'899', got {raw_where!r})"
@@ -1071,7 +1185,7 @@ def _validate_expose_entry(item: dict[str, typing.Any]) -> dict[str, typing.Any]
             )
         if not _WHO18_EXPOSE_WHERE_RE.fullmatch(where):
             raise Invalid(
-                f"WHO=18 expose 'where' must be '5N' (e.g. '51'..'5255') or '7N#0' (got {raw_where!r})"
+                f"WHO=18 expose 'where' must be '5N' or '7N#0' with N=1..255 (e.g. '51', '512', '5255', '71#0'; got {raw_where!r})"
             )
         if default_val is not None:
             def_en = _finite_float(default_val)

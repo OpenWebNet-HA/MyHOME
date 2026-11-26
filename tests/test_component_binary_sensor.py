@@ -9,6 +9,7 @@ from OWNd.message import (
     MESSAGE_TYPE_MOTION_TIMEOUT,
     MESSAGE_TYPE_PIR_SENSITIVITY,
     OWNDryContactEvent,
+    OWNEvent,
     OWNLightingEvent,
 )
 
@@ -16,10 +17,12 @@ from custom_components.myhome.binary_sensor import (
     MyHOMEAuxiliary,
     MyHOMEDryContact,
     MyHOMEMotionSensor,
+    _motion_address,
     async_setup_entry,
     async_unload_entry,
 )
 from custom_components.myhome.const import DOMAIN
+from custom_components.myhome.discovery import Address
 from custom_components.myhome.typing_compat import device_info_to_dict
 from tests.conftest import attach_runtime, bind_entity
 
@@ -501,7 +504,7 @@ async def test_binary_sensor_entity_registry_and_motion_discovery(hass):
         async_dispatcher_send(hass, f"myhome_message_{mock_gateway.mac}", motion_interface)
         await hass.async_block_till_done()
         assert len(added) == 6
-        assert added[5]._where == "52"
+        assert added[5]._where == "52#4#01"
 
         # Motion message with hyphenated WHERE to hit clean_where != where
         hyphen_msg = MagicMock(spec=OWNLightingEvent)
@@ -1101,3 +1104,14 @@ def test_registry_entry_without_class_or_who_is_not_a_binary_sensor():
     assert _classify_registry_entry(MagicMock(unique_id=f"{mac}-1-42-motion", original_device_class=None), mac, mac) == ("1", "42")
     assert _classify_registry_entry(MagicMock(unique_id=f"{mac}-25-0031-opening", original_device_class=None), mac, mac) == ("25", "0031")
     assert _classify_registry_entry(MagicMock(unique_id=f"{mac}-9-3-motion", original_device_class=None), mac, mac) == ("9", "3")
+
+
+def test_motion_address_ignores_illuminance_dimension_6():
+    """WHO 1 illuminance frames (DIMENSION 6) are owned by sensor.py and must not spawn a motion sensor."""
+    assert _motion_address(OWNEvent.parse("*#1*08*6*250##")) is None
+    assert _motion_address(OWNEvent.parse("*#1*08#4#01*6*250##")) is None
+    assert _motion_address(OWNEvent.parse("*1*34*08##")) == Address("08")
+    assert _motion_address(OWNEvent.parse("*1*39*08##")) == Address("08")
+    assert _motion_address(OWNEvent.parse("*#1*08*5*2##")) == Address("08")
+    assert _motion_address(OWNEvent.parse("*#1*08*7*0*0*30##")) == Address("08")
+    assert _motion_address(OWNEvent.parse("*1*34*08#4#1##")) == Address("08", "01")

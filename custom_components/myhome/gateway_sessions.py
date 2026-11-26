@@ -18,11 +18,20 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from OWNd.connection import OWNCommandSession, OWNEventSession, OWNGateway
+from OWNd.exceptions import OWNAuthError, OWNProtocolError
 from OWNd.message import OWNCommand, OWNGatewayEvent, OWNMessage
 
+from .actuator_lock import actuator_locks_of
 from .const import LOGGER, area_of_where, is_apl_address
 from .expose import is_exposed_on_bus
-from .where_grammar import expose_message_where, normalize_where, where_param
+from .gateway_confirm import echo_watchdog_of
+from .gateway_events import GatewayEventDispatcher
+from .where_grammar import (
+    canonical_point_spelling,
+    expose_message_where,
+    normalize_where,
+    where_param,
+)
 
 if TYPE_CHECKING:
     from .bus_monitor import BusMonitor
@@ -44,6 +53,144 @@ STATUS_TIMEOUT_BACKOFF: float = 2.0
 # leaving sessions open indefinitely. Installations desiring a generous hard ceiling
 # for "TCP up, bus dead" conditions can override this constant (e.g. 43200.0 / 12h).
 EVENT_INACTIVITY_TIMEOUT: float | None = None
+# connect() results that mean the gateway refused the stored password (OWNd
+# `_AUTH_NEGOTIATION_ERRORS`). Presenting it again cannot succeed, and an HMAC
+# gateway disables its authentication service after repeated failures
+# (OpenWebNet Encyclopedia `protocol/authentication.md`, HMAC Simple
+# Authentication Mode), so both sessions stop and Home Assistant asks for the
+# password again (reauth).
+AUTH_REFUSALS: frozenset[str] = frozenset({"password_error", "password_required"})
+
+# OWNd ``last_error.reason`` values guaranteed to occur before any byte of the
+# command frame is written to the socket (verified against OWNd session.py and
+# command_session.py). Post-write outcomes (nack, unexpected_response,
+# command_timeout, connection_lost, session_crash) are deliberately excluded.
+_PRE_WIRE_SEND_REASONS: frozenset[str] = frozenset(
+    {
+        "connection_unavailable",
+        "connection_error",
+        "connect_timeout",
+        "connection_refused",
+        "connection_closed",
+        "connection_reset",
+        "network_error",
+        "password_error",
+        "password_required",
+        "password_retry",
+        "negotiation_error",
+        "negotiation_timeout",
+        "negotiation_refused",
+        "negotiation_failed",
+        "destructive_frame",
+        "invalid_frame",
+    }
+)
+
+_POOL_TERMINATED = "pool_terminated"
+# Pool-level cooldown after a fatal ``negotiation_error`` (matching OWNd's
+# RECONNECT_PAUSE_FATAL / SEND_AUTH_COOLDOWN = 60 s): prevents every queued
+# command in sending_loop() from opening a fresh TCP + password handshake while
+# avoiding a false HA reauth or permanently killing the command worker.
+NEGOTIATION_ERROR_COOLDOWN: float = 60.0
+
+
+class _PoolTerminated(Exception):
+    """Internal signal that ``CommandWorkerPool`` shut down while waiting to negotiate."""
+
+
+class _PooledCommandSession(OWNCommandSession):
+    """``OWNCommandSession`` whose handshake serializes across a ``CommandWorkerPool``."""
+
+    def __init__(self, pool: CommandWorkerPool, **kwargs: Any) -> None:
+        """Bind this command session's handshake lock to ``pool``."""
+        super().__init__(**kwargs)
+        self._pool = pool
+
+    async def connect(self, *, raise_on_error: bool = False) -> dict[str, Any] | None:
+        """Skip opening a TCP socket once the pool is shutting down, auth-refused, or cooling down."""
+        if self._pool._terminate_sender:
+            return {"Success": False, "Message": _POOL_TERMINATED}
+        if self._pool._auth_refused:
+            reason = self._pool._auth_refused_reason or "password_error"
+            err = OWNAuthError(f"Gateway authentication failed ({reason})", reason=reason)
+            self._last_error = err
+            if raise_on_error:
+                raise err
+            return {"Success": False, "Message": reason}
+        if self._pool._negotiation_error_until > time.monotonic():
+            if self._pool._negotiation_error_target == self._login_target():
+                proto_err = OWNProtocolError(
+                    "OpenWebNet negotiation protocol error (negotiation_error)",
+                    reason="negotiation_error",
+                )
+                self._last_error = proto_err
+                if raise_on_error:
+                    raise proto_err
+                return {"Success": False, "Message": "negotiation_error"}
+            self._pool._negotiation_error_until = 0.0
+            self._pool._negotiation_error_target = None
+
+        connect_task: asyncio.Task[dict[str, Any] | None] = asyncio.create_task(
+            super().connect(raise_on_error=raise_on_error)
+        )
+        stop_task: asyncio.Task[bool] = asyncio.create_task(
+            self._pool._sender_stop.wait()
+        )
+        try:
+            wait_tasks: set[asyncio.Task[Any]] = {connect_task, stop_task}
+            done, _ = await asyncio.wait(
+                wait_tasks,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if connect_task in done and not self._pool._terminated_meanwhile():
+                return connect_task.result()
+            if connect_task in done:
+                with contextlib.suppress(Exception):
+                    connect_task.result()
+            return {"Success": False, "Message": _POOL_TERMINATED}
+        finally:
+            if not stop_task.done():
+                stop_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await stop_task
+            if not connect_task.done():
+                connect_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await connect_task
+                with contextlib.suppress(Exception):
+                    await self._close_streams()
+            elif self._pool._terminated_meanwhile():
+                with contextlib.suppress(Exception):
+                    await self._close_streams()
+
+    async def _negotiate(self) -> dict[str, Any]:
+        """Serialize session negotiation across the pool and abort once auth is refused."""
+        async with self._pool._connect_lock:
+            if self._pool._terminate_sender:
+                raise _PoolTerminated
+            if self._pool._auth_refused:
+                reason = self._pool._auth_refused_reason or "password_error"
+                return {"Success": False, "Message": reason}
+            target = self._login_target()
+            if (
+                self._pool._negotiation_error_until > time.monotonic()
+                and self._pool._negotiation_error_target == target
+            ):
+                return {"Success": False, "Message": "negotiation_error"}
+            result: dict[str, Any] = await super()._negotiate()
+            msg = result.get("Message")
+            if result.get("Success"):
+                self._pool._negotiation_error_until = 0.0
+                self._pool._negotiation_error_target = None
+            elif isinstance(msg, str) and msg in AUTH_REFUSALS:
+                self._pool._auth_refused_reason = msg
+                self._pool.handler._on_auth_refused(msg, "command")
+            elif msg == "negotiation_error":
+                self._pool._negotiation_error_until = (
+                    time.monotonic() + NEGOTIATION_ERROR_COOLDOWN
+                )
+                self._pool._negotiation_error_target = target
+            return result
 
 
 def _resolve_written(task: dict[str, Any], when: float) -> None:
@@ -53,10 +200,17 @@ def _resolve_written(task: dict[str, Any], when: float) -> None:
         written.set_result(when)
 
 
-def _cancel_written(task: dict[str, Any]) -> None:
-    """Cancel a queued frame's delivery future (the frame will never be written)."""
+def _cancel_written(task: dict[str, Any], *, not_written: bool = False) -> None:
+    """Cancel a queued frame's delivery future.
+
+    ``not_written=True`` records that zero bytes of this frame were handed to a
+    command session (superseded in the queue, queue closed before dequeue, or
+    the command session could not be opened before ``send()``).
+    """
     written = task.get("written")
     if isinstance(written, asyncio.Future) and not written.done():
+        if not_written:
+            setattr(written, "_not_written", True)
         written.cancel()
 
 
@@ -85,6 +239,7 @@ class EventSessionRunner:
         self._terminate_listener: bool = False
         self._event_session_ready: asyncio.Event = asyncio.Event()
         self._event_watchdog: asyncio.Timeout | None = None
+        self._closing_session: bool = False
         self.is_connected: bool = False
 
     @property
@@ -185,6 +340,10 @@ class EventSessionRunner:
             logger=LOGGER,
             inactivity_timeout=inactivity_timeout,
             on_state_change=self.handler._on_event_connection_state_change,
+            # OWNd calls this from inside connect(), also on a reconnect within
+            # get_next() (OpenWebNet-HA/OWNd#132): the one place a password that
+            # stops working while Home Assistant runs becomes visible.
+            on_auth_error=self._on_auth_error,
         )
         watchdog = asyncio.timeout(None)
         current_stall_timeout = float(getattr(gw_module, "EVENT_STALL_TIMEOUT", self.stall_timeout))
@@ -207,9 +366,17 @@ class EventSessionRunner:
                 LOGGER.exception("%s Event listener failed.", self.log_id)
         finally:
             self._event_watchdog = None
-            with contextlib.suppress(Exception):
-                await asyncio.shield(_event_session.close())
+            self._closing_session = True
+            try:
+                with contextlib.suppress(Exception):
+                    await asyncio.shield(_event_session.close())
+            finally:
+                self._closing_session = False
         return not self._terminate_listener
+
+    def _on_auth_error(self, error: Any) -> None:
+        """OWNd's ``on_auth_error`` hook: the gateway refused the password on the event session."""
+        self.handler._on_auth_refused(getattr(error, "reason", None), "event")
 
     async def _read_event_session(self, _event_session: OWNEventSession) -> None:
         """Connect ``_event_session`` and dispatch its frames.
@@ -242,6 +409,8 @@ class EventSessionRunner:
                     res.get("Message"),
                 )
                 self.handler._on_event_connection_state_change(False)
+                if res.get("Message") in AUTH_REFUSALS:
+                    self.handler._on_auth_refused(res.get("Message"), "event")
                 return
         else:
             LOGGER.warning(
@@ -255,6 +424,13 @@ class EventSessionRunner:
         while not self._terminate_listener:
             message = await _event_session.get_next()
             self._update_event_watchdog(progress=True)
+            last_error = getattr(_event_session, "last_error", None)
+            if message is None and isinstance(last_error, OWNAuthError):
+                # The reconnect inside get_next() was refused for the password. Calling
+                # get_next() again would present it again (once per RECONNECT_PAUSE_FATAL,
+                # for as long as Home Assistant runs), so the listener ends here.
+                self.handler._on_auth_refused(last_error.reason, "event")
+                return
             if message is None:
                 reachable = session_is_open(_event_session)
                 if reachable != was_reachable:
@@ -337,7 +513,21 @@ def _split_where(where: str) -> tuple[str, str | None]:
 
 
 def _same_cover_where(first: str, second: str) -> bool:
-    """Whether two WHO 2 WHEREs address the exact same physical cover actuator."""
+    """Whether two WHO 2 WHEREs may address the same cover, for the overlap check only.
+
+    Besides the same address on the same bus, two numbers with the same value count
+    as one (``02`` and ``2``, ``0011`` and ``11``). They are different addresses:
+    the WHO 2 WHERE table lists the areas (``2`` is area 2) and the four-digit point
+    spelling (A=00 with PL 01-15, ``0002``; Encyclopedia
+    ``who-2-automation/addressing.md``: leading zeroes are significant). The
+    two-character spelling of such a point (``02``) is not in that table: a
+    MyHomeServer1 local room keypad sends ``*2*2*02##`` at its actuator's point
+    address (``tests/fixtures/traces/issue_445/README.md:43``). An F453 capture has
+    ``*2*0*2##`` followed by the stops of ``21``..``25``
+    (``tests/fixtures/traces/discussion_856``). Treating them as
+    overlapping only costs a wait (``_wheres_overlap``); it must not decide which
+    queued frame a cancel drops (``_PriorityQueueStorage.drop_superseded``).
+    """
     if first == second:
         return True
     base_a, if_a = _split_where(first)
@@ -393,6 +583,14 @@ _FRAME_TARGET_RE = re.compile(
 )
 
 
+def _is_withdrawn(item: Any) -> bool:
+    """Return True when a queued envelope's delivery future has already been cancelled."""
+    if not isinstance(item, dict):
+        return False
+    written = item.get("written")
+    return isinstance(written, asyncio.Future) and written.cancelled()
+
+
 def _classify_tier(item: Any) -> int:
     """Classify item into priority tier: 0 (commands), 1 (fade steps), 2 (status), 3 (others/sentinels).
 
@@ -419,8 +617,9 @@ def _normalize_target_where(who: int, raw_where: str) -> str:
     """Canonicalize a target WHERE string across OpenWebNet subsystems.
 
     Normalizes leading zeros on non-APL numeric addresses via ``normalize_where``,
-    canonicalizes local bus interface suffixes (``#4#2`` -> ``#4#02``), and strips
-    leading zeros on group numbers (``#03`` -> ``#3``).
+    canonicalizes local bus interface suffixes (``#4#2`` -> ``#4#02``), strips
+    leading zeros on group numbers (``#03`` -> ``#3``), and for WHO 1 / 2 writes the
+    area-zero point spelling ``0009`` as ``09`` (``canonical_point_spelling``).
     """
     where_s = str(raw_where).strip()
     if not where_s:
@@ -434,6 +633,8 @@ def _normalize_target_where(who: int, raw_where: str) -> str:
         suffix = ""
 
     norm_base = normalize_where(base)
+    if who in (1, 2):
+        norm_base = canonical_point_spelling(norm_base)
     if norm_base.startswith("#") and norm_base[1:].isdigit():
         norm_base = "#" + (norm_base[1:].lstrip("0") or "0")
     elif who not in (1, 2) and norm_base.isdigit() and norm_base not in ("0", "00", "100"):
@@ -477,7 +678,11 @@ def _extract_target_key(item: Any) -> tuple[int, str] | None:
 
 
 def _same_target(first: tuple[int, str], second: tuple[int, str]) -> bool:
-    """Return True if two target keys represent the same physical target."""
+    """Return True if two target keys may be one target (lenient for WHO 2, see ``_same_cover_where``).
+
+    Used to release an in-flight lock. What a new frame supersedes is decided on
+    the exact key instead (``_PriorityQueueStorage.drop_superseded``).
+    """
     if first[0] != second[0]:
         return False
     if first[1] == second[1]:
@@ -722,6 +927,8 @@ class _PriorityQueueStorage:
             head_run_end += 1
         overlap_pos = 0
         for index, queued in enumerate(self._commands):
+            if _is_withdrawn(queued):
+                continue
             msg = queued.get("message") if isinstance(queued, dict) else None
             queued_where = _cover_where(msg)
             if queued_where is not None and _wheres_overlap(stop_where, queued_where):
@@ -762,6 +969,52 @@ class _PriorityQueueStorage:
             return self._others.popleft()
         raise IndexError("pop from an empty priority queue")
 
+    def _find_eligible(
+        self,
+        in_flight_targets: set[tuple[int, str]],
+        *,
+        allow_status: bool = True,
+    ) -> tuple[collections.deque[Any], int] | None:
+        """Locate the highest priority item a worker may take now, as ``(tier, index)``.
+
+        An item waits while its target overlaps one being written by another worker.
+        It also waits while it overlaps an item queued ahead of it that is itself
+        waiting, so frames that can reach the same actuator leave in queue order.
+        Overlap is not transitive for WHO 2 (point ``11`` overlaps area ``1``, area
+        ``1`` overlaps point ``12``, ``11`` and ``12`` do not overlap): with
+        ``*2*1*11##`` in flight and ``[*2*1*1##, *2*0*12##]`` queued, checking the
+        in-flight set alone handed the stop for 12 to the second worker ahead of the
+        area frame it was queued behind, and the bus got stop 12, then area 1 up.
+        That is the #645 rule ("a stop never overtakes an unwritten frame for a
+        cover it stops") across workers, as the #694 review asked ("wait only for
+        overlapping frames with an earlier ticket").
+        A frame its caller withdrew (cancelled ``written`` future) is handed out at
+        once, for the worker to discard, and holds nothing back.
+        """
+        tiers = (
+            (self._commands, self._fade_steps, self._status, self._others)
+            if allow_status
+            else (self._commands, self._fade_steps, self._others)
+        )
+        waiting: list[tuple[int, str]] = []
+        for q in tiers:
+            for idx, item in enumerate(q):
+                if not in_flight_targets:
+                    return q, idx
+                if _is_withdrawn(item):
+                    return q, idx
+                target = _extract_target_key(item)
+                if target is None:
+                    return q, idx
+                if any(
+                    _targets_overlap(target, held)
+                    for held in itertools.chain(in_flight_targets, waiting)
+                ):
+                    waiting.append(target)
+                    continue
+                return q, idx
+        return None
+
     def pop_eligible(
         self,
         in_flight_targets: set[tuple[int, str]],
@@ -771,23 +1024,13 @@ class _PriorityQueueStorage:
         """Pop and return the highest priority item eligible under target and status gates."""
         if not in_flight_targets and allow_status:
             return self.popleft()
-        tiers = (
-            (self._commands, self._fade_steps, self._status, self._others)
-            if allow_status
-            else (self._commands, self._fade_steps, self._others)
-        )
-        for q in tiers:
-            for idx, item in enumerate(q):
-                if not in_flight_targets:
-                    del q[idx]
-                    return item
-                target = _extract_target_key(item)
-                if target is None or not any(
-                    _targets_overlap(target, active) for active in in_flight_targets
-                ):
-                    del q[idx]
-                    return item
-        raise IndexError("no eligible item in priority queue")
+        found = self._find_eligible(in_flight_targets, allow_status=allow_status)
+        if found is None:
+            raise IndexError("no eligible item in priority queue")
+        q, idx = found
+        item = q[idx]
+        del q[idx]
+        return item
 
     def has_eligible(
         self,
@@ -798,21 +1041,7 @@ class _PriorityQueueStorage:
         """Return True if at least one queued item is eligible under target and status gates."""
         if not in_flight_targets and allow_status:
             return bool(self)
-        tiers = (
-            (self._commands, self._fade_steps, self._status, self._others)
-            if allow_status
-            else (self._commands, self._fade_steps, self._others)
-        )
-        for q in tiers:
-            if not in_flight_targets and q:
-                return True
-            for item in q:
-                target = _extract_target_key(item)
-                if target is None or not any(
-                    _targets_overlap(target, active) for active in in_flight_targets
-                ):
-                    return True
-        return False
+        return self._find_eligible(in_flight_targets, allow_status=allow_status) is not None
 
     def drop_superseded(self, new_item: Any) -> list[dict[str, Any]]:
         """Drop queued frames superseded by new_item for the same physical (who, where) target."""
@@ -821,13 +1050,19 @@ class _PriorityQueueStorage:
             return []
         tier = _classify_tier(new_item)
         dropped: list[dict[str, Any]] = []
+        # The same target is the same canonical key (``_extract_target_key``: interface
+        # ``#4#2`` / ``#4#02`` and group ``#03`` / ``#3`` are already one spelling there).
+        # A WHERE that merely has the same number is another address: a cancel for point
+        # ``05`` used to drop a queued command for area ``5``, and one for ``0011`` a
+        # command for ``11``, and their callers got a cancelled write. The one alias is
+        # the area-zero point spelling (``0009`` is ``09``, ``_normalize_target_where``).
         if tier in (_TIER_COMMANDS, _TIER_FADE_STEPS) and self._fade_steps:
             kept_fades: collections.deque[Any] = collections.deque()
             for existing in self._fade_steps:
                 existing_target = _extract_target_key(existing)
                 if (
                     existing_target is not None
-                    and _same_target(existing_target, target)
+                    and existing_target == target
                     and isinstance(existing, dict)
                 ):
                     dropped.append(existing)
@@ -840,7 +1075,7 @@ class _PriorityQueueStorage:
                 existing_target = _extract_target_key(existing)
                 if (
                     existing_target is not None
-                    and _same_target(existing_target, target)
+                    and existing_target == target
                     and isinstance(existing, dict)
                     and not _is_cancel_item(existing)
                 ):
@@ -861,7 +1096,7 @@ class _PriorityQueueStorage:
                 existing_target = _extract_target_key(existing)
                 if (
                     existing_target is not None
-                    and _same_target(existing_target, target)
+                    and existing_target == target
                     and isinstance(existing, dict)
                     and _is_status_report_item(existing)
                     and (
@@ -1077,15 +1312,18 @@ class FrameScheduler:
             if not waiter.done():
                 waiter.set_result(None)
 
-    def _drop_superseded_and_cancel(self, item: Any) -> None:
+    def _drop_superseded_and_cancel(self, item: Any) -> bool:
         """Drop superseded queued frames for the same target and cancel their futures."""
         dropped = self._queue.drop_superseded(item)
         for old_item in dropped:
-            _cancel_written(old_item)
+            _cancel_written(old_item, not_written=True)
             if self._unfinished_tasks > 0:
                 self._unfinished_tasks -= 1
                 if self._unfinished_tasks == 0:
                     self._finished.set()
+        if dropped and self._getters:
+            self._wakeup_all_getters()
+        return bool(dropped)
 
     def put_nowait(self, item: Any) -> None:
         """Put an item into the queue without blocking."""
@@ -1097,9 +1335,18 @@ class FrameScheduler:
         self._queue.append(item)
         self._unfinished_tasks += 1
         self._finished.clear()
+        if isinstance(item, dict):
+            written = item.get("written")
+            if isinstance(written, asyncio.Future) and not written.done():
+                written.add_done_callback(self._on_written_done)
         self._wakeup_next(self._getters)
         if not self.full():
             self._wakeup_next(self._putters)
+
+    def _on_written_done(self, written: asyncio.Future[Any]) -> None:
+        """Wake the waiting workers when a queued frame is withdrawn: it may have held others back."""
+        if written.cancelled() and self._getters:
+            self._wakeup_all_getters()
 
     async def put(self, item: Any) -> None:
         """Put an item into the queue, prioritizing command waiters when full."""
@@ -1154,6 +1401,8 @@ class FrameScheduler:
                 getter.cancel()
                 with contextlib.suppress(ValueError):
                     self._getters.remove(getter)
+                if not self.empty() and not getter.cancelled():
+                    self._wakeup_next(self._getters)
                 raise
         return self.get_nowait()
 
@@ -1163,11 +1412,16 @@ class FrameScheduler:
         if not self._queue.has_eligible(self._in_flight_targets, allow_status=allow_status):
             raise asyncio.QueueEmpty
         item = self._queue.pop_eligible(self._in_flight_targets, allow_status=allow_status)
-        target = _extract_target_key(item)
-        if target is not None:
-            self._in_flight_targets.add(target)
-        if _classify_tier(item) == _TIER_STATUS:
-            self._in_flight_status += 1
+        if _is_withdrawn(item):
+            # A withdrawn frame is handed out only to be discarded; it must neither
+            # take a target/status lock nor release another worker's active lock.
+            item["_unlocked"] = True
+        else:
+            target = _extract_target_key(item)
+            if target is not None:
+                self._in_flight_targets.add(target)
+            if _classify_tier(item) == _TIER_STATUS:
+                self._in_flight_status += 1
         self._wakeup_next(self._putters)
         return item
 
@@ -1186,6 +1440,10 @@ class FrameScheduler:
                 getter.cancel()
                 with contextlib.suppress(ValueError):
                     self._getters.remove(getter)
+                if not getter.cancelled() and self._queue.has_eligible(
+                    self._in_flight_targets, allow_status=self._allow_status
+                ):
+                    self._wakeup_next(self._getters)
                 raise
         return self.acquire_nowait()
 
@@ -1209,6 +1467,9 @@ class FrameScheduler:
 
     def complete_task(self, task: Any) -> None:
         """Release a task's target/status lock and mark the queue task done."""
+        if isinstance(task, dict) and task.pop("_unlocked", False):
+            self.task_done()
+            return
         was_status = _classify_tier(task) == _TIER_STATUS
         if was_status and self._in_flight_status > 0:
             self._in_flight_status -= 1
@@ -1241,7 +1502,7 @@ class FrameScheduler:
             while not self.empty():
                 item = self._queue.popleft()
                 if isinstance(item, dict):
-                    _cancel_written(item)
+                    _cancel_written(item, not_written=True)
                 if self._unfinished_tasks > 0:
                     self._unfinished_tasks -= 1
             self._in_flight_targets.clear()
@@ -1273,6 +1534,17 @@ class CommandWorkerPool:
         self.sending_workers: list[asyncio.Task[None]] = []
         self._active_worker_loops: int = 0
         self._in_flight_messages: list[Any] = []
+        self._recent_who2_polls: collections.deque[tuple[float, Any]] = collections.deque(maxlen=16)
+        # Set once the gateway refused the password: nothing is queued any more.
+        self._auth_refused: bool = False
+        self._auth_refused_reason: str | None = None
+        # Pool-level cooldown after a fatal ``negotiation_error`` (60 s per login target).
+        self._negotiation_error_until: float = 0.0
+        self._negotiation_error_target: tuple[object, object, object] | None = None
+        # Serializes command-session handshakes across workers so a changed password
+        # is never presented by 2–4 workers concurrently (avoiding the 3-in-60s HMAC
+        # gateway lockout, OpenWebNet Encyclopedia `protocol/authentication.md`).
+        self._connect_lock: asyncio.Lock = asyncio.Lock()
 
         queue_max_size = (
             self.gateway.profile.max_queue_size
@@ -1384,21 +1656,67 @@ class CommandWorkerPool:
     ) -> asyncio.Future[float]:
         """Put a frame on the send queue and hand back its delivery future."""
         written: asyncio.Future[float] = asyncio.get_running_loop().create_future()
+        if self._auth_refused:
+            # No worker is left to take it (see stop_after_auth_refusal): the frame is
+            # reported as not written, like any frame that could not be sent, instead
+            # of waiting in the queue until the entry is reloaded.
+            LOGGER.debug(
+                "%s Message `%s` not sent: the gateway refused the password; "
+                "waiting for re-authentication.",
+                self.log_id,
+                message,
+            )
+            setattr(written, "_not_written", True)
+            written.cancel()
+            return written
+        setattr(written, "_queued_in_pool", True)
         envelope: dict[str, Any] = {
             "message": message,
             "is_status_request": is_status_request,
-            "is_cancel": is_cancel,
             "written": written,
         }
         if is_fade_step:
             envelope["is_fade_step"] = True
-        await self.send_buffer.put(envelope)
+        if is_cancel:
+            envelope["is_cancel"] = True
+        try:
+            await self.send_buffer.put(envelope)
+        except Exception:
+            if self._refused_meanwhile():
+                LOGGER.debug(
+                    "%s Message `%s` not sent: the gateway refused the password; "
+                    "waiting for re-authentication.",
+                    self.log_id,
+                    message,
+                )
+                setattr(written, "_not_written", True)
+                written.cancel()
+                return written
+            raise
+        if self._refused_meanwhile():
+            # The refusal landed while put() was suspended: drain anything put during
+            # the race so no item leaks in the queue and no other producer stalls.
+            self._drain_queue()
+            LOGGER.debug(
+                "%s Message `%s` not sent: the gateway refused the password; "
+                "waiting for re-authentication.",
+                self.log_id,
+                message,
+            )
+            _cancel_written(envelope, not_written=True)
+            return written
         LOGGER.debug(
             "%s Message `%s` was successfully queued.",
             self.log_id,
             message,
         )
         return written
+
+    def _on_auth_error(self, error: Any) -> None:
+        """OWNd's ``on_auth_error`` hook: the gateway refused the password on a command session."""
+        reason = getattr(error, "reason", None)
+        self._auth_refused_reason = reason if isinstance(reason, str) else "password_error"
+        self.handler._on_auth_refused(reason, "command")
 
     def _connect_refused(self, result: Any, worker_id: int) -> bool:
         """A command-session ``connect()`` result the worker must not retry on."""
@@ -1411,6 +1729,8 @@ class CommandWorkerPool:
                     result.get("Message"),
                     worker_id,
                 )
+                if result.get("Message") in AUTH_REFUSALS:
+                    self.handler._on_auth_refused(result.get("Message"), "command")
                 return True
         return False
 
@@ -1460,7 +1780,19 @@ class CommandWorkerPool:
             worker_id,
         )
 
-        _command_session = command_session_cls(gateway=self.gateway, logger=LOGGER)
+        if command_session_cls is OWNCommandSession:
+            _command_session: Any = _PooledCommandSession(
+                self,
+                gateway=self.gateway,
+                logger=LOGGER,
+                on_auth_error=self._on_auth_error,
+            )
+        else:
+            _command_session = command_session_cls(
+                gateway=self.gateway,
+                logger=LOGGER,
+                on_auth_error=self._on_auth_error,
+            )
         self._active_worker_loops += 1
         try:
             try:
@@ -1476,7 +1808,7 @@ class CommandWorkerPool:
                 )
                 res = None
 
-            if self._connect_refused(res, worker_id):
+            if self._terminate_sender or self._auth_refused or self._connect_refused(res, worker_id):
                 return
 
             while not self._terminate_sender:
@@ -1501,6 +1833,7 @@ class CommandWorkerPool:
                         await _command_session.close()
                     continue
 
+                sent_to_session = False
                 try:
                     if task is None:
                         break
@@ -1532,8 +1865,12 @@ class CommandWorkerPool:
                     # never replayed.
                     if not session_is_open(_command_session):
                         res = await _command_session.connect()
-                        if self._connect_refused(res, worker_id):
-                            _cancel_written(task)
+                        if (
+                            self._terminate_sender
+                            or self._auth_refused
+                            or self._connect_refused(res, worker_id)
+                        ):
+                            _cancel_written(task, not_written=True)
                             return
                         if not session_is_open(_command_session):
                             LOGGER.warning(
@@ -1541,7 +1878,7 @@ class CommandWorkerPool:
                                 self.log_id,
                                 task["message"],
                             )
-                            _cancel_written(task)
+                            _cancel_written(task, not_written=True)
                             continue
                         if isinstance(written, asyncio.Future) and written.cancelled():
                             # Re-check after `connect()`: OWNd's 5-attempt retry loop
@@ -1565,7 +1902,17 @@ class CommandWorkerPool:
                     )
                     written_at = time.monotonic()
                     is_exposed = self._is_exposed_target(task)
+                    if isinstance(written, asyncio.Future) and not written.done():
+                        # The gateway and the event session this frame is written under. A probe's
+                        # refused read is latched against them, however long it waited in the queue.
+                        setattr(
+                            written,
+                            "_written_under",
+                            (self.handler, getattr(self.handler, "event_connections", None)),
+                        )
+                    sent_to_session = True
                     self._in_flight_messages.append(task["message"])
+                    collected: Any = None
                     try:
                         collected = await _command_session.send(
                             message=task["message"],
@@ -1574,7 +1921,31 @@ class CommandWorkerPool:
                     finally:
                         with contextlib.suppress(ValueError):
                             self._in_flight_messages.remove(task["message"])
+                        sent_msg = task["message"]
+                        if (
+                            collected is True
+                            and getattr(sent_msg, "who", None) == 2
+                            and (
+                                getattr(sent_msg, "is_status_request", False) is True
+                                or getattr(sent_msg, "is_dimension_request", False) is True
+                            )
+                        ):
+                            self._recent_who2_polls.append((time.monotonic(), sent_msg))
                     last_error = getattr(_command_session, "last_error", None)
+                    if collected is None and isinstance(last_error, OWNAuthError):
+                        # OWNd reopened the socket inside send() and the gateway refused the
+                        # password: the frame was not written. The next frame would open the
+                        # session again with the same password.
+                        LOGGER.error(
+                            "%s Command session authentication refused (%s). "
+                            "Terminating sending worker %s to prevent gateway lockout.",
+                            self.log_id,
+                            last_error.reason,
+                            worker_id,
+                        )
+                        _cancel_written(task, not_written=True)
+                        self.handler._on_auth_refused(last_error.reason, "command")
+                        return
                     bleed_zones = (
                         _mismatched_who4_reply_zones(task["message"], collected)
                         if task["is_status_request"]
@@ -1600,17 +1971,26 @@ class CommandWorkerPool:
                                 setattr(written, "_command_timeout", True)
                             self._pause_status_after_desync()
                         elif (
-                            task["is_status_request"]
-                            and getattr(last_error, "reason", None) == "nack"
+                            getattr(last_error, "reason", None) == "command_timeout"
                             and isinstance(written, asyncio.Future)
                             and not written.done()
                         ):
-                            # The gateway answered the read with a NACK (OWNd's `OWNNackError` of
-                            # a written frame; a refused negotiation has another reason). Every
-                            # other cancellation here is a frame that was not written or whose
-                            # socket was lost: a probe's fallback read tells the two apart.
+                            # A written command the gateway did not answer in time.
+                            setattr(written, "_no_answer", True)
+                        elif (
+                            getattr(last_error, "reason", None) == "nack"
+                            and isinstance(written, asyncio.Future)
+                            and not written.done()
+                        ):
+                            # The gateway answered the frame, a read or a command, with a NACK
+                            # (OWNd's `OWNNackError` of a written frame; a refused negotiation
+                            # has another reason). Every other cancellation here is a frame that
+                            # was not written or whose socket was lost: a probe's fallback read,
+                            # a setpoint write and an action that reports the failure
+                            # (command_delivery.py) tell the two apart.
                             setattr(written, "_gateway_nack", True)
-                        _cancel_written(task)
+                        not_written = getattr(last_error, "reason", None) in _PRE_WIRE_SEND_REASONS
+                        _cancel_written(task, not_written=not_written)
                     else:
                         if (
                             task["is_status_request"]
@@ -1623,6 +2003,26 @@ class CommandWorkerPool:
                             setattr(written, "_empty_reply", True)
                         _resolve_written(task, written_at)
                         self.handler._record_tx(written_at, task["message"])
+                        echo_watchdog = echo_watchdog_of(self.handler)
+                        if echo_watchdog is not None and not task["is_status_request"] and not is_exposed:
+                            # An acknowledged light command whose status never arrives is
+                            # read back, on every gateway model (measured on an F455, which
+                            # leaves statuses out of a burst).
+                            echo_watchdog.command_acknowledged(task["message"], written_at)
+                        if not task["is_status_request"] and not is_exposed:
+                            actuator_locks = actuator_locks_of(self.handler)
+                            if (
+                                actuator_locks is None
+                                and getattr(self.handler, "is_standby", False) is True
+                            ):
+                                pri_gw = self.handler._get_primary_gateway()
+                                if (
+                                    pri_gw is not None
+                                    and pri_gw._get_standby_gateway() is self.handler
+                                ):
+                                    actuator_locks = actuator_locks_of(pri_gw)
+                            if actuator_locks is not None:
+                                actuator_locks.observe(task["message"])
                     responses_to_dispatch: Any = collected
                     if responses_to_dispatch is None and task["is_status_request"]:
                         # A standalone zone status request (*#4*Z##) that answers only some of
@@ -1646,6 +2046,8 @@ class CommandWorkerPool:
                                 parsed=resp if isinstance(resp, OWNMessage) else None,
                             )
                             if not getattr(frame, "is_duplicate", False) and isinstance(resp, OWNMessage):
+                                if task["is_status_request"]:
+                                    setattr(resp, "_from_status_request", True)
                                 if isinstance(resp, OWNGatewayEvent):
                                     self.handler._handle_gateway_diagnostics(resp)
                                 elif (
@@ -1653,16 +2055,29 @@ class CommandWorkerPool:
                                     and getattr(resp, "dimension", getattr(resp, "_dimension", None)) == 1
                                 ):
                                     self.handler._handle_gateway_identity_diagnostics(resp)
+                                # A central unit's report among the replies is noted before
+                                # the entities see it, as on the event session.
+                                events = getattr(self.handler, "_event_dispatcher", None)
+                                central = (
+                                    events.note_central_unit(resp)
+                                    if isinstance(events, GatewayEventDispatcher)
+                                    else (False, False)
+                                )
                                 dispatcher_send(
                                     self.hass, f"myhome_message_{self.mac}", resp
                                 )
+                                if isinstance(events, GatewayEventDispatcher):
+                                    events.tell_central_unit(resp, *central)
                                 # A reply to a request sent for an offline primary
                                 self.handler._bridge_to_primary(resp)
+                                echo_watchdog = echo_watchdog_of(self.handler)
+                                if echo_watchdog is not None:
+                                    echo_watchdog.status_seen(resp)
                 except asyncio.CancelledError:
-                    _cancel_written(task)
+                    _cancel_written(task, not_written=not sent_to_session)
                     raise
                 except Exception:
-                    _cancel_written(task)
+                    _cancel_written(task, not_written=not sent_to_session)
                     LOGGER.exception(
                         "%s Worker %s: unexpected error while sending `%s`; "
                         "delivery is unconfirmed.",
@@ -1688,6 +2103,11 @@ class CommandWorkerPool:
                 and (self._active_worker_loops == 0 or self._terminate_sender)
             ):
                 self.send_buffer.clear_status_pause()
+            if self._active_worker_loops == 0 or self._terminate_sender:
+                # No worker is left to write a status read-back: drop the pending ones.
+                echo_watchdog = echo_watchdog_of(self.handler)
+                if echo_watchdog is not None:
+                    echo_watchdog.cancel_all()
             with contextlib.suppress(Exception):
                 await asyncio.shield(_command_session.close())
             LOGGER.debug("%s Destroying sending worker %s", self.log_id, worker_id)
@@ -1704,25 +2124,57 @@ class CommandWorkerPool:
         if backoff > 0:
             self.send_buffer.pause_status(backoff)
 
-    def close(self) -> None:
-        """Cancel queued frames and unblock workers."""
-        self._terminate_sender = True
-        self._sender_stop.set()
+    def _refused_meanwhile(self) -> bool:
+        """The refusal flag, read again after an await (it can be set while ``put()`` is suspended)."""
+        return self._auth_refused
 
+    def _terminated_meanwhile(self) -> bool:
+        """The shutdown flag, read again after an await (it can be set while ``connect()`` is suspended)."""
+        return self._terminate_sender
+
+    def stop_after_auth_refusal(self) -> None:
+        """Stop every worker and refuse new frames: the gateway refused the password."""
+        self._auth_refused = True
+        if self._auth_refused_reason is None:
+            self._auth_refused_reason = "password_error"
+        self.close()
+        # A worker in connect()'s retry delay, or holding a dequeued frame while its
+        # session reopens, would log in again or write that frame: cancel it (not
+        # awaited). A refusal reported from inside a worker returns by itself.
+        current = asyncio.current_task()
+        for worker in self.sending_workers:
+            if not worker.done() and worker is not current:
+                worker.cancel()
+        # Shut down the queue (waking every suspended producer in put() with
+        # QueueShutDown) and drain any remaining items so nothing leaks.
+        if isinstance(self.send_buffer, FrameScheduler):
+            self.send_buffer.shutdown(immediate=True)
+        self._drain_queue()
+
+    def _drain_queue(self) -> None:
+        """Take every queued item off the send queue, cancelling its delivery future."""
         while True:
             try:
                 task = self.send_buffer.get_nowait()
             except asyncio.QueueEmpty:
                 break
             if task is not None:
-                _cancel_written(task)
+                _cancel_written(task, not_written=True)
             self.send_buffer.task_done()
+
+    def close(self) -> None:
+        """Cancel queued frames and unblock workers."""
+        self._terminate_sender = True
+        self._sender_stop.set()
+
+        self._drain_queue()
 
         if isinstance(self.send_buffer, FrameScheduler):
             self.send_buffer._in_flight_targets.clear()
             self.send_buffer._in_flight_status = 0
             self.send_buffer.clear_status_pause()
         self._in_flight_messages.clear()
+        self._recent_who2_polls.clear()
 
         for _ in range(max(1, len(self.sending_workers))):
             try:

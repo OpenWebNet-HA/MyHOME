@@ -23,7 +23,7 @@ ATTR_GATEWAY = "gateway"
 ATTR_MESSAGE = "message"
 ATTR_WHERE = "where"
 ATTR_ACTION = "action"
-INTEGRATION_VERSION = "2.0.0"
+INTEGRATION_VERSION = "2.0.1"
 # hass.data[DOMAIN] key holding the OWNd version resolved off the event loop
 DATA_OWND_VERSION = "_ownd_version"
 
@@ -115,6 +115,8 @@ CONF_INVERTED = "inverted"
 CONF_INVERTED_BINARY_SENSORS = "inverted_binary_sensors"
 SIGNAL_NEW_BINARY_SENSOR = "myhome_new_binary_sensor_{}"
 SIGNAL_BINARY_SENSOR_INVERTED = "myhome_binary_sensor_inverted_{}"
+SIGNAL_NEW_CLIMATE_ZONE = "myhome_new_climate_zone_{}"
+SIGNAL_CLIMATE_HUMIDITY = "myhome_climate_humidity_{}"
 CONF_ADVANCED_SHUTTER = "advanced"
 CONF_SLAT_TILT = "slat_tilt"
 CONF_SLAT_TIME = "slat_time"
@@ -128,6 +130,9 @@ CONF_COOLING_SUPPORT = "cool"
 CONF_FAN_SUPPORT = "fan"
 CONF_HUMIDITY_SUPPORT = "humidity"
 CONF_STANDALONE = "standalone"
+# Entry option (UI): the thermostat zones (1-99, local bus) that are standalone although the
+# plant has a central unit. Same meaning as ``standalone: true`` of a ``myhome.yaml`` zone.
+CONF_STANDALONE_ZONES = "standalone_zones"
 CONF_SDOMOTICA_COMPAT = "sdomotica_compat"
 CONF_CENTRAL = "central"
 CONF_SHORT_PRESS = "pushbutton_short_press"
@@ -148,6 +153,7 @@ CONF_MIN_MOTOR_PULSE = "min_motor_pulse"
 DEFAULT_MIN_MOTOR_PULSE = 0.4
 # Smallest level change (%) sent to an advanced cover; default MIN_POSITION_DELTA in cover_motion.py.
 CONF_MIN_POSITION_DELTA = "min_position_delta"
+MIN_MIN_POSITION_DELTA = 1
 MAX_MIN_POSITION_DELTA = 5
 
 # Impulse cover / access controls (gates, garage doors, impulse relays)
@@ -179,8 +185,11 @@ SERVICE_ACKNOWLEDGE_COVER_FAULT = "acknowledge_cover_fault"
 # Cover calibration (timed covers measure their own travel times on the bus)
 CONF_COVER_TRAVEL_TIMES = "cover_travel_times"  # config entry option: {device_id: {...}}
 CONF_ADVANCED_COVERS = "advanced_covers"          # config entry option: {device_id: True}
+CONF_COVER_MIN_POSITION_DELTAS = "cover_min_position_deltas"  # config entry option: {device_id: int}
+SIGNAL_COVER_MIN_POSITION_DELTA = "myhome_cover_min_position_delta_{}"
 CONF_EXPLICIT_KINEMATICS = "_explicit_kinematics"
 CONF_EXPLICIT_TRAVEL_TIME = "_explicit_travel_time"
+CONF_STOP_BEFORE_MOVE = "stop_before_move"
 EXPLICIT_COVER_KINEMATICS_KEYS: tuple[str, ...] = (
     CONF_ADVANCED_SHUTTER,
     "advanced_shutter",
@@ -190,6 +199,7 @@ EXPLICIT_COVER_KINEMATICS_KEYS: tuple[str, ...] = (
     CONF_SLAT_TIME,
     CONF_MIN_MOTOR_PULSE,
     CONF_MIN_POSITION_DELTA,
+    CONF_STOP_BEFORE_MOVE,
 )
 SERVICE_CALIBRATE_COVER = "calibrate_cover"
 SERVICE_STOP_COVER_CALIBRATION = "stop_cover_calibration"
@@ -275,6 +285,18 @@ SOFTWARE_TRANSITION_MAX_STEPS = 25
 # Debounce window for reactive group / area / general broadcast re-sync (issue #368)
 RESYNC_DEBOUNCE_S = 0.5
 RESYNC_LEADING_WINDOW_S = 1.5
+# A status request answers with `*1*<status>*<where>##` on the command and the event
+# session (WHO 1 PDF, 3.3.1), so the reply to a sweep can carry the scope's own WHERE:
+# a physical F461 / F455 answered `*#1*00##` with `*1*0*00##` next to the point
+# statuses. That is the frame of a real area command too. Scope frames for a scope this
+# gateway is asking about, up to this long after the request is closed, are its answer.
+RESYNC_REPLY_GRACE_S = 0.5
+# Sweeps of one scope, for one commanded state, inside the window before the scope is
+# held: it then gets one more sweep once it has been quiet for the window, and nothing
+# else until then. Bounds what any reply-shaped frame can cost (another client's
+# sweep answered on a shared bus, a gateway quirk not seen yet).
+RESYNC_STORM_SWEEPS = 3
+RESYNC_STORM_WINDOW_S = 30.0
 
 # Pacing delay between member commands during scope cover fan-out (prevents F422 buffer overflow)
 PACED_FANOUT_DELAY = 0.3
@@ -545,6 +567,15 @@ IDENTIFICATION_SSDP = "ssdp"        # the gateway announced its modelName over U
 IDENTIFICATION_MANUAL = "manual"    # the user picked the model in the config flow
 IDENTIFICATION_WHO13 = "who13"      # no model configured; labelled from WHO=13 dimension 15
 IDENTIFICATION_UNKNOWN = "unknown"
+
+
+def central_mode_signal(mac: str, interface: str | None) -> str:
+    """The dispatcher signal on which a 99-zone central unit passes its mode to its zones.
+
+    One per bus: the central unit behind an F422 interface runs the zones behind that
+    interface, not the zones of the local bus (zone numbers repeat on every bus, #408).
+    """
+    return f"myhome_central_mode_{mac}_{interface}" if interface else f"myhome_central_mode_{mac}"
 
 
 def gateway_model_family(model: str | None) -> str:

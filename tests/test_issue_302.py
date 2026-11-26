@@ -534,7 +534,7 @@ async def test_send_future_is_stamped_after_reconnect_and_cancelled_on_failure(h
         assert session.connect.await_count == 1
 
         after_reconnect = await handler.send(OWNAutomationCommand.lower_shutter("21"))
-        undelivered = await handler.send(OWNAutomationCommand.stop_shutter("21"))
+        undelivered = await handler.send(OWNAutomationCommand.raise_shutter("22"))
         await handler.send_buffer.put(None)
         await worker
 
@@ -559,7 +559,7 @@ async def test_worker_gives_up_on_a_frame_when_reconnect_fails(handler):
         await session.close()  # simulate gateway-side disconnect
 
         dropped = await handler.send(OWNAutomationCommand.lower_shutter("21"))
-        delivered = await handler.send(OWNAutomationCommand.stop_shutter("21"))
+        delivered = await handler.send(OWNAutomationCommand.raise_shutter("22"))
         await handler.send_buffer.put(None)
         await worker
 

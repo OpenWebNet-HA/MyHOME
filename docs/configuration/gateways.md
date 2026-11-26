@@ -24,6 +24,9 @@ The MyHOME integration communicates with SCS bus gateways over TCP/IP:
 | **H4684 / H/L4684** | OpenWebNet | 1 worker | 50 ms | ✅ SSDP | Colour touch screen IP gateway (Axolute / LivingLight) |
 <!-- GATEWAY_PROFILES_END -->
 
+> [!NOTE]
+> **MH201 Configuration & Firmware Updates**: Because the **MH201** belongs to Legrand / BTicino's hotel product line (*MH201 hotel room scenario manager*), updating its firmware (for example to `3.6.44`) requires **MyHotelSuite** — plain **MyHOME_Suite** fails with a null-reference error when attempting to update an MH201.
+
 ---
 
 ## 🔌 Connection Setup via Config Flow
@@ -32,6 +35,8 @@ The MyHOME integration communicates with SCS bus gateways over TCP/IP:
 - On local networks, MyHOME gateways announce themselves via **SSDP / UPnP** (mDNS / `.local` hostnames are not used by OpenWebNet gateways).
 - If discovered automatically over SSDP, Home Assistant displays a discovery card prompting you to **Configure** the gateway, or lists discovered gateways in the setup picker alongside **"Custom (IP Gateway)"**.
 - If configuring manually: Go to **Settings** -> **Devices & Services** -> **Add Integration** -> search **MyHOME** -> choose **Custom (IP Gateway)**.
+- A later announcement of a configured gateway that was found over SSDP updates its address when that changed, and the change reloads the entry. The port is not announced and stays as configured. The friendly name, the UDN and the firmware are stored only while the entry has none: the firmware kept is the version the gateway reports over `WHO=13` dimension 16, not the announced UPnP `modelNumber`. A gateway added by hand (**Custom (IP Gateway)**) and an ignored gateway are not updated by SSDP.
+- An `F455` is found under the manufacturer names `BTicino S.p.A.` and `Legrand S.p.A.`. An F455 1.0.76 that reports `Legrand S.p.A.` answers Home Assistant's search with `ST: ssdp:all` and announces itself with `NT: upnp:rootdevice` every 6 to 7 minutes; it has a matcher for each of the two.
 
 ### Step 2: Installation Parameters Reference
 
@@ -98,6 +103,7 @@ You can adjust integration runtime parameters at any time without re-adding the 
 | **Gateway Password** | `password` *(writes `entry.data["password"]`)* | String | Current `password` | OPEN numeric / SHA-256 HMAC | In-place update of the OpenWebNet password without deleting the config entry. |
 | **Gateway Hardware Model** | `name` *(writes `entry.data["name"]` / model)* | Select | Current model | `SUPPORTED_GATEWAY_MODELS` | In-place override of the gateway hardware model and active OWNd profile (`model_source = "manual"`). |
 | **Ignored Bus Addresses** | `ignored_addresses` | Multiline Text | `[]` | All gateways | Newline- or comma-separated `WHO/WHERE` addresses (e.g. `1/74`, `1/74#4#01`) silenced from discovery, entity creation, and fault tracking. |
+| **Standalone Thermostats** | `standalone_zones` | Text | `[]` | Zones `1`..`99` (local bus) | Comma-separated thermostat zones (e.g. `2, 7`) that are not managed by the central unit of a plant that has one: written as `*#4*Z*#14*...` instead of `*#4*#Z*#14*...`. Empty: found from the bus (see [Climate](climate.md)). Same as `standalone: true` in `myhome.yaml`. The emulated firmware of F453, F453AV, H4684, MH200 and MH200N refuses that direct form (own-firmware-oracle `trace-corpus.tsv:55`; not yet seen on a real gateway): a refused write fails the service call. |
 | **Bus Topology** | `bus_topology` | Select | `standalone` | `standalone`, `shared` *(multi-gateway setups)* | Declares whether this gateway operates on an independent SCS bus (`standalone`) or shares a physical SCS bus with another configured gateway (`shared`). |
 | **Gateway Role** | `gateway_role` | Select | `primary` | `primary`, `secondary`, `standby` *(shared bus)* | Shared-bus coordination role: `primary` owns general bus discovery, `secondary` handles delegated `WHO` subsystems, and `standby` stays passive for hot failover. |
 | **Primary Gateway** | `primary_gateway` | Select | First peer gateway | Configured non-follower gateways | Target primary gateway MAC address paired with a `secondary` or `standby` follower on a shared SCS bus. |
@@ -171,7 +177,7 @@ This placeholder can cause date and time parsing failures or dropped gateway dia
 > The **F461** gateway is configured exclusively via the Home + Project app and maintains its clock via NTP. Its firmware always reports `999` over OpenWebNet even when configured; the integration recognizes this and automatically exempts the F461 from this warning.
 
 ### How to resolve:
-1. Log into the gateway's web administration interface, or open **MyHOME_Suite** / **TiMyHome** / **MyHOME_Up**.
+1. Log into the gateway's web administration interface, or open **MyHOME_Suite** / **MyHotelSuite** (for `MH201`) / **TiMyHome** / **MyHOME_Up**.
 2. Navigate to the **Date & Time** or **Clock** settings.
 3. Configure the correct local time and timezone (or enable NTP synchronization if supported by your gateway).
 4. Save the configuration and reboot or restart the gateway.

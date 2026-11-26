@@ -102,15 +102,22 @@ def test_verify_all_coverage_detects_uncovered_lines(tmp_path):
     assert "667-668" in summary_content
 
 
-def test_update_readme_coverage_fails_under_100(tmp_path):
-    """Verify update_readme_coverage aborts and exits 1 if coverage is under 100%."""
+def test_update_readme_coverage_fails_under_100(tmp_path, capsys):
+    """Verify update_readme_coverage aborts, prints exact rate & missed lines, and never rounds to 100.0%."""
     xml_file = tmp_path / "coverage.xml"
 
     root = ET.Element("coverage")
     pkg = ET.SubElement(root, "package")
-    cls = ET.SubElement(pkg, "class", attrib={"filename": "custom_components/myhome/binary_sensor.py", "line-rate": "0.99"})
+    cls = ET.SubElement(
+        pkg,
+        "class",
+        attrib={"filename": "custom_components/myhome/cover.py", "line-rate": "0.999588"},
+    )
     lines = ET.SubElement(cls, "lines")
-    ET.SubElement(lines, "line", number="1", hits="0")
+    ET.SubElement(lines, "line", number="3256", hits="1")
+    ET.SubElement(lines, "line", number="3257", hits="0")
+    ET.SubElement(lines, "line", number="3260", hits="0")
+    ET.SubElement(lines, "line", number="3261", hits="0")
     ET.ElementTree(root).write(str(xml_file))
 
     with pytest.MonkeyPatch.context() as mp:
@@ -120,6 +127,10 @@ def test_update_readme_coverage_fails_under_100(tmp_path):
         with pytest.raises(SystemExit) as exc_info:
             update_readme_and_svg()
         assert exc_info.value.code == 1
+
+    out = capsys.readouterr().out
+    assert "[MISS] custom_components/myhome/cover.py: 99.96% (missing lines: 3257, 3260-3261)" in out
+    assert "100.0%" not in out.split("COVERAGE ENFORCEMENT ERROR")[1].splitlines()[2]
 
 
 def test_component_notes_cover_every_integration_module():

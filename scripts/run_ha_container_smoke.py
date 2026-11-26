@@ -92,7 +92,18 @@ def test_ha_container(
     test_image = base_image
     installed_dev_ver = None
     if use_dev_ownd:
-        ref = dev_ref or os.environ.get("OWND_REF") or os.environ.get("GITHUB_HEAD_REF") or os.environ.get("GITHUB_REF_NAME") or "master"
+        raw_ref = (
+            dev_ref
+            or os.environ.get("OWND_REF")
+            or os.environ.get("GITHUB_HEAD_REF")
+            or os.environ.get("GITHUB_REF_NAME")
+            or "master"
+        ).strip()
+        ref = (
+            raw_ref
+            if raw_ref and ".." not in raw_ref and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]*", raw_ref)
+            else "master"
+        )
         test_image = f"ha_smoke_test:{channel}_{int(time.time())}"
         dockerfile = (
             f"FROM {base_image}\n"

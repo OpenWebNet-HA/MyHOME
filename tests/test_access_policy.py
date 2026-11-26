@@ -22,6 +22,7 @@ from custom_components.myhome.access_policy import (
     Intent,
     PendingRequest,
     Phase,
+    PulseOutcome,
     RemoteClose,
     classify,
 )
@@ -61,9 +62,9 @@ class Harness:
         self.published = 0
         self.pulse_ok = pulse_ok
 
-        async def send_pulse(intent: Intent, effect: Effect) -> bool:
+        async def send_pulse(intent: Intent, effect: Effect) -> PulseOutcome:
             self.pulses.append((intent, effect))
-            return self.pulse_ok
+            return PulseOutcome.CONFIRMED if self.pulse_ok else PulseOutcome.NOT_SENT
 
         def publish() -> None:
             self.published += 1
@@ -310,7 +311,7 @@ async def test_dropped_pulse_is_reported(hass: HomeAssistant):
     await _press(hass, _approve_action(calls)["action"], parent.id)
     await hass.async_block_till_done()
     assert h.ctrl.phase is Phase.IDLE
-    assert "dropped" in calls[-1].data["message"]
+    assert "was not sent" in calls[-1].data["message"]
 
 
 async def test_failed_notification_aborts_request(hass: HomeAssistant):
@@ -662,9 +663,11 @@ async def test_async_shutdown_cancels_task_and_event(hass: HomeAssistant):
     async def _long():
         await asyncio.sleep(10)
 
-    h.ctrl._task = hass.async_create_task(_long())
+    h.ctrl._spawn(_long())
+    (task,) = h.ctrl._tasks
     await h.ctrl.async_shutdown()
-    assert h.ctrl._task is None
+    assert task.cancelled()
+    assert not h.ctrl._tasks
     assert h.ctrl._cancel_event.is_set()
 
 
@@ -866,3 +869,237 @@ async def test_monitoring_settles_early_on_sensor_or_external_impulse(hass: Home
     await h.ctrl.async_shutdown()
     await h2.ctrl.async_shutdown()
 
+
+
+async def test_cancelled_execution_does_not_wedge_the_controller(hass: HomeAssistant):
+    """`asyncio.CancelledError` is no `Exception`: an execution it ends must still give the phase back."""
+    parent = await _user(hass, "Parent")
+    calls = async_mock_service(hass, "notify", "mobile_app_parent")
+    h = Harness(hass, _config(parent.id))
+    hass.states.async_set(SENSOR, STATE_OFF)
+
+    async def _cancelled_pulse(intent, effect):
+        # What an awaited delivery future the command worker cancelled raises
+        # (gateway_sessions._cancel_written: NACK, lost ACK, no command session).
+        raise asyncio.CancelledError
+
+    h.ctrl._send_pulse = _cancelled_pulse
+    await h.ctrl.async_request(Intent.OPEN, Context(user_id=parent.id))
+    await _press(hass, _approve_action(calls)["action"], parent.id)
+
+    assert h.ctrl.phase is Phase.IDLE
+    assert h.ctrl._pending is None
+
+    h.ctrl._send_pulse = Harness(hass, _config(parent.id)).ctrl._send_pulse
+    await h.ctrl.async_request(Intent.OPEN, Context(user_id=parent.id))
+    assert h.ctrl.phase is Phase.PENDING
+    await h.ctrl.async_cancel(Context(user_id=parent.id))
+    assert h.ctrl.phase is Phase.IDLE
+    await h.ctrl.async_shutdown()
+
+
+async def test_stop_is_acted_on_while_the_execution_is_being_reported(hass: HomeAssistant):
+    """The door is supervised as soon as it was pulsed: a slow notifier does not hold STOP back."""
+    parent = await _user(hass, "Parent")
+    release = asyncio.Event()
+    calls = []
+
+    async def _slow_notify(call):
+        calls.append(call)
+        if "open by Parent" in str(call.data.get("message", "")):
+            await release.wait()
+
+    hass.services.async_register("notify", "mobile_app_parent", _slow_notify)
+    h = Harness(hass, _config(parent.id))
+    hass.states.async_set(SENSOR, STATE_OFF)
+    await h.ctrl.async_request(Intent.OPEN, Context(user_id=parent.id))
+    await _press(hass, _approve_action(calls)["action"], parent.id, wait=False)
+    await _wait_phase(h.ctrl, Phase.MONITORING)
+    assert h.pulses == [(Intent.OPEN, Effect.OPEN)]
+
+    await h.ctrl.async_request(Intent.STOP, Context(user_id=None))
+    assert h.pulses == [(Intent.OPEN, Effect.OPEN), (Intent.STOP, Effect.MAY_CLOSE)]
+    assert h.ctrl.phase is Phase.IDLE
+
+    release.set()
+    await hass.async_block_till_done()
+    assert h.ctrl.phase is Phase.IDLE
+    await h.ctrl.async_shutdown()
+
+
+# ── Code audit CA4: cancel / stop / approval timing ─────────────────────
+
+
+async def test_cancel_while_the_warning_light_is_restored_sends_no_pulse(hass: HomeAssistant):
+    """A cancel the controller acknowledges is never followed by the pulse.
+
+    The warning light is put back with a blocking service call after the last
+    flash. A wall-button press or a stop in that call was answered "cancelled"
+    and the close pulse went out anyway, on a door the button had just started.
+    """
+    parent = await _user(hass, "Parent")
+    calls = async_mock_service(hass, "notify", "mobile_app_parent")
+    restoring, release = asyncio.Event(), asyncio.Event()
+
+    async def _toggle(_call):
+        return None
+
+    async def _restore(_call):
+        restoring.set()
+        await release.wait()
+
+    hass.services.async_register("light", "toggle", _toggle)
+    hass.services.async_register("light", "turn_off", _restore)
+    hass.states.async_set("light.flasher", STATE_OFF)
+    hass.states.async_set(SENSOR, STATE_ON)
+    h = Harness(hass, _config(parent.id, prewarn_light="light.flasher"))
+    try:
+        await h.ctrl.async_request(Intent.CLOSE, Context(user_id=parent.id))
+        await _press(hass, _approve_action(calls)["action"], parent.id, wait=False)
+        await asyncio.wait_for(restoring.wait(), 2)
+        assert h.ctrl.phase is Phase.PREWARNING and h.pulses == []
+
+        assert h.ctrl.cancel("wall button pressed") is True
+        await h.ctrl.async_request(Intent.STOP, Context(user_id=None))  # a stop there is a cancel too
+        release.set()
+        await _wait_phase(h.ctrl, Phase.IDLE)
+        await hass.async_block_till_done()
+        assert h.pulses == []
+        assert "cancelled during the warning" in calls[-1].data["message"]
+        assert h.ctrl._cancel_event is None
+    finally:
+        await h.ctrl.async_shutdown()
+
+
+async def test_approval_given_late_in_the_timeout_survives_the_warning(hass: HomeAssistant):
+    """`approval_timeout` bounds the wait for the approval, not the pre-warning after it."""
+    parent = await _user(hass, "Parent")
+    calls = async_mock_service(hass, "notify", "mobile_app_parent")
+    hass.states.async_set(SENSOR, STATE_ON)
+    h = Harness(hass, _config(parent.id, approval_timeout=60.0, prewarn_seconds=0.2))
+    await h.ctrl.async_request(Intent.CLOSE, Context(user_id=parent.id))
+    # Approved 59.9 s into the 60 s: in time. The 0.2 s warning ends 60.1 s after the request.
+    h.ctrl._pending.created = time.monotonic() - 59.9  # type: ignore[union-attr]
+    await _press(hass, _approve_action(calls)["action"], parent.id, wait=False)
+    await _wait_phase(h.ctrl, Phase.MONITORING)
+    assert h.pulses == [(Intent.CLOSE, Effect.MAY_CLOSE)]
+    await h.ctrl.async_shutdown()
+
+    # A timeout no longer than the warning (15 s and 30 s are both valid) can close at all.
+    h2 = Harness(hass, _config(parent.id, approval_timeout=0.1, prewarn_seconds=0.2))
+    await h2.ctrl.async_request(Intent.CLOSE, Context(user_id=parent.id))
+    await _press(hass, _approve_action(calls)["action"], parent.id, wait=False)
+    await _wait_phase(h2.ctrl, Phase.MONITORING)
+    assert h2.pulses == [(Intent.CLOSE, Effect.MAY_CLOSE)]
+    await h2.ctrl.async_shutdown()
+
+
+async def test_door_that_moved_during_the_warning_is_still_refused(hass: HomeAssistant):
+    """Everything but the age of the approval is checked again after the warning."""
+    parent = await _user(hass, "Parent")
+    calls = async_mock_service(hass, "notify", "mobile_app_parent")
+    hass.states.async_set(SENSOR, STATE_ON)
+    h = Harness(hass, _config(parent.id, prewarn_seconds=0.2))
+    await h.ctrl.async_request(Intent.CLOSE, Context(user_id=parent.id))
+    await _press(hass, _approve_action(calls)["action"], parent.id, wait=False)
+    await _wait_phase(h.ctrl, Phase.PREWARNING)
+    hass.states.async_set(SENSOR, STATE_OFF)  # closed by the remote meanwhile
+    await _wait_phase(h.ctrl, Phase.IDLE)
+    await hass.async_block_till_done()
+    assert h.pulses == []
+    assert "would open" in calls[-1].data["message"]
+
+
+class _HeldPulse:
+    """A controller whose first pulse stays "being written" until released."""
+
+    def __init__(self, hass: HomeAssistant, config: AccessConfig, *, state_sensor: str | None = SENSOR, first_ok: bool = True):
+        self.pulses: list[tuple[Intent, Effect]] = []
+        self.writing, self.release = asyncio.Event(), asyncio.Event()
+
+        async def send_pulse(intent: Intent, effect: Effect) -> PulseOutcome:
+            self.pulses.append((intent, effect))
+            if len(self.pulses) == 1:
+                self.writing.set()
+                await self.release.wait()
+                return PulseOutcome.CONFIRMED if first_ok else PulseOutcome.NOT_SENT
+            return PulseOutcome.CONFIRMED
+
+        self.ctrl = AccessController(
+            hass,
+            name="Garage 1",
+            config=config,
+            state_sensor=state_sensor,
+            travel_time=15.0,
+            send_pulse=send_pulse,
+            publish=lambda: None,
+            entity_id=lambda: "cover.garage_1",
+        )
+
+
+async def test_stop_during_the_pulse_write_stops_the_door_once_it_started(hass: HomeAssistant):
+    """A stop that arrives while the approved pulse is with the gateway is not dropped.
+
+    The phase is still `pending_approval` there with nothing pending: the stop
+    returned at once and the door then started and ran its whole travel.
+    """
+    parent = await _user(hass, "Parent")
+    calls = async_mock_service(hass, "notify", "mobile_app_parent")
+    hass.states.async_set(SENSOR, STATE_OFF)
+    h = _HeldPulse(hass, _config(parent.id))
+    await h.ctrl.async_request(Intent.OPEN, Context(user_id=parent.id))
+    await _press(hass, _approve_action(calls)["action"], parent.id, wait=False)
+    await asyncio.wait_for(h.writing.wait(), 2)
+    assert h.ctrl.phase is Phase.PENDING
+
+    stop = hass.async_create_task(h.ctrl.async_request(Intent.STOP, Context(user_id=None)))
+    await asyncio.sleep(0)
+    assert not stop.done() and h.pulses == [(Intent.OPEN, Effect.OPEN)]
+    h.release.set()  # the gateway confirmed the pulse: the door is moving
+    await asyncio.wait_for(stop, 2)
+    assert h.pulses == [(Intent.OPEN, Effect.OPEN), (Intent.STOP, Effect.MAY_CLOSE)]
+    assert h.ctrl.phase is Phase.IDLE and h.ctrl._pulse_outcome is None
+    await hass.async_block_till_done()
+    await h.ctrl.async_shutdown()
+
+
+async def test_stop_during_a_pulse_write_that_fails_sends_nothing(hass: HomeAssistant):
+    """The pulse was refused by the gateway: nothing moved, so the stop has nothing to pulse."""
+    parent = await _user(hass, "Parent")
+    calls = async_mock_service(hass, "notify", "mobile_app_parent")
+    hass.states.async_set(SENSOR, STATE_OFF)
+    h = _HeldPulse(hass, _config(parent.id), first_ok=False)
+    await h.ctrl.async_request(Intent.OPEN, Context(user_id=parent.id))
+    await _press(hass, _approve_action(calls)["action"], parent.id, wait=False)
+    await asyncio.wait_for(h.writing.wait(), 2)
+
+    stop = hass.async_create_task(h.ctrl.async_request(Intent.STOP, Context(user_id=None)))
+    await asyncio.sleep(0)
+    h.release.set()
+    await asyncio.wait_for(stop, 2)
+    await hass.async_block_till_done()
+    assert h.pulses == [(Intent.OPEN, Effect.OPEN)]
+    assert h.ctrl.phase is Phase.IDLE
+    assert "Not executed" in calls[-1].data["message"]
+
+
+async def test_stop_during_the_pulse_write_of_an_unsupervised_door_is_an_ordinary_request(hass: HomeAssistant):
+    """Without a sensor nothing supervises the door once pulsed: the stop is not a silent success."""
+    parent = await _user(hass, "Parent")
+    calls = async_mock_service(hass, "notify", "mobile_app_parent")
+    h = _HeldPulse(hass, _config(parent.id), state_sensor=None)
+    await h.ctrl.async_request(Intent.OPEN, Context(user_id=parent.id))
+    await _press(hass, _approve_action(calls)["action"], parent.id, wait=False)
+    await asyncio.wait_for(h.writing.wait(), 2)
+
+    anonymous = hass.async_create_task(h.ctrl.async_request(Intent.STOP, Context(user_id=None)))
+    by_parent = hass.async_create_task(h.ctrl.async_request(Intent.STOP, Context(user_id=parent.id)))
+    await asyncio.sleep(0)
+    h.release.set()
+    with pytest.raises(AccessDenied, match="a person must request it"):
+        await asyncio.wait_for(anonymous, 2)
+    await asyncio.wait_for(by_parent, 2)
+    assert h.pulses == [(Intent.OPEN, Effect.MAY_CLOSE)]
+    assert h.ctrl.phase is Phase.PENDING  # the parent's stop now waits for approval, as when idle
+    assert "direction unknown" in calls[-1].data["title"]
+    await h.ctrl.async_shutdown()

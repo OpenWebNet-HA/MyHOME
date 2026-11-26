@@ -148,7 +148,7 @@ async def test_f453av_holiday_on_trace_replay(hass: HomeAssistant) -> None:
     assert handler.device_health.faults == []
 
     # Check Central Unit #0 was discovered
-    state_0 = hass.states.get("climate.climate_zone_0")
+    state_0 = hass.states.get("climate.central_unit_0")
     assert state_0 is not None
 
 
@@ -188,7 +188,7 @@ async def test_f453av_antifreeze_on_replay(hass: HomeAssistant) -> None:
     handler = hass.data[DOMAIN][mac][CONF_ENTITY]
     assert handler.device_health.faults == []
 
-    state_0 = hass.states.get("climate.climate_zone_0")
+    state_0 = hass.states.get("climate.central_unit_0")
     assert state_0 is not None
     assert state_0.state == HVACMode.HEAT
     assert state_0.attributes["central_operation"] == "antifreeze"
@@ -215,7 +215,7 @@ async def test_f453av_one_zone_to_cool_replay(hass: HomeAssistant) -> None:
     handler = hass.data[DOMAIN][mac][CONF_ENTITY]
     assert handler.device_health.faults == []
 
-    state_0 = hass.states.get("climate.climate_zone_0")
+    state_0 = hass.states.get("climate.central_unit_0")
     assert state_0 is not None
     assert state_0.state == HVACMode.COOL
     assert state_0.attributes["central_operation"] == "thermal_protection"
@@ -241,7 +241,7 @@ async def test_f453av_central_to_off_replay(hass: HomeAssistant) -> None:
     handler = hass.data[DOMAIN][mac][CONF_ENTITY]
     assert handler.device_health.faults == []
 
-    state_0 = hass.states.get("climate.climate_zone_0")
+    state_0 = hass.states.get("climate.central_unit_0")
     assert state_0 is not None
     assert state_0.state == HVACMode.OFF
 

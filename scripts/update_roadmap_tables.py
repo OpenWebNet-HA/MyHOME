@@ -61,6 +61,10 @@ MODEL_CANONICAL_ALIASES: dict[str, str] = {
     "LN4890A": "LN4890",
     "MHS1": "MyHomeServer1",
     "MYHOMESERVER1": "MyHomeServer1",
+    # The 3488 HOMETOUCH is set up under the model name MyHomeServer1 and counted with it
+    # (docs/trace-availability.md); ``g3488_*`` are its traces in who4_four_gateways_2026_11_18.
+    "3488": "MyHomeServer1",
+    "G3488": "MyHomeServer1",
     "F459": "F459",
     "F454": "F454",
     "F455": "F455",
@@ -957,10 +961,11 @@ def _parse_text_or_log_fixture(
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
-        # Skip outbound TX lines in diagnostic bundles or timelines
-        if re.search(r"(?:\[TX\]|\bTX\b)", stripped):
+        # Skip outbound TX lines in diagnostic bundles or timelines. A client log marks a frame it
+        # sent with `>>` and a frame it received with `<<` (tests/fixtures/traces/issue_932/README.md).
+        if re.search(r"(?:\[TX\]|\bTX\b|(?:^|\s)>>\s)", stripped):
             continue
-        if re.search(r"(?:\[RX\]|\bRX\b|\bOWN\s+\*)", stripped):
+        if re.search(r"(?:\[RX\]|\bRX\b|\bOWN\s+\*|(?:^|\s)<<\s)", stripped):
             for m_tok in _OWN_FRAME_TOKEN_RE.finditer(stripped):
                 _record_rx_frame(
                     summary,

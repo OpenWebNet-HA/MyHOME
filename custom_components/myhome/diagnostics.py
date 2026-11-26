@@ -12,6 +12,7 @@ from homeassistant.core import HomeAssistant
 
 from .const import (
     BUS_ROUTING,
+    CONF_ADVANCED_SHUTTER,
     CONF_DECODER_COMPANION,
     CONF_DECODER_ENTITY,
     CONF_DECODER_SLOTS,
@@ -151,6 +152,8 @@ def _count_unique_devices(devices: Mapping[str, Any], platform_name: str = "") -
 def _redact_yaml_device_config(cfg: Mapping[str, Any]) -> dict[str, Any]:
     """Return a copy of a migrated YAML device config with household/entity names redacted."""
     redacted = dict(cfg)
+    if redacted.get(CONF_ADVANCED_SHUTTER) is True and redacted.get("advanced_shutter") is False:
+        redacted.pop("advanced_shutter", None)
     for name_key in ("name", "entity_name", "state_sensor", "subentry_id"):
         if name_key in redacted and redacted[name_key] is not None:
             redacted[name_key] = REDACTED

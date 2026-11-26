@@ -233,12 +233,12 @@ async def test_p4_central_unit_3550_initialization_and_commands(hass: HomeAssist
     assert str(sent_cmd) == "*4*303*#0##"
     assert cu99._attr_hvac_mode == HVACMode.OFF
 
-    # Set master temperature setpoint -> *#4*#0*#14*0215*1##
+    # Set master temperature setpoint -> *#4*#0*#14*0215*3## (generic manual M=3)
     gateway.send.reset_mock()
     cu99._attr_hvac_mode = HVACMode.HEAT
     await cu99.async_set_temperature(temperature=21.5)
     sent_cmd = gateway.send.call_args[0][0]
-    assert str(sent_cmd) == "*#4*#0*#14*0215*1##"
+    assert str(sent_cmd) == "*#4*#0*#14*0215*3##"
 
     # Status update queries plain status for 99-zone central units (*#4*#0##, #629)
     await cu99.async_update()
@@ -275,14 +275,15 @@ async def test_p4_central_unit_4695_four_zone(hass: HomeAssistant):
     assert cu4._central is True
     assert cu4._standalone is False
 
-    # Set master heat mode on 4-zone CU -> *4*1*#0#1##
+    # Same-season / unknown-season heat on a 4-zone CU writes generic manual M=3 (#994) -> *#4*#0#1*#14*0175*3##
+    cu4._target_temperature = 17.5
     await cu4.async_set_hvac_mode(HVACMode.HEAT)
     sent_cmd = gateway.send.call_args[0][0]
-    assert str(sent_cmd) == "*4*1*#0#1##"
+    assert str(sent_cmd) == "*#4*#0#1*#14*0175*3##"
 
-    # Status update is a no-op for central units (no *#4*#0#1*14## status poll, #582)
+    # Status update sends canonical *#4*#0#1## status query (never *#4*#0#1*14##, #582 / #994)
     await cu4.async_update()
-    gateway.send_status_request.assert_not_called()
+    assert [str(call.args[0]) for call in gateway.send_status_request.await_args_list] == ["*#4*#0#1##", "*#4*1*0##"]
 
 
 @pytest.mark.asyncio
@@ -613,10 +614,11 @@ async def test_p4_climate_central_unit_bus_events_and_auto_mode(hass: HomeAssist
     event_mode_target = OWNHeatingEvent.parse("*4*110#0215*#0##")  # Heating target
     cu.handle_event(event_mode_target)
 
-    # 3. Subordinate zone receiving master_mode = HVACMode.AUTO -> triggers lines 514-516
+    # 3. Subordinate zone receiving master_mode = HVACMode.AUTO keeps its mode: the central unit's
+    #    `auto` is a command to the central unit, not a state of its zones (decision of 2026-11-22)
     zone._attr_hvac_mode = HVACMode.HEAT
     zone._handle_central_mode_update(HVACMode.AUTO)
-    assert zone._attr_hvac_mode == HVACMode.AUTO
+    assert zone._attr_hvac_mode == HVACMode.HEAT
 
 
 async def test_p2_device_trigger_edge_cases(hass: HomeAssistant):

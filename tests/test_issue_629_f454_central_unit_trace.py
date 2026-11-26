@@ -145,7 +145,7 @@ async def test_f454_central_unit_plain_status_replay(hass: HomeAssistant) -> Non
 
     Verifies that:
     1. *#4*#0## requests status of central unit #0.
-    2. Central unit responds with *4*202*#0## (thermal protection): Climate Zone 0 shows COOL.
+    2. Central unit responds with *4*202*#0## (thermal protection): Central Unit 0 shows COOL.
     3. Operational flags *4*21*#0##, *4*22*#0##, *4*24*#0## parse and process cleanly.
     4. Subordinate zone frames *4*210*#5## and *4*210*#12## set HVACMode.COOL.
     """
@@ -210,10 +210,19 @@ async def test_f454_central_unit_plain_status_replay(hass: HomeAssistant) -> Non
 
     # Central unit #0 reported thermal protection via *4*202*#0##: the conditioning season,
     # not off (WHO 4 p. 5, p. 64)
-    state_0 = hass.states.get("climate.climate_zone_0")
+    state_0 = hass.states.get("climate.central_unit_0")
     assert state_0 is not None, "Expected climate entity for Central Unit 0"
     assert state_0.state == HVACMode.COOL
     assert state_0.attributes["central_operation"] == "thermal_protection"
+
+    # Zones 5 and 12 each appear once in the 7-frame snippet, so they stay held until a 2nd frame confirms (#966)
+    assert hass.states.get("climate.climate_zone_5") is None
+    assert hass.states.get("climate.climate_zone_12") is None
+    for confirm_raw in ("*#4*5*0*0210##", "*#4*12*0*0210##"):
+        confirm_msg = OWNMessage.parse(confirm_raw)
+        assert confirm_msg is not None
+        async_dispatcher_send(hass, f"myhome_message_{mac}", confirm_msg)
+    await hass.async_block_till_done()
 
     # Zones 5 and 12 were set to COOL via *4*210*#5## and *4*210*#12##
     state_5 = hass.states.get("climate.climate_zone_5")

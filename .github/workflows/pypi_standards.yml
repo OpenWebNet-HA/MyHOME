@@ -2,9 +2,9 @@ name: PyPI Standards & Packaging
 
 on:
   push:
-    branches: [main, master, "v2-*"]
+    branches: [main, master, "v2-*", "chore/release-*"]
   pull_request:
-    branches: [main, master, "v2-*"]
+    branches: [main, master, "v2-*", "chore/release-*"]
 
 permissions:
   contents: read
@@ -26,7 +26,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
 
@@ -56,7 +56,7 @@ jobs:
           python -c "import zipfile, glob; whl = glob.glob('dist/*.whl')[0]; z = zipfile.ZipFile(whl); files = z.namelist(); assert any('manifest.json' in f for f in files), f'manifest.json missing from {whl}'; assert any('en.json' in f for f in files), f'translations missing from {whl}'; print('Integration wheel assets verified successfully!')"
 
       - name: Upload distribution packages
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dist-packages
           path: dist/*
@@ -78,21 +78,44 @@ jobs:
           persist-credentials: false
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python-version }}
 
-      # Tries the OWNd branch named like this one first, so a paired OWNd + MyHOME
-      # change is tested together. The branch name reaches the shell through env,
-      # never through ${{ }}: on a fork PR it is chosen by the PR author.
+      # Keeps the pinned OWNd release from pyproject.toml / manifest.json by default so
+      # unreleased commits on OWNd@master (tested by ownd-smoke's dev job) do not break
+      # MyHOME PRs. Overrides OWNd only when a matching non-default branch exists on
+      # OpenWebNet-HA/OWNd (paired feature PRs such as feat/233-openzigbee-serial), or
+      # falls back to OWNd@master if the pinned version is not yet published to PyPI.
+      # The branch name reaches the shell through env, never through ${{ }}: on a fork
+      # PR it is chosen by the PR author.
       - name: Install test dependencies
+        shell: bash
         env:
           OWND_REF: ${{ github.head_ref || github.ref_name }}
         run: |
+          has_paired_ownd_branch() {
+            case "$OWND_REF" in
+              ""|"master"|"main"|*[*?\[]*) return 1 ;;
+            esac
+            local out
+            out=$(git ls-remote --heads https://github.com/OpenWebNet-HA/OWNd.git -- "refs/heads/${OWND_REF}" 2>/dev/null) || return 1
+            printf '%s\n' "$out" | cut -f2 | grep -Fx -- "refs/heads/${OWND_REF}" >/dev/null
+          }
           python -m pip install --upgrade pip
-          pip install ".[test]" homeassistant python-dateutil pytz pytest-socket
-          pip install --upgrade --force-reinstall "git+https://github.com/OpenWebNet-HA/OWNd.git@${OWND_REF}" \
-            || pip install --upgrade --force-reinstall "git+https://github.com/OpenWebNet-HA/OWNd.git@master"
+          if ! pip install ".[test]" homeassistant python-dateutil pytz pytest-socket; then
+            python -c 'import pathlib, sys, tomllib; p = tomllib.load(open("pyproject.toml", "rb"))["project"]; deps = [d for d in [*p.get("dependencies", ()), *p.get("optional-dependencies", {}).get("test", ())] if not d.lower().startswith("ownd")]; pathlib.Path(sys.argv[1]).write_text("\n".join(deps) + "\n", encoding="utf-8")' "$RUNNER_TEMP/test-reqs.txt"
+            pip install -r "$RUNNER_TEMP/test-reqs.txt" homeassistant python-dateutil pytz pytest-socket
+            if has_paired_ownd_branch; then
+              pip install --upgrade --force-reinstall "git+https://github.com/OpenWebNet-HA/OWNd.git@${OWND_REF}"
+            else
+              pip install --upgrade --force-reinstall "git+https://github.com/OpenWebNet-HA/OWNd.git@master"
+            fi
+            pip install --no-deps .
+          elif has_paired_ownd_branch; then
+            pip install --upgrade --force-reinstall "git+https://github.com/OpenWebNet-HA/OWNd.git@${OWND_REF}"
+          fi
+          python -c "import OWNd, importlib.metadata as m; print('OWNd', m.version('OWNd'), 'from', OWNd.__file__)"
 
       - name: Run test suite with coverage tracking
         run: |
@@ -104,7 +127,7 @@ jobs:
 
       - name: Upload coverage report
         if: matrix.python-version == '3.14'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-report
           path: coverage.xml

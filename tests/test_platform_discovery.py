@@ -150,11 +150,12 @@ async def test_skeleton_configures_discovers_and_routes(hass):
 async def test_skeleton_hooks(hass):
     entry = _entry(hass, {"cover": {"c1": {"where": "31"}, "c2": {"where": "32"}, "c3": {"where": "33"}}})
     registry_entry = MagicMock(domain="cover", unique_id=f"{MAC}-2-40", entity_id="cover.old")
-    ghost_entry = MagicMock(domain="cover", unique_id=f"{MAC}-2-41", entity_id="cover.ghost")
+    ghost_entry = MagicMock(domain="cover", unique_id=f"{MAC}-2-41", entity_id="cover.ghost", device_id=None)
     foreign_entry = MagicMock(domain="cover", unique_id=f"{MAC}-2-32", entity_id="cover.foreign")
     declined_entry = MagicMock(domain="cover", unique_id=f"{MAC}-2-42", entity_id="cover.declined")
     other_domain = MagicMock(domain="light", unique_id=f"{MAC}-1-12", entity_id="light.x")
     registry = MagicMock()
+    registry.async_get_entity_id.return_value = None
     generals, pre = [], []
 
     def build(ctx: DeviceContext):

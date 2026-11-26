@@ -20,6 +20,7 @@ from homeassistant.const import (
     STATE_ON,
 )
 from homeassistant.core import CALLBACK_TYPE, HassJob, HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.dispatcher import (
     async_dispatcher_connect,
     async_dispatcher_send,
@@ -49,6 +50,7 @@ from .const import (
     CONF_MANUFACTURER,
     CONF_WHERE,
     CONF_WHO,
+    DOMAIN,
     LOGGER,
     SIGNAL_BINARY_SENSOR_INVERTED,
     SIGNAL_NEW_BINARY_SENSOR,
@@ -57,6 +59,13 @@ from .const import (
 from .discovery import Address, DeviceContext, PlatformDiscovery, is_motion_end
 from .gateway import MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
+from .where_grammar import (
+    bus_interface_from_message,
+    canonical_contact_where,
+    contact_where_aliases,
+    padded_contact_where,
+    where_param,
+)
 
 PARALLEL_UPDATES = 0
 
@@ -123,7 +132,10 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
 
     Unique ids carry the device class (``{mac}-25-31-opening``), and the same
     contact may be spelled ``0031`` or ``31``: every entity is remembered under
-    all of its spellings, and frames are routed under all of theirs.
+    all of its spellings, and frames are routed under all of theirs. A dry contact
+    an F455 spells ``301`` is the ``31`` of every other gateway: its frames are read
+    as ``31``, and an entity already registered as ``301`` keeps its unique id and
+    answers to both.
     """
     runtime = config_entry.runtime_data
     gateway = runtime.gateway
@@ -135,38 +147,45 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
             classified = _classify_registry_entry(entry, gateway.mac, mac)
             if classified is None or classified[0] != who:
                 return None
-            return Address(classified[1])
+            return Address.from_device_id(classified[1])
 
         return address_of
 
     def duplicate(entry, ctx: DeviceContext) -> bool:  # type: ignore
         # A second registry entry for a contact already restored under another spelling
-        return any(key in ctx_discovery[ctx.who].known for key in _spellings(ctx.address.where))
+        return any(key in ctx_discovery[ctx.who].known for key in _spellings_for(ctx.who)(ctx.address.key))
 
     ctx_discovery: dict[str, PlatformDiscovery] = {}
 
     # ── WHO 25: dry contacts ────────────────────────────────────────────
     def build_dry_contact(ctx: DeviceContext) -> MyHOMEDryContact:
         if ctx.source == "yaml":
-            cfg, where = ctx.cfg, ctx.address.where
+            cfg, where = ctx.cfg, ctx.address.key
             device_id, device_class = ctx.config_id or ctx.key, cfg.get(CONF_DEVICE_CLASS) or cfg.get("device_class")
             name, model = cfg[CONF_NAME], "Dry Contact"
         elif ctx.source == "registry":
-            candidate = ctx.address.where
-            clean_candidate = candidate.split("-")[-1]
-            cfg = _first_config(
-                configured, f"25-{candidate}", candidate, clean_candidate,
-                normalize_where(candidate), normalize_where(clean_candidate),
-            )
-            where = str(cfg.get(CONF_WHERE, candidate))
+            candidate = ctx.address.key
+            cfg = _first_config(configured, *dry_contact_config_keys(candidate))
+            where = Address.from_config(candidate, cfg).key if cfg else candidate
             norm_where, clean_norm = normalize_where(where), normalize_where(where.split("-")[-1])
             device_id = candidate if candidate in configured else (norm_where or clean_norm or where.split("-")[-1])
+            reg_dev_id = getattr(ctx.registry_entry, "device_id", None)
+            if isinstance(reg_dev_id, str) and reg_dev_id:
+                existing_dev = dr.async_get(hass).async_get(reg_dev_id)
+                if existing_dev is not None:
+                    for dom, ident in existing_dev.identifiers:
+                        if dom == DOMAIN and "-25-" in ident:
+                            device_id = ident.split("-25-", 1)[1]
+                            break
             device_class = cfg.get(CONF_DEVICE_CLASS, getattr(ctx.registry_entry, "original_device_class", None) or BinarySensorDeviceClass.OPENING)
-            name, model = cfg.get(CONF_NAME, f"Dry Contact {clean_norm or where.split('-')[-1]}"), "Dry Contact Interface"
+            where_addr = Address.from_device_id(where.split("-")[-1])
+            norm_base = normalize_where(where_addr.clean_where) or where_addr.clean_where
+            default_label = Address(norm_base, where_addr.interface).suffix
+            name, model = cfg.get(CONF_NAME, f"Dry Contact {default_label}"), "Dry Contact Interface"
         else:
-            cfg, where = {}, ctx.address.where
+            cfg, where = {}, ctx.address.key
             device_id, device_class = where, BinarySensorDeviceClass.OPENING
-            name, model = f"Dry Contact {where}", "Dry Contact Interface"
+            name, model = f"Dry Contact {ctx.address.suffix}", "Dry Contact Interface"
         contact = MyHOMEDryContact(
             hass=hass,
             device_id=device_id,
@@ -218,24 +237,34 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
     # ── WHO 1: motion sensors ───────────────────────────────────────────
     def build_motion(ctx: DeviceContext) -> MyHOMEMotionSensor:
         if ctx.source == "yaml":
-            cfg, where, device_id = ctx.cfg, ctx.address.where, ctx.config_id or ctx.key
+            cfg, where, device_id = ctx.cfg, ctx.address.key, ctx.config_id or ctx.key
             name = cfg[CONF_NAME]
         elif ctx.source == "registry":
-            raw = ctx.address.where
+            raw = ctx.address.key
             clean_raw = raw.split("-")[-1]
-            norm_raw, clean_norm = normalize_where(raw), normalize_where(clean_raw)
+            norm_raw = binary_sensor_canonical_where("1", raw)
+            clean_norm = binary_sensor_canonical_where("1", clean_raw)
             cfg = _first_config(configured, f"1-{norm_raw}", f"1-{raw}", norm_raw, raw, clean_norm, clean_raw)
-            where = str(cfg.get(CONF_WHERE, norm_raw or raw))
-            device_id = norm_raw or clean_norm or clean_raw
-            name = cfg.get(CONF_NAME, f"Motion Sensor {clean_norm or clean_raw}")
+            where = Address.from_config(raw, cfg).key if cfg else (norm_raw or raw)
+            device_id = raw if raw in configured else (norm_raw or clean_norm or clean_raw)
+            reg_dev_id = getattr(ctx.registry_entry, "device_id", None)
+            if isinstance(reg_dev_id, str) and reg_dev_id:
+                existing_dev = dr.async_get(hass).async_get(reg_dev_id)
+                if existing_dev is not None:
+                    for dom, ident in existing_dev.identifiers:
+                        if dom == DOMAIN and "-1-" in ident:
+                            device_id = ident.split("-1-", 1)[1]
+                            break
+            default_label = ctx.address.suffix if ctx.address.interface else (clean_norm or clean_raw)
+            name = cfg.get(CONF_NAME, f"Motion Sensor {default_label}")
         else:
-            cfg, where, device_id = {}, ctx.address.where, ctx.address.where
-            name = f"Motion Sensor {where}"
+            cfg, where, device_id = {}, ctx.address.key, ctx.address.key
+            name = f"Motion Sensor {ctx.address.suffix}"
         motion = MyHOMEMotionSensor(
             hass=hass,
             device_id=device_id,
             who="1",
-            where=normalize_where(where) or where,
+            where=binary_sensor_canonical_where("1", where) or where,
             name=name,
             entity_name=cfg.get(CONF_ENTITY_NAME),
             inverted=cfg.get(CONF_INVERTED, False),
@@ -261,14 +290,20 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
 
     def known_keys(ctx: DeviceContext) -> list[str]:
         """Every spelling of the contact: the frame's, the configured, the normalized, the entity's."""
-        keys = [ctx.key, ctx.config_id or "", *_spellings(ctx.address.where)]
-        cfg_where = ctx.cfg.get(CONF_WHERE) if ctx.source != "bus" else None
-        if cfg_where:
-            keys.extend(_spellings(str(cfg_where)))
+        spellings = _spellings_for(ctx.who)
+        keys = [ctx.key, ctx.config_id or "", *spellings(ctx.address.key)]
+        if ctx.source != "bus":
+            cfg = (
+                _first_config(configured, *dry_contact_config_keys(ctx.address.key))
+                if ctx.source == "registry" and ctx.who == "25"
+                else ctx.cfg
+            )
+            if cfg.get(CONF_WHERE):
+                keys.extend(spellings(Address.from_config(ctx.key, cfg).key))
         return [k for k in keys if k]
 
     def route_keys(message, address: Address | None) -> list[str]:  # type: ignore
-        return _spellings(address.where) if address is not None else []
+        return _spellings_for(str(getattr(message, "who", "")))(address.key) if address is not None else []
 
     @callback
     def anonymous_sensor_reply(message: typing.Any) -> None:
@@ -279,13 +314,14 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
         claim = getattr(gateway, "claim_in_flight_dimension_where", None)
         where = claim(1, dimension) if callable(claim) else None
         if isinstance(where, str) and where and any(k in ctx_discovery["1"].known for k in _spellings(where)):
-            ctx_discovery["1"].route(message, Address(where))
+            ctx_discovery["1"].route(message, Address.from_device_id(where))
 
     common = dict(hass=hass, config_entry=config_entry, async_add_entities=async_add_entities, platform=PLATFORM)
     ctx_discovery["25"] = PlatformDiscovery(
         who="25", event_type=OWNDryContactEvent, build=build_dry_contact,
         registry_address=registry_address("25"), reject_registry_entry=duplicate, accept=yaml_who(25),
-        known_keys=known_keys, route_keys=route_keys, address=_contact_address, **common,  # type: ignore
+        known_keys=known_keys, route_keys=route_keys, address=_contact_address,
+        peer_spellings=_contact_peer_spellings, **common,  # type: ignore
     )
     ctx_discovery["9"] = PlatformDiscovery(
         who="9", event_type=OWNAuxEvent, build=build_auxiliary,
@@ -319,9 +355,92 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
 
 
 def _spellings(where: str) -> list[str]:
-    """``0031`` may also appear as ``31``, and a legacy ``25-0031`` as either."""
+    """``0031`` may also appear as ``31``, ``04#4#1`` as ``04#4#01``, and a legacy ``25-0031`` as either."""
     clean = where.split("-")[-1]
-    return list(dict.fromkeys(k for k in (where, normalize_where(where), clean, normalize_where(clean)) if k))
+    base, sep, iface = clean.partition(BUS_ROUTING)
+    norm_clean = normalize_where(clean)
+    if sep:
+        norm_base = normalize_where(base) or base
+        norm_iface = (
+            iface.zfill(2)
+            if iface.isascii() and iface.isdigit() and 1 <= len(iface) <= 2 and int(iface) <= 15
+            else iface
+        )
+        norm_clean = f"{norm_base}{BUS_ROUTING}{norm_iface}"
+    return list(
+        dict.fromkeys(
+            k for k in (where, normalize_where(where), clean, normalize_where(clean), norm_clean) if k
+        )
+    )
+
+
+def _contact_spellings(where: str) -> list[str]:
+    """:func:`_spellings` of a WHO 25 contact, plus both ``31`` and ``301`` forms (a WHERE or legacy ``25-`` id only)."""
+    head, sep, _tail = where.rpartition("-")
+    if sep and head != "25":
+        return [where]
+    keys = _spellings(where)
+    return list(dict.fromkeys([*keys, *(alias for key in keys for alias in contact_where_aliases(key))]))
+
+
+def _contact_peer_spellings(unique_id: str) -> list[str]:
+    """Symmetric peer spellings for WHO 25 dry contacts (``301`` <-> ``31``, with or without ``-25-``)."""
+    stem = _strip_class_suffix(unique_id)
+    head, sep, where = stem.rpartition("-")
+    if not sep or not head:
+        return []
+    # Only rewrite gateway-MAC or gateway-MAC + "-25" stems; never touch named YAML keys like "{mac}-gate-301-opening".
+    if head.endswith("-25"):
+        mac_part = head[:-3]
+        if not mac_part or "-" in mac_part:
+            return []
+        alt_heads = (head, mac_part)
+    elif "-" not in head:
+        alt_heads = (head, f"{head}-25")
+    else:
+        return []
+    aliases = contact_where_aliases(where)
+    suffix = unique_id[len(stem) :]
+    peers = [
+        f"{h}-{alias}{suffix}"
+        for h in alt_heads
+        for alias in aliases
+        if f"{h}-{alias}{suffix}" != unique_id
+    ]
+    return list(dict.fromkeys(peers))
+
+
+def _spellings_for(who: str) -> typing.Callable[[str], list[str]]:
+    """The spellings of an address of ``who``: only a WHO 25 contact has a padded one."""
+    return _contact_spellings if str(who) == "25" else _spellings
+
+
+def dry_contact_config_keys(candidate: str) -> tuple[str, ...]:
+    """Lookup keys in ``configured`` for a WHO 25 registry entry.
+
+    Custom hyphenated YAML keys (such as ``gate-301``) are matched only under their
+    exact key, never stripped to ``301`` or expanded to contact aliases.
+    """
+    head, sep, _tail = candidate.rpartition("-")
+    if sep and head != "25":
+        return (f"25-{candidate}", candidate)
+    clean_candidate = candidate.split("-")[-1]
+    contact_aliases = contact_where_aliases(clean_candidate)
+    return tuple(
+        dict.fromkeys(
+            k
+            for k in (
+                f"25-{candidate}",
+                candidate,
+                *(f"25-{alias}" for alias in contact_aliases),
+                clean_candidate,
+                *contact_aliases,
+                normalize_where(candidate),
+                normalize_where(clean_candidate),
+            )
+            if k
+        )
+    )
 
 
 def _first_config(configured: dict[str, Any], *keys: str) -> dict[str, Any]:
@@ -338,8 +457,20 @@ def binary_sensor_canonical_where(who: str, where: str) -> str:
     if str(who) == "9":
         return raw
     base, sep, iface = raw.partition(BUS_ROUTING)
-    norm_base = normalize_where(base) or base
-    return f"{norm_base}{BUS_ROUTING}{iface}" if sep else norm_base
+    if str(who) == "25" and base.isascii() and base.isdigit():
+        norm_base = base.lstrip("0") or "0"
+    else:
+        norm_base = normalize_where(base) or base
+    if sep:
+        norm_iface = (
+            iface.zfill(2)
+            if iface.isascii() and iface.isdigit() and 1 <= len(iface) <= 2 and int(iface) <= 15
+            else iface
+        )
+        combined = f"{norm_base}{BUS_ROUTING}{norm_iface}"
+    else:
+        combined = norm_base
+    return canonical_contact_where(combined) if str(who) == "25" else combined
 
 
 def binary_sensor_option_key(who: str, where: str) -> str:
@@ -361,6 +492,11 @@ def resolve_binary_sensor_inverted(
             opt_key = binary_sensor_option_key(who, where)
             if opt_key in stored:
                 return bool(stored[opt_key])
+            if str(who) == "25":
+                padded = padded_contact_where(binary_sensor_canonical_where(who, where))
+                legacy_key = f"25-{padded}"
+                if legacy_key in stored:
+                    return bool(stored[legacy_key])
     return bool(cfg.get(CONF_INVERTED, False)) if cfg else False
 
 
@@ -413,27 +549,50 @@ def _primary(where: str) -> str:
     return normalize_where(where) or normalize_where(clean) or clean
 
 
+_bus_interface_from_message = bus_interface_from_message
+
+
 def _contact_address(message) -> Address | None:  # type: ignore
-    return Address(_primary(str(message.where)))
+    # An F455 pads the contact number (301), every other gateway and the WHO 25 PDF do not (31).
+    # OWNd leaves F422 routing (``301#4#01``) in ``where_param == ["4", "01"]`` for WHO 25.
+    if not message.where:
+        return None
+    valid_iface, interface = _bus_interface_from_message(message)
+    if not valid_iface:
+        return None
+    return Address(canonical_contact_where(_primary(str(message.where))), interface)
 
 
 def _aux_address(message) -> Address | None:  # type: ignore
+    if not message.channel:
+        return None
+    raw_params = where_param(message)
+    if isinstance(raw_params, (list, tuple)) and raw_params:
+        return None
     return Address(str(message.channel))
 
 
 def _motion_address(message) -> Address | None:  # type: ignore
     """Motion / PIR frames of a WHO=1 sensor; ``None`` for anything else on WHO=1."""
+    # Do not check ``message.is_sensor`` here: OWNLightingEvent.is_sensor is also True
+    # for WHO 1 illuminance (DIMENSION 6 / MESSAGE_TYPE_ILLUMINANCE), which is owned by
+    # sensor.py; matching it here spawns a phantom Motion Sensor that races with the
+    # Illuminance device name and queues unsolicited PIR sensitivity/timeout polls.
     is_motion = (
-        getattr(message, "is_sensor", False) is True
-        or getattr(message, "motion", False) is True
+        getattr(message, "motion", False) is True
         or getattr(message, "message_type", None) in (MESSAGE_TYPE_MOTION, MESSAGE_TYPE_MOTION_TIMEOUT, MESSAGE_TYPE_PIR_SENSITIVITY)
         or getattr(message, "dimension", None) in (5, 7)
         or getattr(message, "_state", None) == 34
         or is_motion_end(message)
     )
-    if not is_motion or getattr(message, "where", None) is None:
+    raw_where = getattr(message, "where", None)
+    where_str = str(raw_where).strip() if raw_where is not None else ""
+    if not is_motion or not where_str:
         return None
-    return Address(_primary(str(message.where)))
+    valid_iface, interface = _bus_interface_from_message(message)
+    if not valid_iface:
+        return None
+    return Address(_primary(where_str), interface)
 
 
 async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:  # type: ignore
@@ -575,7 +734,9 @@ class MyHOMEDryContact(_MyHOMEInvertibleBinarySensor):
 
         Only used by the generic entity update service.
         """
-        await self._gateway_handler.send_status_request(OWNDryContactCommand.status(self._where))
+        await self._gateway_handler.send_status_request(
+            OWNDryContactCommand.status(binary_sensor_canonical_where("25", self._where))
+        )
 
 
 class MyHOMEAuxiliary(_MyHOMEInvertibleBinarySensor):
@@ -642,7 +803,7 @@ class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity):
         model: str,
         gateway: MyHOMEGatewayHandler,
     ):
-        norm_where = normalize_where(where) or where
+        norm_where = binary_sensor_canonical_where("1", where) or where
         super().__init__(
             hass=hass,
             name=name,
@@ -671,7 +832,7 @@ class MyHOMEMotionSensor(MyHOMEEntity, BinarySensorEntity):
         self._attr_unique_id = f"{gateway.mac}-{self._device_id}-{self._attr_device_class}"
         self._attr_should_poll = False
         self._attr_is_on = False
-        where_str = str(self._where)
+        where_str = str(self._where).partition(BUS_ROUTING)[0]
         half = len(where_str) // 2
         a_val = where_str[:half] if half > 0 else "0"
         pl_val = where_str[half:] if half > 0 else where_str

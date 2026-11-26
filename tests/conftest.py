@@ -10,6 +10,7 @@ import re
 import subprocess
 import sys
 import warnings
+from collections.abc import Mapping
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -39,6 +40,103 @@ try:
 except ImportError:
     pass
 
+_OWND_REPO_URL = "https://github.com/OpenWebNet-HA/OWNd.git"
+_OWND_DEFAULT_BRANCHES = frozenset({"master", "main"})
+_SAFE_BRANCH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
+
+
+def _has_paired_ownd_branch(branch: str) -> bool:
+    """Return True if ``branch`` is a safe non-default branch present on OpenWebNet-HA/OWNd."""
+    candidate = branch.strip()
+    if (
+        not candidate
+        or candidate in _OWND_DEFAULT_BRANCHES
+        or ".." in candidate
+        or not _SAFE_BRANCH_RE.fullmatch(candidate)
+    ):
+        return False
+    try:
+        res = subprocess.run(
+            ["git", "ls-remote", "--heads", _OWND_REPO_URL, "--", f"refs/heads/{candidate}"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return False
+    if res.returncode != 0:
+        return False
+    expected_ref = f"refs/heads/{candidate}"
+    return any(
+        line.split("\t", 1)[1] == expected_ref
+        for line in res.stdout.splitlines()
+        if "\t" in line
+    )
+
+
+def _install_ownd_for_tests(
+    manifest_path: str | None = None,
+    *,
+    env: Mapping[str, str] | None = None,
+) -> str:
+    """Install OWNd from a paired CI branch, the manifest.json pin, or master if unreleased."""
+    active_env = os.environ if env is None else env
+    in_ci = bool(active_env.get("GITHUB_ACTIONS"))
+    if manifest_path is None:
+        manifest_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "custom_components",
+            "myhome",
+            "manifest.json",
+        )
+
+    if in_ci:
+        branch = (active_env.get("GITHUB_HEAD_REF") or active_env.get("GITHUB_REF_NAME") or "").strip()
+        if _has_paired_ownd_branch(branch):
+            target = f"git+{_OWND_REPO_URL}@{branch}"
+            subprocess.check_call([
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "--upgrade",
+                "--force-reinstall",
+                target,
+            ])
+            return target
+
+    reqs: list[str] = []
+    if os.path.exists(manifest_path):
+        with open(manifest_path, encoding="utf-8") as f:
+            raw_reqs = json.load(f).get("requirements", [])
+            if isinstance(raw_reqs, list):
+                reqs = [str(req) for req in raw_reqs]
+
+    if reqs:
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", *reqs])
+            return reqs[0]
+        except subprocess.CalledProcessError:
+            if not in_ci:
+                raise
+    elif not in_ci:
+        raise RuntimeError(f"No requirements found in {manifest_path}")
+
+    fallback = f"git+{_OWND_REPO_URL}@master"
+    non_ownd_reqs = [req for req in reqs if not req.startswith("OWNd")]
+    subprocess.check_call([
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "--upgrade",
+        "--force-reinstall",
+        fallback,
+        *non_ownd_reqs,
+    ])
+    return fallback
+
+
 # Ensure required integration dependencies declared in manifest.json are available in CI
 if not os.environ.get("OWND_SMOKE_TEST"):
     try:
@@ -56,42 +154,7 @@ if not os.environ.get("OWND_SMOKE_TEST"):
         if not hasattr(OWNLightingCommand, "get_hsv_color"):
             raise AttributeError("get_hsv_color not found on OWNLightingCommand")
     except (ImportError, AttributeError):
-        installed = False
-        if os.environ.get("GITHUB_ACTIONS"):
-            branch = os.environ.get("GITHUB_HEAD_REF") or os.environ.get("GITHUB_REF_NAME") or "master"
-            for target in [
-                f"git+https://github.com/OpenWebNet-HA/OWNd.git@{branch}",
-                "git+https://github.com/OpenWebNet-HA/OWNd.git@master",
-            ]:
-                try:
-                    subprocess.check_call([
-                        sys.executable,
-                        "-m",
-                        "pip",
-                        "install",
-                        "--upgrade",
-                        "--force-reinstall",
-                        target,
-                    ])
-                    installed = True
-                    break
-                except subprocess.CalledProcessError:
-                    continue
-
-        if not installed:
-            manifest_path = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                "custom_components",
-                "myhome",
-                "manifest.json",
-            )
-            if os.path.exists(manifest_path):
-                with open(manifest_path, encoding="utf-8") as f:
-                    reqs = json.load(f).get("requirements", [])
-                    for req in reqs:
-                        subprocess.check_call([sys.executable, "-m", "pip", "install", req])
-            else:
-                subprocess.check_call([sys.executable, "-m", "pip", "install", "OWNd==2.0.0b5"])
+        _install_ownd_for_tests()
         importlib.invalidate_caches()
 
         # Clean up any stray coverage data files generated by pip subprocesses
@@ -115,17 +178,17 @@ try:
 except ImportError:
     pass
 
-import pytest
-from homeassistant.core import State
-from homeassistant.helpers import deprecation as ha_deprecation
-from homeassistant.helpers import frame as ha_frame
-from pytest_homeassistant_custom_component.syrupy import (
+import pytest  # noqa: E402
+from homeassistant.core import State  # noqa: E402
+from homeassistant.helpers import deprecation as ha_deprecation  # noqa: E402
+from homeassistant.helpers import frame as ha_frame  # noqa: E402
+from pytest_homeassistant_custom_component.syrupy import (  # noqa: E402
     ANY,
     HomeAssistantSnapshotExtension,
     HomeAssistantSnapshotSerializer,
 )
-from syrupy.assertion import SnapshotAssertion
-from syrupy.types import SerializableData
+from syrupy.assertion import SnapshotAssertion  # noqa: E402
+from syrupy.types import SerializableData  # noqa: E402
 
 try:
     from aiohttp.web_exceptions import NotAppKeyWarning
@@ -596,6 +659,31 @@ def attach_gateway(hass):
 @pytest.fixture
 def fast_bus_pacing(monkeypatch):
     """Shrink the paced-sweep waits: mock gateways answer at once or never drain the queue."""
-    monkeypatch.setattr("custom_components.myhome.gateway.PACED_WRITE_TIMEOUT", 0.01)
-    monkeypatch.setattr("custom_components.myhome.gateway.BUS_QUIET_CAP", 0.01)
+    monkeypatch.setattr("custom_components.myhome.gateway.PACED_WRITE_TIMEOUT", 0.05)
+    monkeypatch.setattr("custom_components.myhome.gateway.BUS_QUIET_CAP", 0.05)
     monkeypatch.setattr("custom_components.myhome.gateway.BUS_QUIET_PERIOD", 0.005)
+
+
+@pytest.fixture(autouse=True)
+def _cancel_open_central_cycles(monkeypatch: pytest.MonkeyPatch):
+    """Cancel the wait for the central unit's optional flags at the end of a test.
+
+    ``DeviceHealth._begin_central_cycle`` waits ``CENTRAL_FLAGS_SETTLE`` after the central unit's
+    remote-control frame; unloading the entry cancels it (``clear_all``). A test that feeds
+    such a frame through a real handler and never unloads would leave the timer behind.
+    """
+    from custom_components.myhome.device_health import DeviceHealth
+
+    created: list[DeviceHealth] = []
+    original = DeviceHealth.__init__
+
+    def _init(self: DeviceHealth, *args: object, **kwargs: object) -> None:
+        original(self, *args, **kwargs)
+        created.append(self)
+
+    monkeypatch.setattr(DeviceHealth, "__init__", _init)
+    yield
+    for health in created:
+        for cancel in list(health._central_cycles.values()):
+            cancel()
+        health._central_cycles.clear()

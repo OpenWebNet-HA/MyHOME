@@ -14,6 +14,7 @@ WHERE                  meaning
 ``Z#N``                actuator N of zone Z - the frame concerns zone Z
 ``0#N``                pump N (actuator N of zone 0) - names no zone
 ``PZZ`` (>= 100)       probe P of zone ZZ - a sensor's frame, no zone's
+``3#Z#N`` (DIM 22)     split unit N of zone Z - no zone's, least of all 3's
 =====================  =================================================
 
 ``*4*4001#Z*0#N##`` (zone Z calls pump N) carries the zone in WHAT.
@@ -196,23 +197,51 @@ if not hasattr(OWNSoundEvent, "volume_step_delta"):  # pragma: no cover - PyPI O
 
 __all__ = [
     "area_of_where",
+    "automation_dim10_info",
+    "bus_interface_from_message",
+    "canonical_contact_where",
+    "canonical_point_address",
+    "canonical_point_spelling",
     "canonical_thermo_zone",
+    "central_report_zone",
+    "central_unit_season",
+    "central_unit_where",
+    "contact_where_aliases",
+    "diagnose_apl_where",
+    "encode_apl_where",
     "expose_message_where",
+    "four_zone_central_where",
+    "four_zone_central_zone",
     "is_actuator_where",
+    "is_actuator_status",
     "is_apl_address",
     "is_central_thermo_where",
+    "is_central_unit_actuator_status",
     "is_central_unit_report",
+    "is_four_zone_central_where",
+    "is_four_zone_controlled_zone_where",
     "is_probe",
     "is_pump",
+    "is_split_unit",
     "is_valid_hs_tuple",
     "is_valid_rgb_tuple",
     "normalize_expose_where",
     "normalize_where",
+    "padded_contact_where",
+    "parse_apl_where",
     "parse_thermo_actuator_where",
+    "split_zone_routing",
+    "thermo_dim19_status",
+    "thermo_dim20_actuator_target",
     "thermo_dim20_is_active",
+    "thermo_dim20_level",
+    "thermo_dim20_status",
     "thermo_event_actuator",
     "thermo_event_interface",
     "thermo_event_zone",
+    "thermo_output_level",
+    "thermo_zone_sensor_target",
+    "validate_standalone_zones",
     "validate_thermo_trigger_command",
     "where_param",
     "zone_number",
@@ -223,7 +252,7 @@ def is_actuator_where(where: str) -> bool:
     """Whether ``where`` addresses a WHO 4 actuator or split unit rather than a zone or central unit.
 
     Covers ``Z#N`` / ``Z#0`` / ``0#N`` / ``0#0`` and 3-token ``3#Z#N`` / ``A#B#C`` addresses
-    (with or without a trailing ``#4#II`` interface suffix). ``#0#1``..``#0#4`` is a 4-zone
+    (with or without a trailing ``#4#II`` interface suffix). ``#0#1``..``#0#99`` is a 4-zone
     central unit, not an actuator, and ``Z#4#II`` is a routed zone (note that a 1-digit
     shorthand ``3#4#1``..``3#4#9`` is normalized as zone 3 behind interface ``01``..``09``;
     wire frames always write two-digit ``#4#01``..``#4#15``). Dimensionless ``*#4*Z#N##``
@@ -234,9 +263,9 @@ def is_actuator_where(where: str) -> bool:
     """
     clean = (where or "").strip().removeprefix("4-")
     base, routing, iface = clean.rpartition("#4#")
-    if routing and iface.isdigit() and 1 <= len(iface) <= 2:
+    if routing and _is_f422_interface(iface):
         clean = base
-    if clean in ("#0#1", "#0#2", "#0#3", "#0#4"):
+    if is_four_zone_central_where(clean):
         return False
     parts = clean.removeprefix("#").split("#")
     if len(parts) in (2, 3):
@@ -263,6 +292,74 @@ def canonical_thermo_zone(where: str) -> str | None:
     return str(zone_int)
 
 
+def canonical_central_zone(zone: str) -> str:
+    """The WHERE of a ``central: true`` entry of ``myhome.yaml``, from its ``zone`` as typed or as stored.
+
+    ``0``, ``00``, ``#0`` and ``#0#0`` are the 99-zone central unit ``#0``; ``N``, ``0N``, ``#N``,
+    ``#0#N`` and ``#0#0N`` are a 4-zone central unit at ``#0#N`` (``#0`` 99-zone Central Unit in
+    WHO 4; ``#0#1`` to ``#0#96`` on BTicino 4695 hardware per Technical Guide ``U1809C`` pp. 54-55
+    and ``LH4695_AM5875_010103.fwz`` ROM, ``#0#1`` to ``#0#99`` in OpenWebNet gateways). An interface written inside the zone (``0#4#01``) is kept
+    behind the address (zero-padded to two digits). 2.0.0 put ``#0#`` in front of whatever was typed but ``#0``; what it stored
+    for an address typed with the prefix (``#0##0#1``, ``#0##1``, ``#0#01``, ``#0#0``) is read back
+    to the same address.
+    """
+    base, routing, interface = str(zone).rpartition("#4#")
+    if routing and base and _is_f422_interface(interface):
+        suffix = f"#4#{interface.zfill(2)}"
+    else:
+        base, suffix = str(zone), ""
+    while base.startswith("#0##0"):
+        base = base[len("#0#") :]
+    tail = base[len("#0#") :].removeprefix("#") if base.startswith("#0#") else base.removeprefix("#")
+    if tail.isascii() and tail.isdigit():
+        num = int(tail)
+        base = "#0" if num == 0 else f"#0#{num}"
+    else:
+        base = base if base.startswith("#0#") else f"#0#{base}"
+    return f"{base}{suffix}"
+
+
+def split_zone_routing(zone: str, routing: str) -> tuple[str, str]:
+    """Separate an inline ``#4#II`` F422 routing suffix from ``zone``."""
+    base, sep, iface = zone.rpartition("#4#")
+    if sep and base and _is_f422_interface(iface):
+        return base, routing or f"#4#{iface.zfill(2)}"
+    return zone, routing
+
+
+def validate_standalone_zones(raw: Any) -> tuple[list[str], bool]:
+    """Parse the "standalone thermostats" entry option: zone numbers 1..99 of the local bus.
+
+    Returns ``(zones, is_valid)``: the zones as ``canonical_thermo_zone`` spells them
+    (``"2"``, never ``"02"`` or ``"#2"``), sorted, without duplicates; ``is_valid`` is False
+    when an item is not a zone (the central unit ``#0``, a probe ``102``, ``0``, an actuator
+    ``2#1``, text). A string is split on commas, spaces and newlines.
+    """
+    if raw is None:
+        return [], True
+    if isinstance(raw, str):
+        items: list[Any] = [item for item in re.split(r"[\s,;]+", raw) if item]
+    elif isinstance(raw, (list, tuple, set, frozenset)):
+        items = [item for item in raw if str(item).strip()]
+    else:
+        return [], False
+    zones: set[str] = set()
+    for item in items:
+        text = str(item).strip()
+        if not text.isascii() or not text.isdigit() or is_probe(text):
+            return [], False
+        zone = canonical_thermo_zone(text)
+        if zone is None:
+            return [], False
+        zones.add(zone)
+    return sorted(zones, key=int), True
+
+
+def _is_ascii_uint(value: str) -> bool:
+    """Return True when ``value`` consists solely of ASCII decimal digits."""
+    return bool(value) and value.isascii() and value.isdigit()
+
+
 def is_probe(where: str) -> bool:
     """A WHERE of ``PZZ``: probe ``P`` of zone ``ZZ`` (``105``, ``0105``, ``#105``, ``4-105``).
 
@@ -271,7 +368,7 @@ def is_probe(where: str) -> bool:
     not a probe but the group of all probes in zone ``ZZ``.
     """
     bare = where.removeprefix("4-").removeprefix("#")
-    return bare.isdigit() and int(bare) >= 100
+    return _is_ascii_uint(bare) and int(bare) >= 100
 
 
 def where_param(message: Any) -> list[str]:
@@ -279,9 +376,78 @@ def where_param(message: Any) -> list[str]:
     return getattr(message, "where_param", None) or getattr(message, "_where_param", None) or []
 
 
+def bus_interface_from_message(message: Any) -> tuple[bool, str | None]:
+    """Extract optional F422 ``#4#II`` interface (``00``..``15``) or reject foreign ``where_param``."""
+    iface_attr = getattr(message, "interface", None)
+    raw_iface = iface_attr if isinstance(iface_attr, str) and iface_attr else None
+    raw_params = where_param(message)
+    params = [str(p) for p in raw_params] if isinstance(raw_params, (list, tuple)) else []
+    if raw_iface is not None:
+        if params and not (len(params) == 2 and params[0] == "4"):
+            return False, None
+        if _is_ascii_uint(raw_iface) and 1 <= len(raw_iface) <= 2 and int(raw_iface) <= 15:
+            return True, raw_iface.zfill(2)
+        return False, None
+    if not params:
+        return True, None
+    if (
+        len(params) == 2
+        and params[0] == "4"
+        and _is_ascii_uint(params[1])
+        and 1 <= len(params[1]) <= 2
+        and int(params[1]) <= 15
+    ):
+        return True, params[1].zfill(2)
+    return False, None
+
+
+def is_external_probe(where: str) -> bool:
+    """A probe WHERE of ``N00`` (``100``..``900``): external probe ``N``, as in ``validate.py``.
+
+    The published slave probe is ``[1-8]+[01-99]`` (WHO 4 PDF, "Slave probe temperature
+    request"), so ``ZZ`` is never ``00`` there; ``[PL_N]00`` is the external-probe address rule of
+    MyHOME_Suite (Encyclopedia ``diagnostics/address-discovery.md``, family ``1004``). The two
+    report on different dimensions in the captures: a slave probe ``*#4*303*0*0232##``
+    (issue_932), ``*#4*105*0*0296##`` (issue_466); an external probe ``*#4*100*15*1*0253*0001##``
+    (a 3455 behind an L4577 on an F454, #308).
+    """
+    bare = where.removeprefix("4-").removeprefix("#")
+    return is_probe(where) and int(bare) <= 900 and int(bare) % 100 == 0
+
+
 def is_pump(message: Any) -> bool:
     """WHERE ``0#N``: OWNd reports WHERE ``0`` with the pump number as a parameter."""
     return str(getattr(message, "where", None)) == "0" and bool(where_param(message))
+
+
+def is_split_unit(message: Any) -> bool:
+    """WHERE ``3#Z#N`` or ``Z#N`` under DIMENSION 22: split unit ``N`` of zone ``Z``, not a heating zone.
+
+    "Where= 3#<where actuators>, Where actuators= Z#N = [0-99]#[1-9]" (WHO 4 PDF 1.10.1 /
+    1.10.2; Encyclopedia functional/who-4-temperature-control/addressing.md "Split control uses
+    the additional prefix ``3#Z#N`` under ``DIMENSION 22``"). OWNd reports ``3#Z#N`` as WHERE
+    ``3`` with parameters ``[Z, N]`` and zone 3: read as that zone's, a split unit's report
+    created a "Zone 3" on a plant without one. Historical BTicino touchscreens and MH202
+    (``010024``, own-firmware-oracle ``findings/thermo-dim22.md:90-93``; Encyclopedia
+    ``dimensions.md`` "Historical partial split writes") also use the prefix-less ``Z#N``
+    2-token form (e.g. ``*#4*45#1*#22*3**1*1##``), emitting the same SCS ``D1`` telegram on
+    MH202; functional WHO 4 DIMENSION 22 is split-unit control only. ``3#4#N`` is split unit
+    ``N`` of zone 4 here, not zone 3 behind interface ``N`` (:func:`is_actuator_where`).
+    """
+    if getattr(message, "dimension", None) != 22:
+        return False
+    where = str(getattr(message, "where", None) or "")
+    params = [str(param) for param in where_param(message)]
+    if len(params) >= 3 and params[-2] == "4" and _is_ascii_uint(params[-1]):
+        params = params[:-2]
+    if where == "3" and len(params) == 2 and all(_is_ascii_uint(param) for param in params):
+        return True
+    return (
+        _is_ascii_uint(where)
+        and 1 <= int(where) <= 99
+        and len(params) == 1
+        and _is_ascii_uint(params[0])
+    )
 
 
 def is_central_thermo_where(message: Any) -> bool:
@@ -289,6 +455,76 @@ def is_central_thermo_where(message: Any) -> bool:
     raw = str(getattr(message, "where", None) or "").strip().removeprefix("4-")
     head = raw.removeprefix("#").split("#", 1)[0]
     return raw.startswith("#") and head.isdigit() and not is_probe(head)
+
+
+def _where_params(message: Any) -> list[str]:
+    """:func:`where_param` as strings; nothing for a test double that has no such list."""
+    params = where_param(message)
+    return [str(param) for param in params] if isinstance(params, (list, tuple)) else []
+
+
+def _is_f422_interface(value: str) -> bool:
+    """Whether ``value`` is a valid F422 bus interface number (``0``..``15`` / ``00``..``15``)."""
+    return _is_ascii_uint(value) and 1 <= len(value) <= 2 and int(value) <= 15
+
+
+def four_zone_central_zone(where: str) -> str | None:
+    """Return master zone ``"1"``..``"99"`` for a 4-zone central unit WHERE (``#0#N`` / ``#0#N#4#II``), else ``None``.
+
+    A BTicino 4695 4-zone central unit is configured with base zone ``N`` (``1``..``96`` on
+    physical hardware; OpenWebNet gateways accept ``1``..``99``), reporting at ``#0#N``.
+    ``#0`` and ``#0#4#II`` (99-zone central unit behind interface ``II``) return ``None``.
+    """
+    clean = (where or "").strip().removeprefix("4-")
+    base, routing, iface = clean.rpartition("#4#")
+    if routing and _is_f422_interface(iface):
+        clean = base
+    if not clean.startswith("#0#"):
+        return None
+    tail = clean[3:]
+    if _is_ascii_uint(tail) and 1 <= int(tail) <= 99:
+        return str(int(tail))
+    return None
+
+
+def is_four_zone_central_where(where: str) -> bool:
+    """Whether ``where`` addresses a 4-zone central unit (``#0#1``..``#0#99``, optionally ``#4#II``)."""
+    return four_zone_central_zone(where) is not None
+
+
+def four_zone_central_where(message: Any) -> str | None:
+    """``#0#N`` when a frame is addressed to a 4-zone central unit (``N`` 1-99), else ``None``.
+
+    OWNd reports ``*4*303*#0#1##`` as WHERE ``#0`` with the parameter ``1`` (and zone 1), so
+    the frame's own WHERE read ``#0``: the 99-zone central unit's. ``#0#N#4#II`` is the same
+    central unit behind an F422 interface (parameters ``N``, ``4``, ``II``). ``#0#4#II`` (two
+    parameters) is not one of them: it is the 99-zone central unit behind interface ``II``.
+    """
+    if str(getattr(message, "where", None)) != "#0":
+        return None
+    params = _where_params(message)
+    if len(params) == 3 and params[1] == "4" and _is_f422_interface(params[2]):
+        params = params[:1]
+    if len(params) == 1 and _is_ascii_uint(params[0]) and 1 <= int(params[0]) <= 99:
+        return f"#0#{int(params[0])}"
+    return None
+
+
+def central_unit_where(message: Any) -> str | None:
+    """``#0`` or ``#0#4#II``: the frame is the 99-zone central unit's own, else ``None``.
+
+    ``#0`` is "Central Unit" in the WHERE table (WHO 4 p. 6), and the only address its
+    status flags are published for (``*4*[20-21]*#0##``, ``*4*whatn*#0##``, p. 23-24).
+    ``#0#N`` (:func:`four_zone_central_where`) and the general ``0`` are other addresses.
+    """
+    if str(getattr(message, "where", None)) != "#0":
+        return None
+    params = _where_params(message)
+    if not params:
+        return "#0"
+    if len(params) == 2 and params[0] == "4" and _is_f422_interface(params[1]):
+        return f"#0#4#{params[1].zfill(2)}"
+    return None
 
 
 # Zone operation mode by central unit with its season (WHO 4 p. 65, 1.9.4; p. 9): 110 / 210
@@ -299,6 +535,33 @@ def is_central_thermo_where(message: Any) -> bool:
 _CENTRAL_ZONE_STATUS_WHATS = frozenset({"110", "210", "111", "211", "103", "203", "102", "202"})
 
 
+def is_actuator_status(message: Any) -> bool:
+    """Whether a WHO=4 frame is an actuator status: dimension 20 (WHO 4 p. 7, 1.5.8 p. 22, 1.9.1 p. 62).
+
+    ``*#4*WHERE*20##`` and ``*#4*WHERE*20*V##``, and the write form ``*#4*WHERE*#20*V##`` that an
+    F461 shows before the status when an actuator switches (``*#4*2#1*#20*1##``, then
+    ``*#4*2#1*20*1##``: f461_actuators_live_2026-10-25).
+    """
+    if getattr(message, "dimension", None) == 20:
+        return True
+    fields = str(message).removesuffix("##").split("*")
+    return len(fields) > 3 and fields[1] == "#4" and fields[3].removeprefix("#") == "20"
+
+
+def is_central_unit_actuator_status(message: Any) -> bool:
+    """An actuator status with WHERE ``#0`` or ``#0#N``: ``*#4*#0*20*V##``, ``*#4*#0#1*20*V##`` (#944, #994).
+
+    It names no zone and no actuator (OWNd falls back to actuator 1), and a central unit has
+    no actuator status of its own: the WHERE of dimension 20 is ``Z#N``, ``Z#0`` or ``0#0``
+    (WHO 4 p. 22, p. 62). So it discovers nothing and is delivered to no entity, like the pump
+    frames ``0#N``. The same frame from behind an interface (built, no capture holds one:
+    ``*#4*#0#4#01*20*1##``, ``*#4*#0#1#4#01*20*1##``) is the same thing.
+    """
+    return (
+        central_unit_where(message) is not None or four_zone_central_where(message) is not None
+    ) and is_actuator_status(message)
+
+
 def is_central_unit_report(message: Any) -> bool:
     """Whether a WHO=4 frame shows that the plant has a central unit.
 
@@ -306,17 +569,90 @@ def is_central_unit_report(message: Any) -> bool:
     when it is a dimension or a zone status with its season (WHO 4 p. 65). A generic one does
     not: an F455 puts ``*4*311*#2##`` on its event session after every status of a standalone
     thermostat, on a plant with or without a central unit (live, 2026-11-08).
+
+    An actuator status (dimension 20) does not count on any of these WHEREs. The WHERE of an
+    actuator status is ``Z#N``, ``Z#0`` or ``0#0`` (WHO 4 p. 22, p. 62), and the one seen with
+    WHERE ``#0`` is an answer to the all-zone request that 2.0.0 sent on an F461 and a
+    MyHomeServer1 (``*#4*#0*20##``; the published ``*#4*0#0*20##`` since). An F461 2.0.11 on a plant with no central
+    unit answered that request with ``*#4*#0*20*1##`` between the actuator frames of its
+    zones (#944), and with the central unit taken as present its standalone zones wrote
+    ``*#4*#6*#14*0225*3##``, which nothing answered.
     """
-    if not is_central_thermo_where(message):
+    if not is_central_thermo_where(message) or is_actuator_status(message):
         return False
     raw = str(getattr(message, "where", None) or "").strip().removeprefix("4-")
     if raw.removeprefix("#").split("#", 1)[0] == "0":
-        return True
+        return (
+            central_unit_where(message) is not None
+            or four_zone_central_where(message) is not None
+        )
+    params = _where_params(message)
+    if params and not (
+        (len(params) == 2 and params[0] == "4" and _is_f422_interface(params[1]))
+        or is_four_zone_controlled_zone_where(message)
+    ):
+        return False
     frame = str(message)
     if not frame.startswith("*4*"):
         return True
     what = frame.split("*")[2].split("#", 1)[0]
     return what in _CENTRAL_ZONE_STATUS_WHATS
+
+
+def central_unit_season(message: Any) -> str | None:
+    """The season a central unit's report carries, for the gateway's own bus; else ``None``.
+
+    Its own status (``*4*102*#0##`` heating, ``*4*202*#0##`` conditioning) and its status of one
+    of its zones (``*4*110*#3##``, ``*4*203*#4##``): a central unit runs its zones in its own
+    season, and its quarter-hour report names only zones, so a gateway that is not asked for
+    the central unit's status (an F455) learns the season from those. A frame from behind an
+    interface is another bus's central unit. A report with no season (``*4*21*#0##``,
+    ``*4*303*#0##``, a dimension) gives ``None``.
+    """
+    if not is_central_unit_report(message) or thermo_event_interface(message) is not None:
+        return None
+    season = getattr(message, "season", None)
+    return season if isinstance(season, str) else None
+
+
+def is_four_zone_controlled_zone_where(message: Any) -> bool:
+    """Whether ``message`` addresses a zone under a 4-zone central unit (``#Z#C`` / ``#Z#C#4#II``).
+
+    OWNd parses ``*4*110*#3#1##`` and ``*#4*#3#1*14*0180*1##`` as ``where="#3"``,
+    ``where_param=["1"]``. The 4695 implements ``#Z#C`` (SCS ``C2``) read-only and drops all
+    ``#Z#C`` / ``#Z`` writes (``plant-cu4695.tsv:27,35-36``), so a ``#Z#C`` report must never
+    flip ``has_central_unit`` or mark zone ``Z`` as controlled by a 99-zone central unit (#994).
+    """
+    return four_zone_controlled_zone(message) is not None
+
+
+def four_zone_controlled_zone(message: Any) -> str | None:
+    """Return canonical zone ``"1"``..``"99"`` for a ``#Z#C`` / ``#Z#C#4#II`` frame, else ``None``."""
+    raw = str(getattr(message, "where", None) or "").strip().removeprefix("4-")
+    if not raw.startswith("#"):
+        return None
+    zone_digits = raw[1:]
+    if not (_is_ascii_uint(zone_digits) and 1 <= int(zone_digits) <= 99):
+        return None
+    params = _where_params(message)
+    if len(params) == 3 and params[1] == "4" and _is_f422_interface(params[2]):
+        params = params[:1]
+    if len(params) == 1 and _is_ascii_uint(params[0]) and 1 <= int(params[0]) <= 99:
+        return str(int(zone_digits))
+    return None
+
+
+def central_report_zone(message: Any) -> str | None:
+    """The zone (``"1"``..``"99"``) a 99-zone central unit's own report is about, else ``None``.
+
+    For a frame :func:`is_central_unit_report` accepts whose WHERE is ``#Z``: ``*4*110*#3##``
+    and ``*#4*#3*14*0250*1##`` give ``"3"``. ``#0`` / ``#0#N`` (a central unit itself),
+    4-zone controlled-zone reports (``#Z#C``, e.g. ``*4*110*#3#1##``), and the generic
+    ``*4*310*#Z##`` / ``*4*311*#Z##`` give ``None``.
+    """
+    if not is_central_unit_report(message) or is_four_zone_controlled_zone_where(message):
+        return None
+    return canonical_thermo_zone(str(getattr(message, "where", None) or "").strip())
 
 
 def canonical_point_spelling(where: str) -> str:
@@ -325,7 +661,7 @@ def canonical_point_spelling(where: str) -> str:
     The pure rewrite behind :func:`canonical_point_where`, for stored spellings
     (registry ids, entry options) that nobody typed in myhome.yaml.
     """
-    if len(where) == 4 and where.isdigit() and where[:3] == "000" and where[3] != "0":
+    if len(where) == 4 and _is_ascii_uint(where) and where[:3] == "000" and where[3] != "0":
         return f"{where[1]}{where[3]}"
     return where
 
@@ -334,6 +670,193 @@ def canonical_point_address(address: str) -> str:
     """:func:`canonical_point_spelling` of the WHERE before an optional ``#4#II`` suffix."""
     base, sep, rest = address.partition("#")
     return f"{canonical_point_spelling(base)}{sep}{rest}"
+
+
+_LOCAL_BUS_SUFFIX_RE = re.compile(r"4#(0[1-9]|1[1-5])", re.ASCII)
+_GROUP_SCOPE_WHERE_RE = re.compile(
+    r"#[1-9]\d*(?:#(?:3|4#(?:0[1-9]|1[1-5])))?", re.ASCII
+)
+
+
+def encode_apl_where(
+    area: int, point: int, interface: str | int | None = None
+) -> str:
+    """Encode ``(area, point, interface)`` into canonical OpenWebNet ``WHERE``.
+
+    Uses 2-digit ``APL`` when ``0 <= A <= 9`` and ``1 <= PL <= 9`` (e.g. ``88``,
+    ``08``), and 4-digit zero-padded ``AAPL`` whenever ``A == 10`` or ``PL >= 10``
+    (e.g. ``0812``, ``0012``, ``1008``, ``1012``), optionally followed by
+    ``#4#01``..``#4#09`` or ``#4#11``..``#4#15`` for an F422 local-bus interface.
+    """
+    if isinstance(area, bool) or not isinstance(area, int) or not (0 <= area <= 10):
+        raise ValueError(f"Area A must be an integer in 0..10 (got {area!r})")
+    if isinstance(point, bool) or not isinstance(point, int) or not (1 <= point <= 15):
+        raise ValueError(f"Point PL must be an integer in 1..15 (got {point!r})")
+
+    if area == 10 or point >= 10:
+        base = f"{area:02d}{point:02d}"
+    else:
+        base = f"{area}{point}"
+
+    if interface is None or (isinstance(interface, str) and interface.strip() == ""):
+        return base
+    if isinstance(interface, bool):
+        raise ValueError(f"Invalid local-bus interface: {interface!r}")
+    if isinstance(interface, int):
+        iface_int = interface
+    elif isinstance(interface, str):
+        iface_str = interface.strip()
+        if not (_is_ascii_uint(iface_str) and 1 <= len(iface_str) <= 2):
+            raise ValueError(f"Invalid local-bus interface: {interface!r}")
+        iface_int = int(iface_str)
+    else:
+        raise ValueError(f"Invalid local-bus interface: {interface!r}")
+    if not (1 <= iface_int <= 9 or 11 <= iface_int <= 15):
+        raise ValueError(
+            f"Local-bus interface must be 01..09 or 11..15 (got {interface!r})"
+        )
+    return f"{base}#4#{iface_int:02d}"
+
+
+def parse_apl_where(where: str | None) -> tuple[int, int, str | None] | None:
+    """Parse a point-to-point ``WHO = 1`` / ``WHO = 2`` ``WHERE`` into ``(A, PL, interface)``."""
+    if not isinstance(where, str):
+        return None
+    raw = where.strip()
+    if not raw or not raw.isascii() or raw.startswith("#"):
+        return None
+    base, sep, suffix = raw.partition("#")
+    if sep:
+        if not _LOCAL_BUS_SUFFIX_RE.fullmatch(suffix):
+            return None
+        iface: str | None = suffix[2:]
+    else:
+        iface = None
+    if not is_apl_address(base):
+        return None
+    if len(base) == 2:
+        return (int(base[0]), int(base[1]), iface)
+    return (int(base[:2]), int(base[2:]), iface)
+
+
+def diagnose_apl_where(raw_where: str) -> tuple[str, dict[str, str]] | None:
+    """Return ``(error_key, placeholders)`` for an invalid ``WHO = 1`` / ``2`` point ``WHERE``.
+
+    Returns ``None`` for valid point-to-point strings (including ``0001..0009``, which
+    auto-normalize to ``01..09``) or empty strings.
+    """
+    raw = raw_where.strip()
+    if not raw or parse_apl_where(raw) is not None:
+        return None
+    if _GROUP_SCOPE_WHERE_RE.fullmatch(raw):
+        return ("invalid_where_group_or_scope", {})
+    if raw.startswith("#"):
+        return ("invalid_where_apl", {})
+
+    base, sep, suffix = raw.partition("#")
+    if not _is_ascii_uint(base):
+        return ("invalid_where_apl", {})
+    if sep:
+        if not _LOCAL_BUS_SUFFIX_RE.fullmatch(suffix):
+            return ("invalid_where_interface", {})
+        iface: str | None = suffix[2:]
+    else:
+        iface = None
+    if base in ("0", "00", "100") or len(base) == 1:
+        return ("invalid_where_group_or_scope", {})
+
+    if len(base) == 2:
+        return ("invalid_where_pl_zero", {"raw": raw})
+
+    if len(base) == 4:
+        a = int(base[:2])
+        pl = int(base[2:])
+        if 0 <= a <= 10 and pl == 0:
+            return ("invalid_where_pl_zero", {"raw": raw})
+        if 1 <= a <= 9 and 1 <= pl <= 9:
+            suggested = encode_apl_where(a, pl, iface)
+            return (
+                "invalid_where_use_2_digits",
+                {"raw": raw, "suggested": suggested, "area": str(a), "point": str(pl)},
+            )
+        return ("invalid_where_apl_range", {"raw": raw})
+
+    if len(base) == 3:
+        if base.startswith("10") and 1 <= int(base[2]) <= 9:
+            a, pl = 10, int(base[2])
+            suggested = encode_apl_where(a, pl, iface)
+            return (
+                "invalid_where_use_4_digits",
+                {"raw": raw, "suggested": suggested, "area": str(a), "point": str(pl)},
+            )
+        if 0 <= int(base[0]) <= 9 and 10 <= int(base[1:]) <= 15:
+            a, pl = int(base[0]), int(base[1:])
+            suggested = encode_apl_where(a, pl, iface)
+            return (
+                "invalid_where_use_4_digits",
+                {"raw": raw, "suggested": suggested, "area": str(a), "point": str(pl)},
+            )
+        return ("invalid_where_apl", {})
+
+    return ("invalid_where_apl", {})
+
+
+# A WHO 25 dry contact is ``3`` + its number, [1-201] for the automation interface and Z N
+# ([1-9][1-9]) for the alarm / IR one (WHO 25 PDF, WHERE table), so no published WHERE has a
+# ``0`` right after the ``3``. An F455 1.0.76 writes contacts 1 and 2 as ``301`` / ``302`` where
+# an F461 2.0.11 on the same bus writes ``31`` / ``32`` for the same frame (live 2026-11-18:
+# ``*25*31#0*301##`` and ``*25*31#0*31##`` 13 ms apart, both in answer to ``*#25*301##``). Only
+# that one padding zero in front of a single digit was captured, so only that is rewritten.
+_PADDED_CONTACT_RE = re.compile(r"^30([1-9])((?:#4#(?:0?[0-9]|1[0-5]))?)$")
+_SHORT_CONTACT_RE = re.compile(r"^3([1-9])((?:#4#(?:0?[0-9]|1[0-5]))?)$")
+
+
+def canonical_contact_where(where: str) -> str:
+    """``301`` -> ``31`` (WHO 25 dry contact, before an optional ``#4#II`` suffix); anything else as given.
+
+    The spelling of the WHO 25 PDF examples (``*25*31#1*31##`` is contact 1) and of every other
+    gateway with a capture (F454, MH200N, MH202: ``31``, ``33``). Both gateways put either
+    spelling of the status request on the bus, but an F461 2.0.11 answered the padded request
+    ``*#25*301##`` on its command session with NACK (four reads of four, the contact's answer
+    ``*25*31#0*31##`` was on the bus) and acknowledged ``*#25*31##``; requests are therefore
+    written with this spelling, and an entity keeps the unique id it was created with.
+    """
+    match = _PADDED_CONTACT_RE.match(str(where))
+    return f"3{match[1]}{match[2]}" if match else str(where)
+
+
+def padded_contact_where(where: str) -> str:
+    """``31`` -> ``301`` (F455 padded WHO 25 dry contact, before an optional ``#4#II`` suffix); anything else as given."""
+    match = _SHORT_CONTACT_RE.match(str(where))
+    return f"30{match[1]}{match[2]}" if match else str(where)
+
+
+def contact_where_aliases(where: str) -> list[str]:
+    """Return both short and F455-padded spellings for a WHO 25 contact, normalizing leading zeros and ``#4#I``."""
+    text = str(where)
+    base, sep, iface = text.partition("#4#")
+    clean_base = base.lstrip("0") or "0" if _is_ascii_uint(base) else base
+    valid_iface = bool(sep and _is_ascii_uint(iface) and 1 <= len(iface) <= 2 and int(iface) <= 15)
+    clean_iface = iface.zfill(2) if valid_iface else iface
+    normalized = f"{clean_base}#4#{clean_iface}" if sep else clean_base
+    candidates = [
+        text,
+        normalized,
+        canonical_contact_where(text),
+        padded_contact_where(text),
+        canonical_contact_where(normalized),
+        padded_contact_where(normalized),
+    ]
+    if valid_iface:
+        short_routed = f"{clean_base}#4#{int(iface)}"
+        candidates.extend(
+            (
+                short_routed,
+                canonical_contact_where(short_routed),
+                padded_contact_where(short_routed),
+            )
+        )
+    return list(dict.fromkeys(candidates))
 
 
 def normalize_expose_where(who: int, where: str | int | None) -> str:
@@ -347,10 +870,12 @@ def normalize_expose_where(who: int, where: str | int | None) -> str:
         if is_probe(bare):
             return bare
         return clean
-    if who in (1, 2):
+    if who in (1, 2, 14):
         # OWNd keeps `0004` as typed (OWNd#123); the gateways only accept and
         # report an area-0 point in two digits, so the MyHOME boundary spells
         # it `04` (#147). Silent: the yaml / UI value is validated elsewhere.
+        if not raw.isascii():
+            return raw
         return canonical_point_address(normalize_where(raw) or raw)
     return raw
 
@@ -421,7 +946,7 @@ def parse_thermo_actuator_where(
 def thermo_event_interface(message: Any) -> str | None:
     """Return normalized 2-digit F422 interface from a WHO=4 event, or ``None``."""
     raw_if = getattr(message, "interface", None)
-    if not raw_if:
+    if not isinstance(raw_if, (str, int)) or isinstance(raw_if, bool) or not str(raw_if):
         return None
     if_str = str(raw_if)
     return if_str.zfill(2) if if_str.isdigit() else if_str
@@ -446,11 +971,23 @@ def _decode_thermo_output_code(
     - Expanded discrete ``0..22``: ``MyHomeServer1`` (``028206``) and ``F461``
       (``020011``) across Dimension 19, Dimension 20, and ``#20``.
     - Proportional 0-10 V ``100..200`` (``0%..100%``, SCS ``0x80..0xE4`` as ``100 + pct``):
-      unsupported on ``MH200N`` (``010108``); supported on Dimension 20 only on ``F454``
-      (``020051``) and ``MH202`` (``010024``); supported on Dimension 19, Dimension 20,
-      and ``#20`` on ``MyHomeServer1`` (``028206``) and ``F461`` (``020011``). Note that
-      only ``100`` has a live plant capture; ``14..16``, ``101..200``, ``10..13``, and
-      ``17..22`` are firmware-verified without a live capture yet.
+      unsupported on ``MH200N`` (``010108``); emulator-verified on Dimension 20 only on
+      ``F459`` (``020105``) and ``MH202`` (``010024``); ``F454`` (``020051``) is
+      Dimension 20 only by firmware reading, not observed on the emulator (the emulated
+      ``020051`` image emitted nothing on inbound ``$17B7...``, including the
+      ``17B40230F9`` control frame); supported on Dimension 19, Dimension 20, and
+      ``#20`` on ``MyHomeServer1`` (``028206``) and ``F461`` (``020011``). Short 4-byte
+      inbound ``$17B7<DST>3<ACT><VAL>\r`` (2-digit UART PIC) /
+      ``$017B7<DST>3<ACT><VAL>\r`` (3-digit RPMsg PIC on ``F460``/``F461``) translates
+      to Dimension 20 (``*#4*Z#N*20*...##``) only (``$04B7...`` is an outbound prefix);
+      Dimension 19 ``100..200`` on ``MyHomeServer1`` ``028206`` / ``F461`` ``020011``
+      comes only from extended 8-byte zone valve replies
+      ``D2 <Z> 03 04 13 <HV> <CV> 00`` (``$18D2...`` / ``$018D2...``) in firmware
+      disassembly/emulation with no live capture yet. Live ``MyHomeServer1``
+      (``2.87.13``) captures cover ``#908`` (``100``) and ``#949`` / ``#952``
+      (``100, 120..200``, including the full 221-frame heating ramp on ``F430V10`` /
+      ``F459``); ``10..16`` and ``17..22`` are firmware-verified without a live capture
+      yet.
 
     Per-code semantics:
     - ``0, 3, 4``: valve/actuator OFF, Closed, Stop -> ``(False, None, None)``
@@ -495,9 +1032,9 @@ def _decode_thermo_output_code(
 
 
 def thermo_event_zone(message: Any) -> str | None:
-    """Return zone ``"1"``..``"99"`` of a WHO=4 event or command, or ``None`` for pumps/probes/central."""
+    """Return zone ``"1"``..``"99"`` of a WHO=4 event or command, or ``None`` for pumps/probes/split units/central."""
     raw_where = str(getattr(message, "where", None) or "")
-    if is_pump(message) or is_probe(raw_where):
+    if is_pump(message) or is_probe(raw_where) or is_split_unit(message):
         return None
     zone = getattr(message, "zone", None)
     if isinstance(zone, int) and not isinstance(zone, bool) and 1 <= zone <= 99:
@@ -505,6 +1042,49 @@ def thermo_event_zone(message: Any) -> str | None:
     bare = raw_where.removeprefix("4-").removeprefix("#")
     if bare.isdigit() and 1 <= int(bare) <= 99:
         return str(int(bare))
+    return None
+
+
+def thermo_zone_sensor_target(message: Any) -> tuple[str, str | None] | None:
+    """Return ``(zone, interface)`` for a point WHO=4 zone temperature/humidity report, else ``None``.
+
+    Accepts bare zone master-probe addresses ``Z`` (``1 <= Z <= 99``, 1-2 digits) and
+    F422-routed zone addresses ``Z#4#II`` (``00 <= II <= 15``) on non-write frames.
+    Rejects ``#DIM`` writes (``is_dimension_writing``), central-unit addresses
+    (``#0``, ``#0#C``, ``#Z``), all-probes-in-zone selectors (``001..099``),
+    actuator/split addresses (``Z#N``, ``Z#N#4#II``, ``3#Z#N``), pumps (``0#N``),
+    and standalone probes (``>= 100``).
+    """
+    raw_where = getattr(message, "where", None)
+    where_str = str(raw_where).strip().removeprefix("4-") if raw_where is not None else ""
+    if (
+        getattr(message, "is_dimension_writing", False) is True
+        or is_central_thermo_where(message)
+        or (
+            where_str != ""
+            and (len(where_str.split("#", 1)[0]) > 2 or is_actuator_where(where_str))
+        )
+        or (zone := thermo_event_zone(message)) is None
+    ):
+        return None
+    wp = where_param(message)
+    if not wp:
+        iface = thermo_event_interface(message)
+        return (
+            (zone, f"{int(iface):02d}")
+            if iface is not None and _is_ascii_uint(iface) and int(iface) <= 15
+            else (zone, None)
+            if iface is None
+            else None
+        )
+    if (
+        len(wp) == 2
+        and str(wp[0]) == "4"
+        and (iface := thermo_event_interface(message)) is not None
+        and _is_ascii_uint(iface)
+        and int(iface) <= 15
+    ):
+        return (zone, f"{int(iface):02d}")
     return None
 
 
@@ -516,9 +1096,32 @@ def thermo_event_actuator(message: Any) -> str:
     return "1"
 
 
-def _is_ascii_uint(value: str) -> bool:
-    """Return True when ``value`` consists solely of ASCII decimal digits."""
-    return bool(value) and value.isascii() and value.isdigit()
+def automation_dim10_info(message: Any) -> int | None:
+    """Return the 4th parameter (``SHUTTER_INFO``) of a WHO=2 Dimension 10 reply, or ``None``.
+
+    Format: ``*#2*WHERE*10*STATUS*LEVEL*PRIO*INFO##`` (e.g. ``0`` / ``15`` normal/unlocked,
+    ``12`` / ``13`` disabled/locked, ``14`` command not executed).
+    """
+    who = getattr(message, "who", None)
+    if isinstance(who, bool) or str(who) != "2":
+        return None
+    if (
+        getattr(message, "is_translation", False) is True
+        or isinstance(message, OWNCommand)
+        or getattr(message, "dimension", None) != 10
+    ):
+        return None
+    vals = getattr(message, "dimension_value", None)
+    if not isinstance(vals, (list, tuple)) or len(vals) < 4:
+        return None
+    raw_info = vals[3]
+    if raw_info is None or isinstance(raw_info, bool):
+        return None
+    info_str = str(raw_info).strip()
+    if not _is_ascii_uint(info_str):
+        return None
+    return int(info_str)
+
 
 
 def thermo_dim20_status(message: Any) -> tuple[bool, bool | None, int | None] | None:
@@ -580,6 +1183,92 @@ def thermo_dim20_is_active(message: Any) -> bool | None:
     """
     status = thermo_dim20_status(message)
     return status[0] if status is not None else None
+
+
+def thermo_output_level(code: int) -> int | None:
+    """Return ``0..100`` percentage for a WHO=4 proportional 0-10 V code ``100..200``, else ``None``."""
+    if isinstance(code, bool) or not isinstance(code, int):
+        return None
+    if 100 <= code <= 200:
+        return code - 100
+    return None
+
+
+def thermo_dim20_level(message: Any) -> int | None:
+    """Return ``0..100`` percentage for a WHO=4 Dimension 20 event or ``#20`` write carrying ``100..200``, else ``None``."""
+    who = getattr(message, "who", None)
+    if isinstance(who, (int, str)) and str(who) != "4":
+        return None
+    if getattr(message, "dimension", None) != 20:
+        return None
+    is_action = getattr(message, "message_type", None) == "hvac_action"
+    if not is_action and not isinstance(message, OWNCommand):
+        return None
+    vals = getattr(message, "dimension_value", None)
+    if not isinstance(vals, (list, tuple)) or not vals:
+        return None
+    first = str(vals[0])
+    if not _is_ascii_uint(first):
+        return None
+    return thermo_output_level(int(first))
+
+
+def thermo_dim20_actuator_target(
+    message: Any,
+) -> tuple[str, str, str | None] | None:
+    """Return ``(zone, actuator, interface)`` for a point WHO=4 Dimension 20 actuator frame.
+
+    Requires an explicit actuator token ``Z#N`` (``1 <= Z <= 99`` and ``1 <= N <= 9``,
+    with an optional 2-digit F422 interface ``#4#00``..``#4#15``; ``WHO_4.pdf`` 1.5.8
+    p. 22 defines ``Z#N``, ``Z#0``, ``0#0`` for Dimension 20, never bare ``Z``). Rejects
+    bare zone addresses (``Z``, ``Z#4#II``), central-unit addresses (``#0``, ``#0#C``,
+    ``#Z``), pumps (``0#N``), probes (``>= 100``), all-actuators selectors (``Z#0``),
+    out-of-range actuators (``> 9``), 3-token split addresses (``3#Z#N``), and invalid
+    interfaces.
+    """
+    if is_central_thermo_where(message):
+        return None
+    zone = thermo_event_zone(message)
+    if zone is None:
+        return None
+    raw_tail = [str(p) for p in where_param(message)]
+    if len(raw_tail) == 3 and raw_tail[1] == "4":
+        base_tail = [raw_tail[0]]
+        raw_if: str | None = raw_tail[2]
+    else:
+        base_tail = raw_tail
+        raw_if = None
+    if len(base_tail) != 1:
+        return None
+    iface = thermo_event_interface(message)
+    if raw_if is not None and iface is None:
+        iface = raw_if.zfill(2) if _is_ascii_uint(raw_if) else raw_if
+    if iface is not None and (not _is_ascii_uint(iface) or int(iface) > 15):
+        return None
+    if not _is_ascii_uint(base_tail[0]):
+        return None
+    act_int = int(base_tail[0])
+    if not (1 <= act_int <= 9):
+        return None
+    return (zone, str(act_int), f"{int(iface):02d}" if iface is not None else None)
+
+
+def thermo_dim20_whole_zone_target(message: Any) -> bool:
+    """Whether a WHO=4 Dimension 20 frame addresses a whole zone.
+
+    The all-actuators selector ``Z#0``, or the bare zone ``Z`` (what the whole-zone thermo switch
+    writes; OWNd reports actuator 1 for it), each also behind an F422 interface (``#4#00``..
+    ``#4#15``). Every other WHERE that :func:`thermo_dim20_actuator_target` rejects (a 3-token
+    address such as ``3#1#2``, an interface out of range) is neither a zone nor one actuator.
+    """
+    if is_central_thermo_where(message) or thermo_event_zone(message) is None:
+        return False
+    tail = [str(p) for p in where_param(message)]
+    if len(tail) >= 2 and tail[-2] == "4":
+        if not _is_ascii_uint(tail[-1]) or int(tail[-1]) > 15:
+            return False
+        tail = tail[:-2]
+    return tail in ([], ["0"])
 
 
 def thermo_dim19_status(

@@ -24,8 +24,10 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.myhome.button import async_setup_entry as button_setup_entry
 from custom_components.myhome.config_flow import ExposeSubentryFlowHandler, MyhomeFlowHandler
+from custom_components.myhome.config_flow_expose import CONF_EXPOSE_AREA, CONF_EXPOSE_POINT
 from custom_components.myhome.const import (
     CONF_BRIGHTNESS_STEP_PCT,
+    CONF_BUS_INTERFACE,
     CONF_COOLDOWN,
     CONF_DIMENSION,
     CONF_EXPOSE,
@@ -43,9 +45,12 @@ from custom_components.myhome.expose import ExposeManager
 from custom_components.myhome.legacy_yaml import load_legacy_myhome_yaml
 from custom_components.myhome.validate import expose_entry_schema, expose_schema, gateway_schema
 from custom_components.myhome.where_grammar import (
+    diagnose_apl_where,
+    encode_apl_where,
     expose_message_where,
     is_probe,
     normalize_expose_where,
+    parse_apl_where,
 )
 
 
@@ -256,6 +261,203 @@ def test_expose_schema_validation():
         }
     )
     assert len(gw_cfg[CONF_EXPOSE]) == 1
+
+
+def test_apl_where_encode_parse_and_diagnose():
+    """Verify A/PL encoding, round-trip parsing, diagnostics hints, and YAML error guidance (#969)."""
+    # Exact 6-row Discussion #969 table
+    assert encode_apl_where(8, 8) == "88"
+    assert encode_apl_where(0, 8) == "08"
+    assert encode_apl_where(8, 12) == "0812"
+    assert encode_apl_where(0, 12) == "0012"
+    assert encode_apl_where(10, 8) == "1008"
+    assert encode_apl_where(10, 12) == "1012"
+
+    # Optional F422 local-bus interface encoding (01..09 and 11..15)
+    assert encode_apl_where(8, 8, "01") == "88#4#01"
+    assert encode_apl_where(8, 12, 1) == "0812#4#01"
+    assert encode_apl_where(0, 8, "09") == "08#4#09"
+    assert encode_apl_where(0, 8, "11") == "08#4#11"
+    assert encode_apl_where(10, 12, "15") == "1012#4#15"
+    assert encode_apl_where(8, 8, "") == "88"
+    assert encode_apl_where(8, 8, None) == "88"
+
+    # Exhaustive 165-pair (A=0..10, PL=1..15) round-trip across all valid F422 interfaces
+    all_valid_ifaces = (
+        None,
+        *(f"{i:02d}" for i in range(1, 10)),
+        *(f"{i:02d}" for i in range(11, 16)),
+    )
+    for iface in all_valid_ifaces:
+        for a in range(11):
+            for pl in range(1, 16):
+                encoded = encode_apl_where(a, pl, iface)
+                assert parse_apl_where(encoded) == (a, pl, iface)
+                assert diagnose_apl_where(encoded) is None
+                validated = expose_entry_schema(
+                    {"who": 1, "where": encoded, "entity_id": "light.t"}
+                )
+                assert validated["where"] == encoded
+
+    # Invalid bounds in encode_apl_where (including non-spec 00 and 10)
+    for bad_a in (-1, 11, True, "8"):
+        with pytest.raises(ValueError):
+            encode_apl_where(bad_a, 1)  # type: ignore[arg-type]
+    for bad_pl in (0, 16, False, "8"):
+        with pytest.raises(ValueError):
+            encode_apl_where(1, bad_pl)  # type: ignore[arg-type]
+    for bad_if in (-1, 0, 10, 16, "00", "10", "16", "abc", True, 1.5):
+        with pytest.raises(ValueError):
+            encode_apl_where(8, 8, bad_if)  # type: ignore[arg-type]
+
+    # parse_apl_where handles 0008 normalization target and rejects non-APL inputs
+    assert parse_apl_where("0008") == (0, 8, None)
+    assert parse_apl_where("0008#4#01") == (0, 8, "01")
+    for non_apl in (
+        "0808",
+        "812",
+        "#1",
+        "0",
+        "88#4#00",
+        "88#4#10",
+        "88#4#1",
+        "",
+        None,
+    ):
+        assert parse_apl_where(non_apl) is None
+
+    # diagnose_apl_where covers every mistake class
+    assert diagnose_apl_where("") is None
+    assert diagnose_apl_where("88") is None
+    assert diagnose_apl_where("0008") is None
+    assert diagnose_apl_where("0808") == (
+        "invalid_where_use_2_digits",
+        {"raw": "0808", "suggested": "88", "area": "8", "point": "8"},
+    )
+    assert diagnose_apl_where("0808#4#01") == (
+        "invalid_where_use_2_digits",
+        {"raw": "0808#4#01", "suggested": "88#4#01", "area": "8", "point": "8"},
+    )
+    assert diagnose_apl_where("812") == (
+        "invalid_where_use_4_digits",
+        {"raw": "812", "suggested": "0812", "area": "8", "point": "12"},
+    )
+    assert diagnose_apl_where("012") == (
+        "invalid_where_use_4_digits",
+        {"raw": "012", "suggested": "0012", "area": "0", "point": "12"},
+    )
+    assert diagnose_apl_where("108") == (
+        "invalid_where_use_4_digits",
+        {"raw": "108", "suggested": "1008", "area": "10", "point": "8"},
+    )
+    assert diagnose_apl_where("812#4#02") == (
+        "invalid_where_use_4_digits",
+        {"raw": "812#4#02", "suggested": "0812#4#02", "area": "8", "point": "12"},
+    )
+    for pl0 in ("80", "0800", "1000"):
+        assert diagnose_apl_where(pl0) == ("invalid_where_pl_zero", {"raw": pl0})
+    for out_of_range in ("1105", "0816"):
+        assert diagnose_apl_where(out_of_range) == (
+            "invalid_where_apl_range",
+            {"raw": out_of_range},
+        )
+    for scope in ("0", "00", "5", "100", "#1", "#1#4#01", "#1#3", "0#4#01", "5#4#01"):
+        assert diagnose_apl_where(scope) == ("invalid_where_group_or_scope", {})
+    for bad_if_str in (
+        "88#4#1",
+        "88#4#00",
+        "88#4#10",
+        "0808#4#00",
+        "812#4#10",
+        "88#4#16",
+        "88#3",
+        "88#4#0١",
+    ):
+        assert diagnose_apl_where(bad_if_str) == ("invalid_where_interface", {})
+    for bad_apl in (
+        "abc",
+        "foo#bar",
+        "foo#4#01",
+        "*1*1*88##",
+        "*1*1*88#4#01##",
+        "#bad",
+        "#1#bad",
+        "12345",
+        "899",
+        "00016",
+        "000088",
+        "001012",
+        "²",
+        "1²",
+        "1²#4#01",
+        "¹²",
+        "001²",
+        "１２",
+        "０８１２",
+    ):
+        assert parse_apl_where(bad_apl) is None
+        assert diagnose_apl_where(bad_apl) == ("invalid_where_apl", {})
+
+    # Unicode superscript & non-ASCII digits in is_probe / normalize_expose_where never crash or match
+    from custom_components.myhome.where_grammar import (
+        canonical_point_spelling,
+        is_probe,
+        normalize_expose_where,
+    )
+
+    for non_ascii_probe in ("1²", "¹²³", "１０５", "10٥", "5٠"):
+        assert is_probe(non_ascii_probe) is False
+    assert canonical_point_spelling("000²") == "000²"
+    assert canonical_point_spelling("000４") == "000４"
+    assert normalize_expose_where(1, "001²") == "001²"
+    assert normalize_expose_where(4, "1²") == "1²"
+
+    # YAML expose_entry_schema rejects 0016..0099, 001012, 000088 (no silent mutation) & non-ASCII
+    for corrupt_candidate in (
+        "0016",
+        "0088",
+        "0099",
+        "0088#4#01",
+        "00016",
+        "000088",
+        "001012",
+        "1²",
+        "¹²",
+        "001²",
+        "１２",
+        "０８１２",
+        "88#4#0١",
+    ):
+        with pytest.raises(vol.Invalid, match="point-to-point actuator address"):
+            expose_entry_schema(
+                {"who": 1, "where": corrupt_candidate, "entity_id": "light.t"}
+            )
+    for bad_w4 in ("1²", "5٠", "１０５"):
+        with pytest.raises(vol.Invalid, match="probe address"):
+            expose_entry_schema({"who": 4, "where": bad_w4, "entity_id": "sensor.t"})
+    for bad_w18 in ("51٠", "51#٠", "５１", "1²"):
+        with pytest.raises(vol.Invalid, match="WHO=18 expose 'where'"):
+            expose_entry_schema(
+                {"who": 18, "where": bad_w18, "dimension": 113, "entity_id": "sensor.p"}
+            )
+    for bad_dim_ascii in ("²", "０", "１１３"):
+        with pytest.raises(vol.Invalid, match="expected an integer"):
+            expose_entry_schema(
+                {"who": 18, "where": "51", "dimension": bad_dim_ascii, "entity_id": "sensor.p"}
+            )
+
+    # YAML expose_entry_schema includes targeted hints on point-to-point errors
+    with pytest.raises(vol.Invalid, match="use '88'"):
+        expose_entry_schema({"who": 1, "where": "0808", "entity_id": "light.t"})
+    with pytest.raises(vol.Invalid, match="use '0812'"):
+        expose_entry_schema({"who": 1, "where": "812", "entity_id": "light.t"})
+    with pytest.raises(vol.Invalid, match="PL=0 is invalid"):
+        expose_entry_schema({"who": 1, "where": "80", "entity_id": "light.t"})
+    for bad_yaml_iface in ("88#4#1", "88#4#00", "88#4#10", "0808#4#00", "812#4#10"):
+        with pytest.raises(vol.Invalid, match="#4#01\\.\\.#4#09 or #4#11\\.\\.#4#15"):
+            expose_entry_schema(
+                {"who": 1, "where": bad_yaml_iface, "entity_id": "light.t"}
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -994,35 +1196,48 @@ async def test_expose_subentry_flow_and_diagnostics(hass: HomeAssistant):
     form_res = await flow.async_step_user(None)
     assert form_res["type"] == FlowResultType.FORM
     assert form_res["step_id"] == "user"
+    assert form_res["last_step"] is False
+    assert [getattr(k, "schema", k) for k in form_res["data_schema"].schema] == [CONF_WHO]
 
-    # Validation error branches in _validate_and_clean
+    # Validation error branches in Step 1 & Step 2
     bad_who = await flow.async_step_user({CONF_WHO: "not_an_int"})
     assert bad_who["errors"][CONF_WHO] == "invalid_who"
 
-    bad_dim_str = await flow.async_step_user(
-        {CONF_WHO: "13", CONF_DIMENSION: "abc"}
-    )
+    step_who13 = await flow.async_step_user({CONF_WHO: "13"})
+    assert step_who13["type"] == FlowResultType.FORM
+    assert step_who13["step_id"] == "who_13"
+
+    bad_dim_str = await flow.async_step_who_13({CONF_DIMENSION: "abc"})
     assert bad_dim_str["errors"][CONF_DIMENSION] == "invalid_dimension"
 
-    bad_who13_dim = await flow.async_step_user(
-        {CONF_WHO: "13", CONF_DIMENSION: "99"}
-    )
+    bad_who13_dim = await flow.async_step_who_13({CONF_DIMENSION: "99"})
     assert bad_who13_dim["errors"][CONF_DIMENSION] == "invalid_dimension"
 
-    missing_fields = await flow.async_step_user({CONF_WHO: "4", CONF_DIMENSION: "14"})
+    step_who4 = await flow.async_step_user({CONF_WHO: "4"})
+    assert step_who4["type"] == FlowResultType.FORM
+    assert step_who4["step_id"] == "who_4"
+
+    missing_fields = await flow.async_step_who_4({CONF_DIMENSION: "14"})
     assert missing_fields["errors"]["where"] == "where_required"
     assert missing_fields["errors"]["entity_id"] == "entity_required"
     assert missing_fields["errors"][CONF_DIMENSION] == "invalid_dimension"
 
-    bad_who18_dim = await flow.async_step_user(
-        {CONF_WHO: "18", "where": "51", "entity_id": "sensor.p", CONF_DIMENSION: "99"}
+    step_who18 = await flow.async_step_user({CONF_WHO: "18"})
+    assert step_who18["type"] == FlowResultType.FORM
+    assert step_who18["step_id"] == "who_18"
+
+    bad_who18_dim = await flow.async_step_who_18(
+        {"where": "51", "entity_id": "sensor.p", CONF_DIMENSION: "99"}
     )
     assert bad_who18_dim["errors"][CONF_DIMENSION] == "invalid_dimension"
 
-    # Schema-level invalid_expose error (e.g. WHO=1 with non-point-to-point where="0")
-    bad_schema = await flow.async_step_user(
+    # Field-level WHERE scope error (e.g. WHO=1 with general where="0")
+    step_who1 = await flow.async_step_user({CONF_WHO: "1"})
+    assert step_who1["type"] == FlowResultType.FORM
+    assert step_who1["step_id"] == "who_1"
+
+    bad_scope = await flow.async_step_who_1(
         {
-            CONF_WHO: "1",
             "where": "0",
             "entity_id": "light.test",
             "attribute": "brightness",
@@ -1030,12 +1245,11 @@ async def test_expose_subentry_flow_and_diagnostics(hass: HomeAssistant):
             "value_template": "{{ value }}",
         }
     )
-    assert bad_schema["errors"]["base"] == "invalid_expose"
+    assert bad_scope["errors"]["where"] == "invalid_where_group_or_scope"
 
-    # Submitting duplicate binding (WHO=1 WHERE=99 already in entry) returns invalid_expose error
-    dup_res = await flow.async_step_user(
+    # Submitting duplicate binding (WHO=1 WHERE=99 already in entry) returns already_configured
+    dup_res = await flow.async_step_who_1(
         {
-            CONF_WHO: "1",
             "where": "99",
             "entity_id": "switch.other",
             CONF_COOLDOWN: 0,
@@ -1045,27 +1259,25 @@ async def test_expose_subentry_flow_and_diagnostics(hass: HomeAssistant):
         }
     )
     assert dup_res["type"] == FlowResultType.FORM
-    assert dup_res["errors"]["base"] == "invalid_expose"
+    assert dup_res["errors"]["base"] == "already_configured"
 
     # Submitting valid WHO=13 clock binding succeeds
     with patch.object(hass.config_entries, "async_schedule_reload"):
-        clock_res = await flow.async_step_user(
+        clock_step = await flow.async_step_user({CONF_WHO: "13"})
+        assert clock_step["step_id"] == "who_13"
+        clock_res = await flow.async_step_who_13(
             {
-                CONF_WHO: "13",
                 CONF_DIMENSION: "22",
-                CONF_COOLDOWN: 1,
                 CONF_PERIODIC_SEND: 3600,
                 CONF_RESPOND_TO_READ: True,
-                CONF_BRIGHTNESS_STEP_PCT: 10,
             }
         )
     assert clock_res["type"] == FlowResultType.CREATE_ENTRY
     assert "Bus Clock Sync" in clock_res["title"]
 
     # On F461 (#0-only bt_termo), 3-digit probe WHERE="100" is rejected in the UI flow
-    bad_probe_res = await flow.async_step_user(
+    bad_probe_res = await flow.async_step_who_4(
         {
-            CONF_WHO: "4",
             "where": "100",
             CONF_DIMENSION: 0,
             "entity_id": "sensor.outdoor_temp",
@@ -1073,7 +1285,6 @@ async def test_expose_subentry_flow_and_diagnostics(hass: HomeAssistant):
             CONF_MIN_DELTA: 0.1,
             CONF_PERIODIC_SEND: 900,
             CONF_RESPOND_TO_READ: True,
-            CONF_BRIGHTNESS_STEP_PCT: 10,
         }
     )
     assert bad_probe_res["type"] == FlowResultType.FORM
@@ -1081,9 +1292,8 @@ async def test_expose_subentry_flow_and_diagnostics(hass: HomeAssistant):
 
     # Submitting valid WHO=4 master-probe binding (WHERE="50") succeeds on F461
     with patch.object(hass.config_entries, "async_schedule_reload") as mock_reload:
-        ok_res = await flow.async_step_user(
+        ok_res = await flow.async_step_who_4(
             {
-                CONF_WHO: "4",
                 "where": "50",
                 CONF_DIMENSION: 0,
                 "entity_id": "sensor.outdoor_temp",
@@ -1091,7 +1301,6 @@ async def test_expose_subentry_flow_and_diagnostics(hass: HomeAssistant):
                 CONF_MIN_DELTA: 0.1,
                 CONF_PERIODIC_SEND: 900,
                 CONF_RESPOND_TO_READ: True,
-                CONF_BRIGHTNESS_STEP_PCT: 10,
             }
         )
         assert mock_reload.called
@@ -1100,25 +1309,38 @@ async def test_expose_subentry_flow_and_diagnostics(hass: HomeAssistant):
     assert ok_res["data"]["where"] == "50"
     assert ok_res["data"]["dimension"] == 0
 
-    # Reconfigure step on existing subentry "sub_1"
+    # Reconfigure step on existing subentry "sub_1" (WHO=1, WHERE="98")
     flow.context = {"source": "reconfigure", "subentry_id": "sub_1"}
     reconf_form = await flow.async_step_reconfigure(None)
     assert reconf_form["type"] == FlowResultType.FORM
     assert reconf_form["step_id"] == "reconfigure"
+    assert reconf_form["last_step"] is False
+
+    reconf_step2 = await flow.async_step_reconfigure({CONF_WHO: "1"})
+    assert reconf_step2["type"] == FlowResultType.FORM
+    assert reconf_step2["step_id"] == "who_1"
+    assert reconf_step2["last_step"] is True
+    step2_keys = {getattr(k, "schema", k): k for k in reconf_step2["data_schema"].schema}
+    assert step2_keys[CONF_EXPOSE_AREA].description == {"suggested_value": "9"}
+    assert step2_keys[CONF_EXPOSE_POINT].description == {"suggested_value": "8"}
+    assert step2_keys[CONF_BUS_INTERFACE].description == {"suggested_value": "none"}
+    assert step2_keys["where"].description == {"suggested_value": ""}
 
     # Reconfigure with validation error re-renders form with user_input merged
-    reconf_err = await flow.async_step_reconfigure(
-        {CONF_WHO: "1", "where": "", "entity_id": "light.kitchen"}
+    reconf_err = await flow.async_step_who_1(
+        {"where": "", "entity_id": "light.kitchen"}
     )
     assert reconf_err["type"] == FlowResultType.FORM
-    assert reconf_err["errors"]["where"] == "where_required"
+    assert reconf_err["errors"][CONF_EXPOSE_AREA] == "area_required"
+    assert reconf_err["errors"][CONF_EXPOSE_POINT] == "point_required"
 
     # Reconfigure keeping same (who=1, where="98") is allowed via exclude_subentry_id
     with patch.object(hass.config_entries, "async_schedule_reload"):
-        reconf_ok = await flow.async_step_reconfigure(
+        reconf_ok = await flow.async_step_who_1(
             {
-                CONF_WHO: "1",
-                "where": "98",
+                CONF_EXPOSE_AREA: "9",
+                CONF_EXPOSE_POINT: "8",
+                CONF_BUS_INTERFACE: "none",
                 "entity_id": "light.kitchen",
                 CONF_COOLDOWN: 2,
                 CONF_PERIODIC_SEND: 0,
@@ -1128,6 +1350,10 @@ async def test_expose_subentry_flow_and_diagnostics(hass: HomeAssistant):
         )
     assert reconf_ok["type"] == FlowResultType.ABORT
     assert reconf_ok["reason"] == "reconfigure_successful"
+    assert entry.subentries["sub_1"].data["where"] == "98"
+    assert CONF_EXPOSE_AREA not in entry.subentries["sub_1"].data
+    assert CONF_EXPOSE_POINT not in entry.subentries["sub_1"].data
+    assert CONF_BUS_INTERFACE not in entry.subentries["sub_1"].data
 
     # Diagnostics includes expose telemetry
     diag = await async_get_config_entry_diagnostics(hass, entry)
@@ -2615,13 +2841,13 @@ async def test_expose_infeasible_inputs_hardening(hass: HomeAssistant):
     assert (await flow.async_step_user({CONF_WHO: True}))["errors"][CONF_WHO] == "invalid_who"
     assert (await flow.async_step_user({CONF_WHO: 99}))["errors"][CONF_WHO] == "invalid_who"
     assert (
-        await flow.async_step_user({CONF_WHO: 18, "where": "51", "entity_id": "sensor.p", CONF_DIMENSION: True})
+        await flow.async_step_who_18({"where": "51", "entity_id": "sensor.p", CONF_DIMENSION: True})
     )["errors"][CONF_DIMENSION] == "invalid_dimension"
     assert (
-        await flow.async_step_user({CONF_WHO: 1, "where": "99", "entity_id": "light.a", CONF_COOLDOWN: True})
+        await flow.async_step_who_1({"where": "99", "entity_id": "light.a", CONF_COOLDOWN: True})
     )["errors"]["base"] == "invalid_expose"
     assert (
-        await flow.async_step_user({CONF_WHO: 1, "where": "99", "entity_id": "light.a", CONF_COOLDOWN: "bad", CONF_BRIGHTNESS_STEP_PCT: "bad"})
+        await flow.async_step_who_1({"where": "99", "entity_id": "light.a", CONF_COOLDOWN: "bad", CONF_BRIGHTNESS_STEP_PCT: "bad"})
     )["errors"]["base"] == "invalid_expose"
 
     # WHO=1 brightness: boolean or non-finite falls back safely without raising
@@ -3179,36 +3405,35 @@ async def test_expose_subentry_flow_hides_and_rejects_unsupported_gateway_whos(
 
     form = await flow.async_step_user(None)
     who_selector = next(iter(form["data_schema"].schema.values()))
-    who_values = [opt["value"] for opt in who_selector.config["options"]]
-    assert who_values == ["1", "2", "13"]
+    assert who_selector.config["translation_key"] == "expose_who"
+    assert who_selector.config["options"] == ["1", "2", "13"]
 
-    # Submitting WHO=4 or WHO=18 on H4890 returns who_injection_unsupported
+    # Submitting WHO=4 or WHO=18 on H4890 returns who_injection_unsupported on Step 1 and Step 2
     for blocked_who in ("4", "18"):
-        res = await flow.async_step_user(
-            {
-                CONF_WHO: blocked_who,
-                "where": "51",
-                CONF_DIMENSION: 113 if blocked_who == "18" else 0,
-                "entity_id": "sensor.temp",
-            }
-        )
+        res = await flow.async_step_user({CONF_WHO: blocked_who})
         assert res["type"] == FlowResultType.FORM
         assert res["errors"][CONF_WHO] == "who_injection_unsupported"
+    step2_w4 = await flow.async_step_who_4({"where": "51", "entity_id": "sensor.temp"})
+    assert step2_w4["errors"]["base"] == "who_injection_unsupported"
+    step2_w18 = await flow.async_step_who_18(
+        {"where": "51", CONF_DIMENSION: 113, "entity_id": "sensor.temp"}
+    )
+    assert step2_w18["errors"]["base"] == "who_injection_unsupported"
 
-    # Reconfiguring a pre-existing WHO=4 subentry keeps "4" in options so the form renders cleanly
+    # Reconfiguring a pre-existing WHO=4 subentry keeps "4" in Step 1 options so the form renders cleanly
     flow.context = {"source": "reconfigure", "subentry_id": "sub_legacy_w4"}
     reconf_form = await flow.async_step_reconfigure(None)
     reconf_selector = next(iter(reconf_form["data_schema"].schema.values()))
-    reconf_values = [opt["value"] for opt in reconf_selector.config["options"]]
-    assert reconf_values == ["1", "2", "4", "13"]
+    assert reconf_selector.config["translation_key"] == "expose_who"
+    assert reconf_selector.config["options"] == ["1", "2", "4", "13"]
 
     # When runtime_data is unloaded/None, _gateway_profile_for_who returns None and all 5 WHOs appear
     entry.runtime_data = None
     flow.context = {"source": "user"}
     unloaded_form = await flow.async_step_user(None)
     unloaded_selector = next(iter(unloaded_form["data_schema"].schema.values()))
-    unloaded_values = [opt["value"] for opt in unloaded_selector.config["options"]]
-    assert unloaded_values == ["1", "2", "4", "13", "18"]
+    assert unloaded_selector.config["translation_key"] == "expose_who"
+    assert unloaded_selector.config["options"] == ["1", "2", "4", "13", "18"]
 
 
 @pytest.mark.asyncio
@@ -3250,17 +3475,23 @@ async def test_climate_discovery_defers_exposed_who4_master_probe_until_real_zon
     # 1. Pure virtual master probes on unused zones 50 and 6#4#01 must NOT create phantom climate entities
     await _emit("*#4*50*0*0215##")
     await _emit("*#4*6#4#01*0*0195##")
-    # Unexposed zone 8 still discovers normally from a Dimension 0 temperature report
+    # Unexposed zone 8 confirms cleanly once a second distinct zone frame arrives (#966)
     await _emit("*#4*8*0*0204##")
+    assert added_climates == []
+    await _emit("*4*1*8##")
     assert [ent._where for ent in added_climates] == ["8"]
 
-    # 2. Zone 5 receives exposed master-probe temperature first, then a real zone setpoint report ->
-    #    Zone 5 discovers normally AND retains the deferred 21.5°C probe temperature!
+    # 2. Zone 5 receives exposed master-probe temperature first, then two real zone frames ->
+    #    1st real frame is held as a candidate (#966); 2nd confirms Zone 5 AND replays both
+    #    the deferred 21.5°C probe temperature and the held 21.0°C setpoint!
     await _emit("*#4*5*0*0215##")
     assert [ent._where for ent in added_climates] == ["8"]
     await _emit("*#4*5*14*0210*1##")
+    assert [ent._where for ent in added_climates] == ["8"]
+    await _emit("*4*1*5##")
     assert [ent._where for ent in added_climates] == ["8", "5"]
     assert added_climates[1].current_temperature == 21.5
+    assert added_climates[1].target_temperature == 21.0
 
 
 @pytest.mark.asyncio
@@ -3708,8 +3939,11 @@ async def test_expose_subentry_flow_custom_actions_and_action_only_bindings(
     flow.handler = (entry.entry_id, SUBENTRY_TYPE_EXPOSE)
     flow.context = {"source": "user"}
 
-    # 1. Default WHO=1 user form exposes all 4 ActionSelector fields
-    form_res = await flow.async_step_user(None)
+    # 1. Step 1 -> WHO=1 Step 2 form exposes all 4 ActionSelector fields
+    step1_res = await flow.async_step_user(None)
+    assert step1_res["step_id"] == "user"
+    form_res = await flow.async_step_user({CONF_WHO: "1"})
+    assert form_res["step_id"] == "who_1"
     schema_map = {
         getattr(k, "schema", k): v for k, v in form_res["data_schema"].schema.items()
     }
@@ -3723,9 +3957,8 @@ async def test_expose_subentry_flow_custom_actions_and_action_only_bindings(
 
     # 2. Empty [] / None action values from HA frontend are omitted cleanly
     with patch.object(hass.config_entries, "async_schedule_reload"):
-        empty_act_res = await flow.async_step_user(
+        empty_act_res = await flow.async_step_who_1(
             {
-                CONF_WHO: "1",
                 "where": "84",
                 "entity_id": "light.govee",
                 CONF_TURN_ON_ACTION: [],
@@ -3738,12 +3971,11 @@ async def test_expose_subentry_flow_custom_actions_and_action_only_bindings(
     assert CONF_TURN_ON_ACTION not in empty_act_res["data"]
 
     # 3. WHO=1 without entity_id AND without actions requires entity_id; invalid non-dict/list action fails
-    no_target = await flow.async_step_user({CONF_WHO: "1", "where": "85"})
+    no_target = await flow.async_step_who_1({"where": "85"})
     assert no_target["errors"]["entity_id"] == "entity_required"
 
-    bad_act = await flow.async_step_user(
+    bad_act = await flow.async_step_who_1(
         {
-            CONF_WHO: "1",
             "where": "85",
             CONF_TURN_ON_ACTION: 12345,
         }
@@ -3752,9 +3984,8 @@ async def test_expose_subentry_flow_custom_actions_and_action_only_bindings(
 
     # 4. WHO=4/13/18 reject non-empty custom actions with an explicit form error (instead of silently
     #    dropping them), omit action fields on the re-rendered WHO=4 form, and accept empty [] payloads
-    who4_no_entity = await flow.async_step_user(
+    who4_no_entity = await flow.async_step_who_4(
         {
-            CONF_WHO: "4",
             "where": "51",
             CONF_TURN_ON_ACTION: [{"action": "light.turn_on"}],
         }
@@ -3774,9 +4005,8 @@ async def test_expose_subentry_flow_custom_actions_and_action_only_bindings(
     ):
         assert action_key not in who4_form_keys
 
-    who4_with_action = await flow.async_step_user(
+    who4_with_action = await flow.async_step_who_4(
         {
-            CONF_WHO: "4",
             "where": "51",
             "entity_id": "sensor.temp",
             CONF_TURN_ON_ACTION: [{"action": "light.turn_on"}],
@@ -3786,9 +4016,8 @@ async def test_expose_subentry_flow_custom_actions_and_action_only_bindings(
     assert who4_with_action["errors"] == {"base": "action_not_supported_for_who"}
 
     with patch.object(hass.config_entries, "async_schedule_reload"):
-        who4_empty_action = await flow.async_step_user(
+        who4_empty_action = await flow.async_step_who_4(
             {
-                CONF_WHO: "4",
                 "where": "51",
                 "entity_id": "sensor.temp",
                 CONF_TURN_ON_ACTION: [],
@@ -3798,9 +4027,8 @@ async def test_expose_subentry_flow_custom_actions_and_action_only_bindings(
     assert CONF_TURN_ON_ACTION not in who4_empty_action["data"]
 
     # WHO=2 accepts turn_on_action / turn_off_action, but rejects step_up_action / step_down_action
-    who2_step_only = await flow.async_step_user(
+    who2_step_only = await flow.async_step_who_2(
         {
-            CONF_WHO: "2",
             "where": "32",
             CONF_STEP_UP_ACTION: [{"action": "cover.open_cover"}],
         }
@@ -3810,9 +4038,8 @@ async def test_expose_subentry_flow_custom_actions_and_action_only_bindings(
         "entity_id": "entity_required",
     }
 
-    who2_entity_with_step = await flow.async_step_user(
+    who2_entity_with_step = await flow.async_step_who_2(
         {
-            CONF_WHO: "2",
             "where": "32",
             "entity_id": "cover.blind",
             CONF_STEP_UP_ACTION: [{"action": "cover.open_cover"}],
@@ -3822,9 +4049,8 @@ async def test_expose_subentry_flow_custom_actions_and_action_only_bindings(
     assert who2_entity_with_step["errors"] == {"base": "action_not_supported_for_who"}
 
     with patch.object(hass.config_entries, "async_schedule_reload"):
-        who2_turn_on = await flow.async_step_user(
+        who2_turn_on = await flow.async_step_who_2(
             {
-                CONF_WHO: "2",
                 "where": "32",
                 CONF_TURN_ON_ACTION: [{"action": "cover.open_cover"}],
                 CONF_STEP_UP_ACTION: [],
@@ -3837,9 +4063,8 @@ async def test_expose_subentry_flow_custom_actions_and_action_only_bindings(
     # 5. Custom actions with delay / time values remain JSON-serializable for Store (prepare_save_json)
     #    in both list and single-dict forms, and compile cleanly when loaded by ExposeManager
     with patch.object(hass.config_entries, "async_schedule_reload"):
-        delay_res = await flow.async_step_user(
+        delay_res = await flow.async_step_who_1(
             {
-                CONF_WHO: "1",
                 "where": "86",
                 CONF_TURN_ON_ACTION: [
                     {"delay": {"hours": 0, "minutes": 0, "seconds": 0, "milliseconds": 5}},
@@ -3903,7 +4128,10 @@ async def test_expose_subentry_flow_custom_actions_and_action_only_bindings(
 
     # 6. Reconfigure forms: WHO=2 shows only turn_on/turn_off; WHO=4 shows none; WHO=1 pre-populates & clears
     flow.context = {"source": "reconfigure", "subentry_id": "sub_who2"}
-    reconf_who2 = await flow.async_step_reconfigure(None)
+    reconf_w2_s1 = await flow.async_step_reconfigure(None)
+    assert reconf_w2_s1["step_id"] == "reconfigure"
+    reconf_who2 = await flow.async_step_reconfigure({CONF_WHO: "2"})
+    assert reconf_who2["step_id"] == "who_2"
     who2_keys = {getattr(k, "schema", k) for k in reconf_who2["data_schema"].schema}
     assert CONF_TURN_ON_ACTION in who2_keys
     assert CONF_TURN_OFF_ACTION in who2_keys
@@ -3911,17 +4139,21 @@ async def test_expose_subentry_flow_custom_actions_and_action_only_bindings(
     assert CONF_STEP_DOWN_ACTION not in who2_keys
 
     flow.context = {"source": "reconfigure", "subentry_id": "sub_who4"}
-    reconf_who4 = await flow.async_step_reconfigure(None)
+    reconf_who4 = await flow.async_step_reconfigure({CONF_WHO: "4"})
+    assert reconf_who4["step_id"] == "who_4"
     who4_reconf_keys = {
         getattr(k, "schema", k) for k in reconf_who4["data_schema"].schema
     }
     assert CONF_TURN_ON_ACTION not in who4_reconf_keys
 
     flow.context = {"source": "reconfigure", "subentry_id": "sub_act_1"}
-    reconf_form = await flow.async_step_reconfigure(None)
+    reconf_form = await flow.async_step_reconfigure({CONF_WHO: "1"})
+    assert reconf_form["step_id"] == "who_1"
     reconf_keys = {
         getattr(k, "schema", k): k for k in reconf_form["data_schema"].schema
     }
+    assert reconf_keys[CONF_EXPOSE_AREA].description == {"suggested_value": "8"}
+    assert reconf_keys[CONF_EXPOSE_POINT].description == {"suggested_value": "3"}
     assert reconf_keys[CONF_TURN_ON_ACTION].description == {
         "suggested_value": [
             {"action": "light.turn_on", "target": {"entity_id": "light.govee"}}
@@ -3929,10 +4161,10 @@ async def test_expose_subentry_flow_custom_actions_and_action_only_bindings(
     }
 
     with patch.object(hass.config_entries, "async_schedule_reload"):
-        reconf_clear = await flow.async_step_reconfigure(
+        reconf_clear = await flow.async_step_who_1(
             {
-                CONF_WHO: "1",
-                "where": "83",
+                CONF_EXPOSE_AREA: "8",
+                CONF_EXPOSE_POINT: "3",
                 "entity_id": "light.govee",
                 CONF_TURN_ON_ACTION: [],
                 CONF_STEP_UP_ACTION: [
@@ -3954,10 +4186,15 @@ async def test_expose_subentry_flow_custom_actions_and_action_only_bindings(
             (entry.entry_id, SUBENTRY_TYPE_EXPOSE),
             context={"source": "user"},
         )
-        e2e_done = await hass.config_entries.subentries.async_configure(
+        assert e2e_init["step_id"] == "user"
+        e2e_step2 = await hass.config_entries.subentries.async_configure(
             e2e_init["flow_id"],
+            {CONF_WHO: "1"},
+        )
+        assert e2e_step2["step_id"] == "who_1"
+        e2e_done = await hass.config_entries.subentries.async_configure(
+            e2e_step2["flow_id"],
             {
-                CONF_WHO: "1",
                 "where": "89",
                 CONF_TURN_ON_ACTION: [
                     {"delay": {"hours": 0, "minutes": 0, "seconds": 1, "milliseconds": 0}},
@@ -3968,4 +4205,582 @@ async def test_expose_subentry_flow_custom_actions_and_action_only_bindings(
         )
     assert e2e_done["type"] == FlowResultType.CREATE_ENTRY
     ha_json.prepare_save_json(hass.config_entries._data_to_save(), encoder=None)
+
+
+@pytest.mark.asyncio
+async def test_expose_subentry_two_step_hybrid_wizard_and_reconfigure(
+    hass: HomeAssistant,
+) -> None:
+    """Verify Option C 2-step WHO hybrid A/PL wizard, field hints, decluttering, and reconfigure (#969)."""
+    gw = _make_gateway()
+    entry = _make_entry(hass, gateway=gw)
+    mgr = ExposeManager(hass, entry, gateway=gw)
+    entry.runtime_data.expose_manager = mgr
+
+    async def _start_who(who: str) -> Any:
+        init_res = await hass.config_entries.subentries.async_init(
+            (entry.entry_id, SUBENTRY_TYPE_EXPOSE),
+            context={"source": "user"},
+        )
+        assert init_res["step_id"] == "user"
+        assert init_res["last_step"] is False
+        return await hass.config_entries.subentries.async_configure(
+            init_res["flow_id"],
+            {CONF_WHO: who},
+        )
+
+    # 1. WHO=1 via A / PL / interface pickers -> canonical WHERE strings, zero form-only keys stored
+    with patch.object(hass.config_entries, "async_schedule_reload"):
+        s_w1_if = await _start_who("1")
+        assert s_w1_if["step_id"] == "who_1"
+        assert s_w1_if["last_step"] is True
+        res_0812_if = await hass.config_entries.subentries.async_configure(
+            s_w1_if["flow_id"],
+            {
+                CONF_EXPOSE_AREA: "8",
+                CONF_EXPOSE_POINT: "12",
+                CONF_BUS_INTERFACE: "01",
+                "entity_id": "light.hue_living",
+            },
+        )
+        assert res_0812_if["type"] == FlowResultType.CREATE_ENTRY
+        assert res_0812_if["data"][CONF_WHO] == 1
+        assert res_0812_if["data"]["where"] == "0812#4#01"
+        for form_only_key in (CONF_EXPOSE_AREA, CONF_EXPOSE_POINT, CONF_BUS_INTERFACE):
+            assert form_only_key not in res_0812_if["data"]
+
+        s_w1_a0 = await _start_who("1")
+        res_08 = await hass.config_entries.subentries.async_configure(
+            s_w1_a0["flow_id"],
+            {
+                CONF_EXPOSE_AREA: "0",
+                CONF_EXPOSE_POINT: "8",
+                CONF_BUS_INTERFACE: "none",
+                "entity_id": "light.hue_hall",
+            },
+        )
+        assert res_08["type"] == FlowResultType.CREATE_ENTRY
+        assert res_08["data"]["where"] == "08"
+
+        # WHO=2 via A / PL without interface (defaults to Main bus)
+        s_w2 = await _start_who("2")
+        assert s_w2["step_id"] == "who_2"
+        res_1008 = await hass.config_entries.subentries.async_configure(
+            s_w2["flow_id"],
+            {
+                CONF_EXPOSE_AREA: "10",
+                CONF_EXPOSE_POINT: "8",
+                "entity_id": "cover.terrace",
+            },
+        )
+        assert res_1008["type"] == FlowResultType.CREATE_ENTRY
+        assert res_1008["data"][CONF_WHO] == 2
+        assert res_1008["data"]["where"] == "1008"
+
+        # 2. WHO=1 via raw WHERE override (including 0008->08 normalization and precedence over A/PL)
+        s_raw = await _start_who("1")
+        res_raw_88 = await hass.config_entries.subentries.async_configure(
+            s_raw["flow_id"],
+            {"where": "88", "entity_id": "light.raw"},
+        )
+        assert res_raw_88["type"] == FlowResultType.CREATE_ENTRY
+        assert res_raw_88["data"]["where"] == "88"
+
+        s_raw_norm = await _start_who("1")
+        res_raw_0008 = await hass.config_entries.subentries.async_configure(
+            s_raw_norm["flow_id"],
+            {"where": "0008#4#02", "entity_id": "light.norm"},
+        )
+        assert res_raw_0008["type"] == FlowResultType.CREATE_ENTRY
+        assert res_raw_0008["data"]["where"] == "08#4#02"
+
+        s_prec = await _start_who("1")
+        res_prec = await hass.config_entries.subentries.async_configure(
+            s_prec["flow_id"],
+            {
+                CONF_EXPOSE_AREA: "1",
+                CONF_EXPOSE_POINT: "1",
+                CONF_BUS_INTERFACE: "05",
+                "where": "77",
+                "entity_id": "light.override",
+            },
+        )
+        assert res_prec["type"] == FlowResultType.CREATE_ENTRY
+        assert res_prec["data"]["where"] == "77"
+
+    # 3. Targeted field-level validation errors & description_placeholders
+    s_err = await _start_who("1")
+    placeholder_cases = [
+        (
+            "0808",
+            "invalid_where_use_2_digits",
+            {"raw": "0808", "suggested": "88", "area": "8", "point": "8"},
+        ),
+        (
+            "812",
+            "invalid_where_use_4_digits",
+            {"raw": "812", "suggested": "0812", "area": "8", "point": "12"},
+        ),
+        (
+            "012",
+            "invalid_where_use_4_digits",
+            {"raw": "012", "suggested": "0012", "area": "0", "point": "12"},
+        ),
+        (
+            "108",
+            "invalid_where_use_4_digits",
+            {"raw": "108", "suggested": "1008", "area": "10", "point": "8"},
+        ),
+        ("80", "invalid_where_pl_zero", {"raw": "80"}),
+        ("1105", "invalid_where_apl_range", {"raw": "1105"}),
+    ]
+    for bad_where, exp_err, exp_placeholders in placeholder_cases:
+        err_res = await hass.config_entries.subentries.async_configure(
+            s_err["flow_id"],
+            {"where": bad_where, "entity_id": "light.bad"},
+        )
+        assert err_res["type"] == FlowResultType.FORM
+        assert err_res["errors"]["where"] == exp_err
+        assert err_res["description_placeholders"] == exp_placeholders
+
+    for bad_where, exp_err in (
+        ("0", "invalid_where_group_or_scope"),
+        ("88#4#16", "invalid_where_interface"),
+        ("88#4#00", "invalid_where_interface"),
+        ("0808#4#00", "invalid_where_interface"),
+        ("812#4#10", "invalid_where_interface"),
+        ("*1*1*88##", "invalid_where_apl"),
+        ("*1*1*88#4#01##", "invalid_where_apl"),
+        ("foo#bar", "invalid_where_apl"),
+    ):
+        err_res = await hass.config_entries.subentries.async_configure(
+            s_err["flow_id"],
+            {"where": bad_where, "entity_id": "light.bad"},
+        )
+        assert err_res["type"] == FlowResultType.FORM
+        assert err_res["errors"]["where"] == exp_err
+
+    missing_apl = await hass.config_entries.subentries.async_configure(
+        s_err["flow_id"],
+        {"entity_id": "light.missing_apl"},
+    )
+    assert missing_apl["errors"] == {
+        CONF_EXPOSE_AREA: "area_required",
+        CONF_EXPOSE_POINT: "point_required",
+    }
+
+    dup_err = await hass.config_entries.subentries.async_configure(
+        s_err["flow_id"],
+        {CONF_EXPOSE_AREA: "8", CONF_EXPOSE_POINT: "8", "entity_id": "light.dup"},
+    )
+    assert dup_err["type"] == FlowResultType.FORM
+    assert dup_err["errors"] == {"base": "already_configured"}
+
+    # WHO=4 & WHO=18 targeted WHERE validation
+    s_w4_err = await _start_who("4")
+    w4_bad = await hass.config_entries.subentries.async_configure(
+        s_w4_err["flow_id"],
+        {"where": "050", "entity_id": "sensor.t"},
+    )
+    assert w4_bad["errors"]["where"] == "invalid_where_who4"
+
+    s_w18_err = await _start_who("18")
+    w18_bad = await hass.config_entries.subentries.async_configure(
+        s_w18_err["flow_id"],
+        {"where": "12", CONF_DIMENSION: "113", "entity_id": "sensor.p"},
+    )
+    assert w18_bad["errors"]["where"] == "invalid_where_who18"
+
+    # 4. Exact per-WHO schema decluttering across all 5 steps
+    expected_step_keys = {
+        "1": {
+            "area",
+            "point",
+            "interface",
+            "where",
+            "entity_id",
+            "attribute",
+            "cooldown",
+            "periodic_send",
+            "respond_to_read",
+            "bidirectional",
+            "brightness_step_pct",
+            "on_states",
+            "value_template",
+            "turn_on_action",
+            "turn_off_action",
+            "step_up_action",
+            "step_down_action",
+        },
+        "2": {
+            "area",
+            "point",
+            "interface",
+            "where",
+            "entity_id",
+            "attribute",
+            "cooldown",
+            "periodic_send",
+            "respond_to_read",
+            "bidirectional",
+            "value_template",
+            "turn_on_action",
+            "turn_off_action",
+        },
+        "4": {
+            "where",
+            "entity_id",
+            "attribute",
+            "cooldown",
+            "min_delta",
+            "periodic_send",
+            "respond_to_read",
+            "value_template",
+        },
+        "13": {
+            "dimension",
+            "periodic_send",
+            "respond_to_read",
+        },
+        "18": {
+            "where",
+            "dimension",
+            "entity_id",
+            "attribute",
+            "cooldown",
+            "min_delta",
+            "periodic_send",
+            "respond_to_read",
+            "value_template",
+        },
+    }
+    for who_code, exp_keys in expected_step_keys.items():
+        step_res = await _start_who(who_code)
+        actual_keys = {getattr(k, "schema", k) for k in step_res["data_schema"].schema}
+        assert actual_keys == exp_keys, f"WHO={who_code} schema mismatch"
+
+    # 5. Reconfigure pre-fill (0812#4#01 -> area=8, point=12, interface=01, where="")
+    #    & clearing interface via frontend 'x' (omitting CONF_BUS_INTERFACE) -> 0813 on main bus
+    sub_0812_id = next(
+        sid
+        for sid, sub in entry.subentries.items()
+        if sub.data.get("where") == "0812#4#01"
+    )
+    reconf_init = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, SUBENTRY_TYPE_EXPOSE),
+        context={"source": "reconfigure", "subentry_id": sub_0812_id},
+    )
+    assert reconf_init["step_id"] == "reconfigure"
+    reconf_s2 = await hass.config_entries.subentries.async_configure(
+        reconf_init["flow_id"],
+        {CONF_WHO: "1"},
+    )
+    assert reconf_s2["step_id"] == "who_1"
+    s2_map = {getattr(k, "schema", k): k for k in reconf_s2["data_schema"].schema}
+    assert s2_map[CONF_EXPOSE_AREA].description == {"suggested_value": "8"}
+    assert s2_map[CONF_EXPOSE_POINT].description == {"suggested_value": "12"}
+    assert s2_map[CONF_BUS_INTERFACE].description == {"suggested_value": "01"}
+    iface_selector = reconf_s2["data_schema"].schema[s2_map[CONF_BUS_INTERFACE]]
+    assert iface_selector.config["options"] == [
+        "none",
+        *(f"{i:02d}" for i in range(1, 10)),
+        *(f"{i:02d}" for i in range(11, 16)),
+    ]
+    assert s2_map["where"].description == {"suggested_value": ""}
+
+    with patch.object(hass.config_entries, "async_schedule_reload"):
+        reconf_done = await hass.config_entries.subentries.async_configure(
+            reconf_s2["flow_id"],
+            {
+                CONF_EXPOSE_AREA: "8",
+                CONF_EXPOSE_POINT: "13",
+                "where": "",
+                "entity_id": "light.hue_living",
+            },
+        )
+    assert reconf_done["type"] == FlowResultType.ABORT
+    assert reconf_done["reason"] == "reconfigure_successful"
+    assert entry.subentries[sub_0812_id].data["where"] == "0813"
+    assert CONF_EXPOSE_AREA not in entry.subentries[sub_0812_id].data
+
+    # 6. Cross-WHO switching on reconfigure:
+    #    (a) WHO=1 ("88") -> WHO=2 preserves A=8, PL=8
+    sub_88_id = next(
+        sid for sid, sub in entry.subentries.items() if sub.data.get("where") == "88"
+    )
+    sw12_init = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, SUBENTRY_TYPE_EXPOSE),
+        context={"source": "reconfigure", "subentry_id": sub_88_id},
+    )
+    sw12_s2 = await hass.config_entries.subentries.async_configure(
+        sw12_init["flow_id"],
+        {CONF_WHO: "2"},
+    )
+    assert sw12_s2["step_id"] == "who_2"
+    sw12_map = {getattr(k, "schema", k): k for k in sw12_s2["data_schema"].schema}
+    assert sw12_map[CONF_EXPOSE_AREA].description == {"suggested_value": "8"}
+    assert sw12_map[CONF_EXPOSE_POINT].description == {"suggested_value": "8"}
+    assert sw12_map[CONF_BUS_INTERFACE].description == {"suggested_value": "none"}
+
+    with patch.object(hass.config_entries, "async_schedule_reload"):
+        sw12_done = await hass.config_entries.subentries.async_configure(
+            sw12_s2["flow_id"],
+            {
+                CONF_EXPOSE_AREA: "8",
+                CONF_EXPOSE_POINT: "8",
+                "entity_id": "cover.from_who1",
+            },
+        )
+    assert sw12_done["type"] == FlowResultType.ABORT
+    assert entry.subentries[sub_88_id].data[CONF_WHO] == 2
+    assert entry.subentries[sub_88_id].data["where"] == "88"
+
+    #    (b) WHO=4 ("50") -> WHO=1 clears incompatible WHERE and keeps entity_id
+    with patch.object(hass.config_entries, "async_schedule_reload"):
+        s_w4_create = await _start_who("4")
+        w4_created = await hass.config_entries.subentries.async_configure(
+            s_w4_create["flow_id"],
+            {"where": "50", "entity_id": "sensor.temp_switch"},
+        )
+        assert w4_created["type"] == FlowResultType.CREATE_ENTRY
+    sub_w4_id = next(
+        sid
+        for sid, sub in entry.subentries.items()
+        if sub.data.get(CONF_WHO) == 4 and sub.data.get("where") == "50"
+    )
+    sw41_init = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, SUBENTRY_TYPE_EXPOSE),
+        context={"source": "reconfigure", "subentry_id": sub_w4_id},
+    )
+    sw41_s2 = await hass.config_entries.subentries.async_configure(
+        sw41_init["flow_id"],
+        {CONF_WHO: "1"},
+    )
+    assert sw41_s2["step_id"] == "who_1"
+    sw41_map = {getattr(k, "schema", k): k for k in sw41_s2["data_schema"].schema}
+    assert sw41_map[CONF_EXPOSE_AREA].description is None
+    assert sw41_map[CONF_EXPOSE_POINT].description is None
+    assert sw41_map["where"].description == {"suggested_value": ""}
+    assert sw41_map["entity_id"].description == {"suggested_value": "sensor.temp_switch"}
+
+    with patch.object(hass.config_entries, "async_schedule_reload"):
+        sw41_done = await hass.config_entries.subentries.async_configure(
+            sw41_s2["flow_id"],
+            {
+                CONF_EXPOSE_AREA: "6",
+                CONF_EXPOSE_POINT: "4",
+                "entity_id": "sensor.temp_switch",
+            },
+        )
+    assert sw41_done["type"] == FlowResultType.ABORT
+    assert entry.subentries[sub_w4_id].data[CONF_WHO] == 1
+    assert entry.subentries[sub_w4_id].data["where"] == "64"
+    assert CONF_DIMENSION not in entry.subentries[sub_w4_id].data
+
+
+def test_expose_subentry_flow_edge_cases_and_full_validation_coverage() -> None:
+    """Cover direct validation, defaults, and subentry duplicate-check fallbacks."""
+    handler = ExposeSubentryFlowHandler()
+    subentries: dict[str, Any] = {}
+    mock_entry = SimpleNamespace(
+        entry_id="entry_edge",
+        runtime_data=None,
+        subentries=subentries,
+    )
+
+    with patch.object(handler, "_get_entry", return_value=mock_entry):
+        # _initial_step2_defaults edge branches
+        assert handler._initial_step2_defaults(1, {CONF_WHO: "bad"}) == {}
+        assert handler._initial_step2_defaults(1, {CONF_WHO: 1, "where": "#legacy"}) == {
+            "where": "#legacy"
+        }
+        assert handler._initial_step2_defaults(1, {CONF_WHO: 1, "where": "88#4#00"}) == {
+            "where": "88#4#00"
+        }
+        assert handler._initial_step2_defaults(1, {CONF_WHO: 1, "where": "88#4#10"}) == {
+            "where": "88#4#10"
+        }
+        assert handler._initial_step2_defaults(
+            18, {CONF_WHO: 18, "where": "51", CONF_DIMENSION: 54}
+        ) == {"where": "51", CONF_DIMENSION: 54}
+        assert handler._initial_step2_defaults(13, {CONF_WHO: 13, CONF_DIMENSION: 0}) == {
+            CONF_DIMENSION: 0
+        }
+
+        # _validate_and_clean WHO, dimension, WHERE, and A/PL selector error branches
+        assert handler._validate_and_clean(99, {}) == (
+            {},
+            {"base": "invalid_expose"},
+            {},
+            "",
+        )
+
+        _, err_w1_dim, _, _ = handler._validate_and_clean(
+            1,
+            {
+                CONF_EXPOSE_AREA: "8",
+                CONF_EXPOSE_POINT: "8",
+                "entity_id": "light.x",
+                CONF_DIMENSION: "51",
+            },
+        )
+        assert err_w1_dim[CONF_DIMENSION] == "invalid_dimension"
+
+        for bad_w4_dim in (True, "²", "０", "1"):
+            _, err_w4_dim, _, _ = handler._validate_and_clean(
+                4,
+                {"where": "50", "entity_id": "sensor.t", CONF_DIMENSION: bad_w4_dim},
+            )
+            assert err_w4_dim[CONF_DIMENSION] == "invalid_dimension"
+
+        cleaned_w13, err_w13, _, _ = handler._validate_and_clean(13, {})
+        assert err_w13 == {}
+        assert cleaned_w13[CONF_DIMENSION] == 22
+
+        for bad_w13_dim in (True, "²", "２２", "99"):
+            _, err_w13_bad, _, _ = handler._validate_and_clean(
+                13, {CONF_DIMENSION: bad_w13_dim}
+            )
+            assert err_w13_bad[CONF_DIMENSION] == "invalid_dimension"
+
+        cleaned_w18, err_w18, _, _ = handler._validate_and_clean(
+            18,
+            {"where": "51", "entity_id": "sensor.p"},
+        )
+        assert err_w18 == {}
+        assert cleaned_w18[CONF_DIMENSION] == 113
+
+        for bad_w18_dim in (True, "²", "１１３", "99"):
+            _, err_w18_bad, _, _ = handler._validate_and_clean(
+                18,
+                {"where": "51", "entity_id": "sensor.p", CONF_DIMENSION: bad_w18_dim},
+            )
+            assert err_w18_bad[CONF_DIMENSION] == "invalid_dimension"
+
+        for bad_w1_unicode in ("1²", "¹²", "001²", "１２", "88#4#0١"):
+            _, err_w1_u, _, _ = handler._validate_and_clean(
+                1, {"where": bad_w1_unicode, "entity_id": "light.x"}
+            )
+            assert "where" in err_w1_u
+        for bad_w4_unicode in ("1²", "5٠", "１０５"):
+            _, err_w4_u, _, _ = handler._validate_and_clean(
+                4, {"where": bad_w4_unicode, "entity_id": "sensor.t"}
+            )
+            assert err_w4_u["where"] == "invalid_where_who4"
+        for bad_w18_unicode in ("51٠", "51#٠", "５１", "1²"):
+            _, err_w18_u, _, _ = handler._validate_and_clean(
+                18, {"where": bad_w18_unicode, "entity_id": "sensor.p"}
+            )
+            assert err_w18_u["where"] == "invalid_where_who18"
+
+        _, err_w18_req, _, _ = handler._validate_and_clean(
+            18,
+            {"where": "", "entity_id": "sensor.p"},
+        )
+        assert err_w18_req["where"] == "where_required"
+
+        _, err_range, _, _ = handler._validate_and_clean(
+            1,
+            {
+                CONF_EXPOSE_AREA: "11",
+                CONF_EXPOSE_POINT: "16",
+                CONF_BUS_INTERFACE: True,
+                "entity_id": "light.x",
+            },
+        )
+        assert err_range == {
+            CONF_EXPOSE_AREA: "invalid_area",
+            CONF_EXPOSE_POINT: "invalid_point",
+            CONF_BUS_INTERFACE: "invalid_bus_interface",
+        }
+
+        _, err_nonint, _, _ = handler._validate_and_clean(
+            1,
+            {
+                CONF_EXPOSE_AREA: "abc",
+                CONF_EXPOSE_POINT: "xyz",
+                CONF_BUS_INTERFACE: "zz",
+                "entity_id": "light.x",
+            },
+        )
+        assert err_nonint == {
+            CONF_EXPOSE_AREA: "invalid_area",
+            CONF_EXPOSE_POINT: "invalid_point",
+            CONF_BUS_INTERFACE: "invalid_bus_interface",
+        }
+
+        for bad_iface_val in ("00", "10", "16", "０１"):
+            _, err_iface_oob, _, _ = handler._validate_and_clean(
+                1,
+                {
+                    CONF_EXPOSE_AREA: "8",
+                    CONF_EXPOSE_POINT: "8",
+                    CONF_BUS_INTERFACE: bad_iface_val,
+                    "entity_id": "light.x",
+                },
+            )
+            assert err_iface_oob == {CONF_BUS_INTERFACE: "invalid_bus_interface"}
+
+        # Optional attribute, value_template, and comma-separated on_states formatting
+        cleaned_opt, err_opt, _, _ = handler._validate_and_clean(
+            1,
+            {
+                CONF_EXPOSE_AREA: "7",
+                CONF_EXPOSE_POINT: "3",
+                "entity_id": "light.x",
+                "attribute": "brightness",
+                "value_template": "{{ value }}",
+                "on_states": "on, home",
+            },
+        )
+        assert err_opt == {}
+        assert cleaned_opt["attribute"] == "brightness"
+        assert cleaned_opt["value_template"] == "{{ value }}"
+        assert cleaned_opt["on_states"] == ["on", "home"]
+
+        # Stored-subentry duplicate checks with malformed/defaulted subentry records
+        subentries.update(
+            {
+                "s_none": SimpleNamespace(
+                    subentry_type=SUBENTRY_TYPE_EXPOSE, data={CONF_WHO: None}
+                ),
+                "s_bad_who": SimpleNamespace(
+                    subentry_type=SUBENTRY_TYPE_EXPOSE, data={CONF_WHO: "bad"}
+                ),
+                "s_bad_dim": SimpleNamespace(
+                    subentry_type=SUBENTRY_TYPE_EXPOSE,
+                    data={CONF_WHO: 18, "where": "51", CONF_DIMENSION: "bad"},
+                ),
+                "s_other_dim": SimpleNamespace(
+                    subentry_type=SUBENTRY_TYPE_EXPOSE,
+                    data={CONF_WHO: 18, "where": "51", CONF_DIMENSION: 54},
+                ),
+                "s_who13_default": SimpleNamespace(
+                    subentry_type=SUBENTRY_TYPE_EXPOSE, data={CONF_WHO: 13}
+                ),
+                "s_who18_default": SimpleNamespace(
+                    subentry_type=SUBENTRY_TYPE_EXPOSE,
+                    data={CONF_WHO: 18, "where": "51"},
+                ),
+                "s_who18_empty_dim": SimpleNamespace(
+                    subentry_type=SUBENTRY_TYPE_EXPOSE,
+                    data={CONF_WHO: 18, "where": "52", CONF_DIMENSION: ""},
+                ),
+            }
+        )
+
+        _, err_dup13, _, _ = handler._validate_and_clean(13, {})
+        assert err_dup13 == {"base": "already_configured"}
+
+        _, err_dup18, _, _ = handler._validate_and_clean(
+            18,
+            {"where": "51", "entity_id": "sensor.p"},
+        )
+        assert err_dup18 == {"base": "already_configured"}
+
+        _, err_dup18_empty, _, _ = handler._validate_and_clean(
+            18,
+            {"where": "52", "entity_id": "sensor.p"},
+        )
+        assert err_dup18_empty == {"base": "already_configured"}
 

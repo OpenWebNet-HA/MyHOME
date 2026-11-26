@@ -4,12 +4,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any, cast
 
+import OWNd.connection.command_session as _ownd_command_session
 import OWNd.message as _ownd_message
 import voluptuous as vol
-from homeassistant.const import CONF_MAC
+from homeassistant.const import CONF_MAC, CONF_NAME
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
@@ -52,6 +53,24 @@ _WHO4_DIMENSION_22 = re.compile(r"^\*#4\*[^*]*\*#?22(\*[^#]*)?##$")
 _is_dimension_22_crash_form: Callable[[object], bool] | None = getattr(
     _ownd_message, "is_who4_dimension_22_crash_form", None
 )
+_ownd_destructive_frame_reason: Callable[[str], str | None] | None = getattr(
+    _ownd_command_session, "destructive_frame_reason", None
+)
+
+
+_ASCII_OWN_FRAME_RE = re.compile(r"\*[0-9*#]*##", re.ASCII)
+_MH202_ALL_PROBES_CRASH_RE = re.compile(
+    r"\*#4\*0(?:0[1-9]|[1-9][0-9])(?:[#*][0-9*#]*)?##", re.ASCII
+)
+_WHO4_DIMENSIONLESS_STATUS_RE = re.compile(r"\*#4\*([^*]+)##", re.ASCII)
+_WHO13_NETWORK_DIM_CRASH_RE = re.compile(
+    r"\*#13\*[^*]*\*#?1[012](?:\*[^#]*)?##", re.ASCII
+)
+
+
+def is_valid_ascii_own_frame(frame: str) -> bool:
+    """True when ``frame`` consists solely of ASCII ``0-9``, ``*`` and ``#``, bounded by ``*`` and ``##``."""
+    return _ASCII_OWN_FRAME_RE.fullmatch(frame) is not None
 
 
 def services_has_dimension_22_detector() -> bool:
@@ -67,15 +86,143 @@ def is_refused_dimension_22(frame: str) -> bool:
     return _WHO4_DIMENSION_22.match(frame) is not None
 
 
+def destructive_frame_reason(frame: str) -> str | None:
+    """Return a refusal reason if OWNd classifies ``frame`` as destructive (WHO 18 dim 52, bare WHO 22, etc.)."""
+    if _ownd_destructive_frame_reason is None:
+        return None
+    reason = _ownd_destructive_frame_reason(str(frame).strip())
+    return str(reason) if reason is not None else None
+
+
+_PLACEHOLDER_MODEL_KEYS: frozenset[str] = frozenset(
+    {
+        "",
+        "NONE",
+        "NULL",
+        "GENERIC",
+        "GENERICGATEWAY",
+        "GATEWAY",
+        "UNKNOWN",
+        "UNKNOWNMODEL",
+        "CUSTOMIPGATEWAY",
+    }
+)
+
+
+def _norm_model_token(value: object) -> str:
+    """Return the upper-case ASCII alphanumeric representation of ``value``."""
+    return "".join(ch for ch in str(value).upper() if ch.isalnum())
+
+
+def _handler_model_key(handler: Any) -> str:
+    """Return the normalized gateway model key (``MH202``, ``H4684``, ``MH200``, ...) or ``""``."""
+    from .gateway import _ZONE_REQUEST_MODELS, _resolve_model_key
+
+    direct = getattr(handler, "_model_key", None)
+    if isinstance(direct, str) and direct in _ZONE_REQUEST_MODELS:
+        return direct
+
+    raw_gw = getattr(handler, "gateway", None)
+    profile = getattr(raw_gw, "profile", None)
+    profile_model = getattr(profile, "model_name", None)
+    if not isinstance(profile_model, str):
+        profile = None
+        profile_model = None
+    cfg_entry = getattr(handler, "config_entry", None)
+    cfg_data = getattr(cfg_entry, "data", None)
+    cfg_name = cfg_data.get(CONF_NAME) if isinstance(cfg_data, Mapping) else None
+    cfg_title = getattr(cfg_entry, "title", None)
+    fallback_key = ""
+    for candidate, cand_profile in (
+        (direct, None),
+        (profile_model, profile),
+        (getattr(raw_gw, "model_name", None), None),
+        (getattr(raw_gw, "model", None), None),
+        (getattr(handler, "model", None), None),
+        (cfg_name, None),
+        (cfg_title, None),
+    ):
+        if isinstance(candidate, str) and candidate.strip():
+            resolved = _resolve_model_key(candidate, profile=cand_profile)
+            if _norm_model_token(resolved) in _PLACEHOLDER_MODEL_KEYS:
+                continue
+            if resolved in _ZONE_REQUEST_MODELS:
+                return resolved
+            if not fallback_key:
+                fallback_key = resolved
+    return fallback_key
+
+
+def _effective_who4_model_key(handler: Any, base_key: str) -> str:
+    """Model key of the gateway that will actually transmit a WHO 4 frame."""
+    who4_target_fn = getattr(handler, "_who4_target", None)
+    if callable(who4_target_fn):
+        target = who4_target_fn()
+        if target is not None and target is not handler:
+            return _handler_model_key(target)
+    return base_key
+
+
+def _is_mh202_who4_crash_frame(frame: str) -> bool:
+    """True when ``frame`` triggers a WHO 4 daemon crash on MH202 (010024).
+
+    Covers both confirmed oracle crash families:
+    1. ``*#4*001##`` / ``*#4*001*0##`` (3-digit ``001..099`` all-probes-in-zone forms,
+       ``own-firmware-oracle`` ``ownd-audit-frames.tsv:42-43``).
+    2. Dimensionless non-``#`` actuator / 3-token ``A#B#C`` status reads such as
+       ``*#4*2#1##`` and ``*#4*2#4#01##`` (``thermo-zone-requests.tsv:21,25``, where
+       ``libthermo.so`` classifies ``Z#C`` / ``A#B#C`` with ``C <= 9`` as an actuator
+       and ``libplug_thermo_tr.so`` dereferences a ``NULL`` ``GList *`` on ``STATE REQUEST``).
+    """
+    if _MH202_ALL_PROBES_CRASH_RE.fullmatch(frame) is not None:
+        return True
+    match = _WHO4_DIMENSIONLESS_STATUS_RE.fullmatch(frame)
+    if match is None:
+        return False
+    where = match.group(1)
+    if where.startswith("#") or "#" not in where:
+        return False
+    parts = where.split("#")
+    if not all(part.isascii() and part.isdigit() for part in parts):
+        return False
+    if len(parts) == 2:
+        return 0 <= int(parts[0]) <= 99 and 0 <= int(parts[1]) <= 9
+    if len(parts) == 3:
+        return 1 <= int(parts[1]) <= 99 and 0 <= int(parts[2]) <= 9
+    if len(parts) == 4:
+        return 1 <= int(parts[2]) <= 99 and 0 <= int(parts[3]) <= 9
+    return False
+
+
+def gateway_crash_frame_reason(handler: Any, frame: str) -> str | None:
+    """Return a refusal reason when ``frame`` crashes a daemon on ``handler``'s gateway model."""
+    clean = str(frame).strip()
+    model_key = _handler_model_key(handler)
+    if model_key in ("H4684", "MH200") and _WHO13_NETWORK_DIM_CRASH_RE.fullmatch(clean) is not None:
+        return (
+            f"WHO 13 network dimensions 10, 11 and 12 crash the gateway daemon on {model_key} "
+            "(own-firmware-oracle who13-identification)"
+        )
+    if clean.startswith("*#4*") and _effective_who4_model_key(handler, model_key) == "MH202":
+        if _is_mh202_who4_crash_frame(clean):
+            return (
+                "this WHO 4 frame crashes a gateway daemon on MH202 "
+                "(own-firmware-oracle ownd-audit-frames / thermo-zone-requests)"
+            )
+    return None
+
+
 SERVICE_SWEEP_BUS = "sweep_bus"
 
 # Closed schemas: a misspelt key such as `gw_mac` (#189) raises instead of being
 # dropped and the frame going to the default gateway.
 SYNC_TIME_SCHEMA = vol.Schema({vol.Optional(ATTR_GATEWAY): cv.string})
+# An empty `message` is refused here like a missing one (#805 review follow-up); a
+# frame that does not parse is refused by the handler with a ServiceValidationError.
 SEND_MESSAGE_SCHEMA = vol.Schema(
     {
         vol.Optional(ATTR_GATEWAY): cv.string,
-        vol.Required(ATTR_MESSAGE): cv.string,
+        vol.Required(ATTR_MESSAGE): vol.All(cv.string, vol.Length(min=1)),
     }
 )
 SWEEP_BUS_SCHEMA = vol.Schema(
@@ -185,6 +332,35 @@ def _get_gateway_handler(hass: HomeAssistant, gateway_identifier: str | None) ->
     return None
 
 
+def _no_gateway_error() -> ServiceValidationError:
+    """The error of an action called while no MyHOME gateway is set up."""
+    return ServiceValidationError(
+        "No MyHOME gateway is set up",
+        translation_domain=DOMAIN,
+        translation_key="no_gateway_loaded",
+    )
+
+
+def _require_gateway_handler(hass: HomeAssistant, gateway: str | None) -> MyHOMEGatewayHandler:
+    """Return the handler for ``gateway`` (or the default one), or raise so the caller is told.
+
+    An action that finds no gateway sent nothing: it must not return success with only a
+    log line (Home Assistant's action-exceptions rule; the pattern of
+    ``myhome.send_scenario_plus_command``).
+    """
+    handler = _get_gateway_handler(hass, gateway)
+    if handler is not None:
+        return handler
+    if gateway is None:
+        raise _no_gateway_error()
+    raise ServiceValidationError(
+        f"Gateway '{gateway}' not found",
+        translation_domain=DOMAIN,
+        translation_key="gateway_not_found",
+        translation_placeholders={"gateway": str(gateway)},
+    )
+
+
 def _handler_refuses_frame(handler: MyHOMEGatewayHandler, frame: str) -> bool:
     """Return whether the gateway firmware drops a general request (``*#4*0##`` on an F461)."""
     target = getattr(handler, "_refused_by_gateway", None)
@@ -241,89 +417,119 @@ async def async_setup_services(hass: HomeAssistant) -> None:
     async def handle_sync_time(call: ServiceCall) -> None:
         """Handle time synchronization service call."""
         gateway = call.data.get(ATTR_GATEWAY, None)
+        timezone = hass.config.as_dict().get("time_zone", "UTC")
+
+        async def _send_time_sync(gw_handler: Any, cmd_dt: Any, cmd_t: Any) -> None:
+            await gw_handler.send(cmd_dt)
+            # MyHomeServer1 and 3488 are silent on WHO 13 DIM 0 (*#13**#0*...##)
+            # while ACKing DIM 22 (*#13**#22*...##, which already writes date + time):
+            # oracle results/{MyHomeServer1/028206,3488/030205}/oracle/full/who13-clock.tsv:16-32.
+            if _handler_model_key(gw_handler) not in ("MYHOMESERVER1", "3488"):
+                await gw_handler.send(cmd_t)
+
         if gateway is None:
             gateways = _loaded_gateways(hass)
-            if not gateways:
-                _LOGGER.error("No MyHOME gateways found, cannot sync time.")
-                return
-            timezone = hass.config.as_dict().get("time_zone", "UTC")
+            primaries = [
+                gw_handler
+                for gw_handler in gateways.values()
+                if getattr(gw_handler, "is_follower", False) is not True
+            ]
+            if not primaries:
+                raise _no_gateway_error()
             cmd_datetime, cmd_time = _build_time_sync_commands(timezone)
             # Once per bus: a secondary/standby shares its primary's bus
-            for gw_handler in gateways.values():
-                if getattr(gw_handler, "is_follower", False) is not True:
-                    await gw_handler.send(cmd_datetime)
-                    await gw_handler.send(cmd_time)
+            for gw_handler in primaries:
+                await _send_time_sync(gw_handler, cmd_datetime, cmd_time)
             return
 
-        gateway = dr.format_mac(gateway)
-        timezone = hass.config.as_dict().get("time_zone", "UTC")
-        handler = _get_gateway_handler(hass, gateway)
-        if handler is not None:
-            cmd_datetime, cmd_time = _build_time_sync_commands(timezone)
-            await handler.send(cmd_datetime)
-            await handler.send(cmd_time)
-            return
-
-        _LOGGER.error(
-            "Gateway `%s` not found, could not send time synchronisation message.",
-            gateway,
-        )
-        return
+        handler = _require_gateway_handler(hass, gateway)
+        cmd_datetime, cmd_time = _build_time_sync_commands(timezone)
+        await _send_time_sync(handler, cmd_datetime, cmd_time)
 
     async def handle_send_message(call: ServiceCall) -> None:
         """Handle sending an arbitrary OpenWebNet message."""
         gateway = call.data.get(ATTR_GATEWAY, None)
         message: str = call.data[ATTR_MESSAGE]  # required by SEND_MESSAGE_SCHEMA
-        if gateway is None:
-            if not _loaded_gateways(hass):
-                _LOGGER.error("No MyHOME gateways found, cannot send message `%s`.", message)
-                return
-        else:
-            gateway = dr.format_mac(gateway)
 
         _LOGGER.debug("Handling message `%s` to be sent to `%s`", message, gateway)
-        handler = _get_gateway_handler(hass, gateway)
-        if handler is not None:
-            from OWNd.message import OWNCommand
-            if is_refused_dimension_22(message):
-                _LOGGER.error(
-                    "%s Refusing to send `%s`: every WHO 4 dimension 22 spelling other than the "
-                    "published split forms *#4*3#Z#N*22## and *#4*3#Z#N*#22*MOD*SP*VEL*SWING## "
-                    "kills the thermostat daemon of F461 / F454 / MH200N-class gateways (a live "
-                    "F461 2.0.11 rebooted about three minutes later, "
-                    "tests/fixtures/traces/f461_live_2026-10-15)%s.",
-                    handler.log_id,
-                    message,
-                    ""
-                    if services_has_dimension_22_detector()
-                    else "; the installed OWNd (< 2.0.0b12) cannot tell the split forms apart, "
-                    "so every dimension 22 frame is refused",
-                )
-                return
-            own_message = OWNCommand.parse(message)
-            if own_message is not None and own_message.is_valid:
-                _LOGGER.debug(
-                    "%s Sending valid OpenWebNet Message: `%s`",
-                    handler.log_id,
-                    own_message,
-                )
-                if own_message.is_status_request or own_message.is_dimension_request:
-                    # A status or dimension request goes out as one: a NACK then means
-                    # "no such device" (DEBUG, not retried) instead of a failed command
-                    # logged as ERROR and sent twice (#777: *#1*52*5## on an F454).
-                    await handler.send_status_request(own_message)
-                else:
-                    await handler.send(own_message)
-                return
-            _LOGGER.error(
-                "Could not parse message `%s`, not sending it.", message
-            )
-            return
+        handler = _require_gateway_handler(hass, gateway)
+        from OWNd.message import OWNCommand, OWNMessage, OWNSignaling
 
-        _LOGGER.error(
-            "Gateway `%s` not found, could not send message `%s`.", gateway, message
+        if is_refused_dimension_22(message):
+            _LOGGER.error(
+                "%s Refusing to send `%s`: every WHO 4 dimension 22 spelling other than the "
+                "published split forms *#4*3#Z#N*22## and *#4*3#Z#N*#22*MOD*SP*VEL*SWING## "
+                "kills the thermostat daemon of F461 / F454 / MH200N-class gateways (a live "
+                "F461 2.0.11 rebooted about three minutes later, "
+                "tests/fixtures/traces/f461_live_2026-10-15)%s.",
+                handler.log_id,
+                message,
+                ""
+                if services_has_dimension_22_detector()
+                else "; the installed OWNd (< 2.0.0b12) cannot tell the split forms apart, "
+                "so every dimension 22 frame is refused",
+            )
+            raise ServiceValidationError(
+                f'Refusing to send "{message}": WHO 4 dimension 22 frames are blocked as a '
+                "precaution unless they are one of the published split forms this installation "
+                "can recognise; nothing was sent",
+                translation_domain=DOMAIN,
+                translation_key="send_message_refused_frame",
+                translation_placeholders={"message": message},
+            )
+        destructive_reason = destructive_frame_reason(message) or gateway_crash_frame_reason(
+            handler, message
         )
-        return
+        if destructive_reason is not None:
+            _LOGGER.error(
+                "%s Refusing to send destructive frame `%s`: %s",
+                handler.log_id,
+                message,
+                destructive_reason,
+            )
+            raise ServiceValidationError(
+                f'Refusing to send "{message}": {destructive_reason}; nothing was sent',
+                translation_domain=DOMAIN,
+                translation_key="send_message_refused_frame",
+                translation_placeholders={"message": message},
+            )
+
+        def _invalid_frame() -> ServiceValidationError:
+            _LOGGER.error("Could not parse message `%s`, not sending it.", message)
+            return ServiceValidationError(
+                f"`{message}` is not a valid OpenWebNet frame; nothing was sent",
+                translation_domain=DOMAIN,
+                translation_key="send_message_invalid_frame",
+                translation_placeholders={"message": message},
+            )
+
+        # A frame is made of 0-9, * and # only, starts with * and ends with ##
+        # (OpenWebNet introduction, "Syntax of an OPEN message"); checked as typed, nothing
+        # stripped.
+        if not is_valid_ascii_own_frame(message):
+            raise _invalid_frame()
+        try:
+            if isinstance(OWNMessage.parse(message), OWNSignaling):
+                raise _invalid_frame()
+            own_message = OWNCommand.parse(message)
+        except ServiceValidationError:
+            raise
+        except Exception as err:
+            raise _invalid_frame() from err
+        if own_message is None or not own_message.is_valid:
+            raise _invalid_frame()
+        _LOGGER.debug(
+            "%s Sending valid OpenWebNet Message: `%s`",
+            handler.log_id,
+            own_message,
+        )
+        if own_message.is_status_request or own_message.is_dimension_request:
+            # A status or dimension request goes out as one: a NACK then means
+            # "no such device" (DEBUG, not retried) instead of a failed command
+            # logged as ERROR and sent twice (#777: *#1*52*5## on an F454).
+            await handler.send_status_request(own_message)
+        else:
+            await handler.send(own_message)
 
     async def handle_sweep_bus(call: ServiceCall) -> None:
         """Trigger an active status query sweep across bus subsystems to populate the bus monitor."""

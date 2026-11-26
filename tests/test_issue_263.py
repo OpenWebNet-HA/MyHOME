@@ -111,9 +111,10 @@ async def test_probe_frame_does_not_create_climate_entity(hass, mock_gateway):
 
     assert len(discovered_entities) == 0
 
-    # Legitimate zone event *#4*2*0*0215## should be discovered
+    # Legitimate zone event *#4*2*0*0215## confirms cleanly on second distinct zone frame *4*1*2## (#966)
     zone_event = OWNHeatingEvent("*#4*2*0*0215##")
     async_dispatcher_send(hass, f"myhome_message_{mac}", zone_event)
+    async_dispatcher_send(hass, f"myhome_message_{mac}", OWNHeatingEvent("*4*1*2##"))
     await hass.async_block_till_done()
 
     assert len(discovered_entities) == 1
@@ -221,12 +222,17 @@ async def test_climate_yaml_config_skips_probe_entries(hass, mock_gateway):
 @pytest.mark.parametrize(
     "restored_state_val,restored_temp,expected_mode,expected_temp",
     [
-        (STATE_UNKNOWN, "21.5", HVACMode.OFF, 21.5),
-        (STATE_UNAVAILABLE, "20.0", HVACMode.OFF, 20.0),
-        ("invalid_hvac_mode", "19.0", HVACMode.OFF, 19.0),
+        # Saved with no mode and no commanded setpoint: restored as off, and as for a state saved
+        # off the value shown may be a protection setpoint that came before the zone's mode, so it
+        # is not taken as the nominal one (tests/test_review_983_climate.py).
+        (STATE_UNKNOWN, "21.5", HVACMode.OFF, None),
+        (STATE_UNAVAILABLE, "20.0", HVACMode.OFF, None),
+        ("invalid_hvac_mode", "19.0", HVACMode.OFF, None),
         (HVACMode.HEAT, "22.0", HVACMode.HEAT, 22.0),
         (HVACMode.COOL, "23.0", HVACMode.COOL, 23.0),
-        (HVACMode.OFF, "18.0", HVACMode.OFF, 18.0),
+        # Saved while off: the value shown may be the protection setpoint (#383), so it is not
+        # taken as the nominal one (tests/test_climate_setpoint_in_force.py, restart while off).
+        (HVACMode.OFF, "18.0", HVACMode.OFF, None),
         (None, None, None, None),
         ("heat", "invalid_number", HVACMode.HEAT, None),
     ],

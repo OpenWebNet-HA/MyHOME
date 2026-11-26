@@ -7,8 +7,10 @@ import ipaddress
 import logging
 import re
 import typing
+from typing import TYPE_CHECKING
 
 import voluptuous as vol
+from homeassistant.config_entries import SOURCE_IGNORE, SOURCE_REAUTH
 from homeassistant.const import (
     CONF_FRIENDLY_NAME,
     CONF_HOST,
@@ -20,7 +22,7 @@ from homeassistant.const import (
 )
 from homeassistant.helpers import device_registry as dr
 from OWNd.connection import OWNCommandSession
-from OWNd.message import OWNGatewayCommand, OWNGatewayDiagnosticCommand
+from OWNd.message import OWNGatewayCommand, OWNGatewayDiagnosticCommand, OWNSignaling
 from voluptuous import All, Coerce, Range, Required
 
 from .const import (
@@ -47,6 +49,9 @@ from .identity import (
     select_inband_reading,
 )
 from .typing_compat import flow_schema
+
+if TYPE_CHECKING:
+    from OWNd.connection import OWNGateway
 
 TEST_CONNECTION_ABORT_REASONS = frozenset(
     {
@@ -223,6 +228,14 @@ class MACAddress:
         return ":".join(["%s" % (self.mac[i : i + 2]) for i in range(0, 12, 2)])
 
 
+def _no_stored_firmware(value: typing.Any) -> bool:
+    """Whether an entry holds no firmware: missing, empty, or a placeholder of an older version.
+
+    The same placeholders as ``websocket.py`` (``none``, ``null``, ``unknown``).
+    """
+    return not isinstance(value, str) or value.strip().lower() in ("", "none", "null", "unknown")
+
+
 class ConfigFlowDiscoveryMixin:
     """SSDP discovery, reconfigure, reauth, connection test, port, and password steps."""
 
@@ -230,6 +243,7 @@ class ConfigFlowDiscoveryMixin:
     gateway_handler: typing.Any
     discovered_gateways: dict[str, dict[str, typing.Any]] | None
     _existing_entry: typing.Any
+    _auth_refused_session: str | None = None
     _pending_entry: tuple[str, dict[str, typing.Any], dict[str, typing.Any]] | None
     _custom_address: str
     _custom_port: int
@@ -243,7 +257,7 @@ class ConfigFlowDiscoveryMixin:
         """
         from . import config_flow as _cf
 
-        _discovery_info = discovery_info.upnp
+        _discovery_info = dict(discovery_info.upnp)
         _discovery_info["ssdp_st"] = discovery_info.ssdp_st
         _discovery_info["ssdp_location"] = discovery_info.ssdp_location
         _discovery_info["address"] = discovery_info.ssdp_headers["_host"]
@@ -255,15 +269,26 @@ class ConfigFlowDiscoveryMixin:
         if not gateway.unique_id or not gateway.serial:
             return self.async_abort(reason="no_serial")  # type: ignore[attr-defined]
         await self.async_set_unique_id(dr.format_mac(gateway.unique_id))  # type: ignore[attr-defined]
+        # An already configured or ignored gateway is announced again every few minutes, and
+        # Home Assistant's search finds it again every ten: DEBUG for those, INFO for a new one.
+        LOGGER.debug("SSDP announcement of gateway %s at %s", gateway.unique_id, gateway.address)
+        # An entry waiting for its password (reauth flow open, or the loaded gateway refused
+        # the stored one) is not reloaded: the reload would present the refused password
+        # again. The metadata is still stored; the reauth's own reload applies it.
+        entry = self.hass.config_entries.async_entry_for_domain_unique_id(DOMAIN, self.unique_id)  # type: ignore[attr-defined]
+        waits_for_password = entry is not None and (
+            any(entry.async_get_active_flows(self.hass, {SOURCE_REAUTH}))
+            or getattr(getattr(getattr(entry, "runtime_data", None), "gateway", None), "_auth_refused", False)
+        )
+        if waits_for_password:
+            self._abort_if_unique_id_configured(  # type: ignore[attr-defined]
+                updates=self._ssdp_entry_updates(gateway), reload_on_update=False
+            )
+        else:
+            self._abort_if_unique_id_configured(  # type: ignore[attr-defined]
+                updates=self._ssdp_entry_updates(gateway)
+            )
         LOGGER.info("Found gateway: %s", gateway.address)
-        updatable = {
-            CONF_HOST: gateway.address,
-            CONF_FRIENDLY_NAME: gateway.friendly_name,
-            CONF_UDN: gateway.udn,
-            CONF_FIRMWARE: gateway.firmware,
-        }
-
-        self._abort_if_unique_id_configured(updates=updatable)  # type: ignore[attr-defined]
 
         self.gateway_handler = gateway
         self.context.update(  # type: ignore[attr-defined]
@@ -280,6 +305,52 @@ class ConfigFlowDiscoveryMixin:
         )
 
         return await self.async_step_discovery_confirm()  # type: ignore
+
+    def _ssdp_entry_updates(self, gateway: OWNGateway) -> dict[str, typing.Any] | None:
+        """What an SSDP announcement may write to the existing entry of ``gateway`` (#947).
+
+        Only a new address changes a configured entry, and that change reloads it. Home
+        Assistant reloads a loaded entry whose data a discovery step changed, so every other
+        field is written at most once, while the entry has no value for it:
+
+        - the firmware: the announcement carries the UPnP ``modelNumber``, while a running
+          entry stores the firmware the gateway reports over WHO=13 dimension 16
+          (``identity.py``). Where the two differ, writing the announced value back made them
+          alternate, and every announcement reloaded the entry;
+        - the friendly name and the UDN: nothing reads their value (the UDN only counts as
+          present or absent, ``identification_source``), so a gateway that announces more
+          than one of them must not reload the entry either.
+
+        A value the announcement does not carry (an empty ``<friendlyName/>`` or ``<UDN/>``)
+        is never written over a stored one. The port is not announced and stays as configured.
+
+        Not written at all: an ignored gateway, and a gateway that was added by hand (Custom
+        (IP Gateway): no SSDP location and no UDN in its entry). Its address is the one the
+        user typed, possibly a routed one, and a UDN written into it would turn its
+        identification source into ``ssdp`` without the announced model.
+        """
+        entry = self.hass.config_entries.async_entry_for_domain_unique_id(DOMAIN, self.unique_id)  # type: ignore[attr-defined]
+        if entry is None or entry.source == SOURCE_IGNORE:
+            return None
+        data = entry.data
+        if not data.get(CONF_SSDP_LOCATION) and not data.get(CONF_UDN):
+            return None
+        updates: dict[str, typing.Any] = {}
+        if gateway.address and gateway.address != data.get(CONF_HOST):
+            LOGGER.info(
+                "Gateway %s is announced at %s (stored: %s); the entry follows the new address",
+                gateway.unique_id,
+                gateway.address,
+                data.get(CONF_HOST),
+            )
+            updates[CONF_HOST] = gateway.address
+        if gateway.friendly_name and not data.get(CONF_FRIENDLY_NAME):
+            updates[CONF_FRIENDLY_NAME] = gateway.friendly_name
+        if gateway.udn and not data.get(CONF_UDN):
+            updates[CONF_UDN] = gateway.udn
+        if not _no_stored_firmware(gateway.firmware) and _no_stored_firmware(data.get(CONF_FIRMWARE)):
+            updates[CONF_FIRMWARE] = gateway.firmware
+        return updates
 
     async def async_step_discovery_confirm(self, user_input=None):  # type: ignore
         """Handle user confirmation of discovered gateway."""
@@ -377,6 +448,11 @@ class ConfigFlowDiscoveryMixin:
                 DOMAIN, config[CONF_MAC]
             )
         self._existing_entry = entry
+        self._auth_refused_session = getattr(
+            getattr(getattr(entry, "runtime_data", None), "gateway", None),
+            "_auth_refused_session",
+            None,
+        )
 
         mac = entry.unique_id if entry else (config.get(CONF_MAC) if config else None)
         if mac:
@@ -421,13 +497,44 @@ class ConfigFlowDiscoveryMixin:
         gateway = self.gateway_handler
         assert gateway is not None
 
+        if self._existing_entry:
+            # SSDP may have updated CONF_HOST with reload_on_update=False while the
+            # reauth prompt was open; test against the latest address, not the snapshot.
+            current_entry = (
+                self.hass.config_entries.async_get_entry(self._existing_entry.entry_id)
+                or self._existing_entry
+            )
+            self._existing_entry = current_entry
+            latest_host = current_entry.data.get(CONF_HOST)
+            if latest_host and latest_host != gateway.address:
+                gateway.address = latest_host
+
         self._update_flow_context(gateway)
 
+        monitor_open_no_challenge = False
+
         async def _run_test_connection() -> dict[str, typing.Any]:
+            nonlocal monitor_open_no_challenge
+            monitor_open_no_challenge = False
             try:
                 session = _cf.OWNSession(gateway=gateway, logger=LOGGER)
+                saw_frames: list[str] = []
+                orig_read_frame = getattr(session, "_read_frame", None)
+                if isinstance(session, _cf.OWNSession) and callable(orig_read_frame):
+
+                    async def _tracked_read_frame(timeout: float | None = None) -> str:
+                        frame = str(await orig_read_frame(timeout))
+                        saw_frames.append(frame)
+                        return frame
+
+                    setattr(session, "_read_frame", _tracked_read_frame)
                 res: typing.Any = await session.test_connection()
                 if isinstance(res, dict):
+                    if res.get("Success") and saw_frames:
+                        monitor_open_no_challenge = not any(
+                            OWNSignaling(f).is_sha() or OWNSignaling(f).is_nonce()
+                            for f in saw_frames
+                        )
                     return res
                 return {"Success": False, "Message": "cannot_connect"}
             except (OSError, TimeoutError, ConnectionError) as exc:
@@ -464,6 +571,57 @@ class ConfigFlowDiscoveryMixin:
             )
             await _cf.asyncio.sleep(_cf.TEST_CONNECTION_RETRY_DELAY)
             test_result = await _run_test_connection()
+
+        if test_result.get("Success") and self._existing_entry:
+            refused_session = (
+                getattr(
+                    getattr(getattr(self._existing_entry, "runtime_data", None), "gateway", None),
+                    "_auth_refused_session",
+                    None,
+                )
+                or self._auth_refused_session
+            )
+            if refused_session == "command" or monitor_open_no_challenge:
+                # Split authentication: monitor session (*99*1##) can be open while
+                # the command session (*99*0##) requires the password. Verify the
+                # command session with test_connection() (not connect(), which
+                # retries 4 x 60 s on HMAC lockout and hides password_retry behind
+                # cannot_connect), with the same single retry on connection_closed
+                # used above for single-slot gateways (e.g. MH201).
+                async def _run_cmd_test() -> typing.Any:
+                    cmd_session = OWNCommandSession(gateway=gateway, logger=LOGGER)
+                    try:
+                        return await cmd_session.test_connection()
+                    except Exception:  # pylint: disable=broad-except
+                        return {"Success": False, "Message": "cannot_connect"}
+                    finally:
+                        try:
+                            await cmd_session.close()
+                        except Exception:  # pylint: disable=broad-except
+                            pass
+
+                cmd_res: typing.Any = await _run_cmd_test()
+                if (
+                    isinstance(cmd_res, dict)
+                    and not cmd_res.get("Success")
+                    and cmd_res.get("Message") == "connection_closed"
+                ):
+                    LOGGER.warning(
+                        "Gateway %s (%s:%s) command test connection closed by gateway; "
+                        "retrying once after %ss pause",
+                        gateway.model_name,
+                        gateway.address,
+                        gateway.port,
+                        _cf.TEST_CONNECTION_RETRY_DELAY,
+                    )
+                    await _cf.asyncio.sleep(_cf.TEST_CONNECTION_RETRY_DELAY)
+                    cmd_res = await _run_cmd_test()
+                if not isinstance(cmd_res, dict) or not cmd_res.get("Success"):
+                    test_result = (
+                        cmd_res
+                        if isinstance(cmd_res, dict)
+                        else {"Success": False, "Message": "cannot_connect"}
+                    )
 
         if test_result.get("Success"):
             if self._existing_entry:

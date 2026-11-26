@@ -81,6 +81,7 @@ DOMAIN_METADATA: dict[str, dict[str, str]] = {
         "label": "**`climate`**",
         "capabilities": (
             "Heating, cooling, 4-pipe systems, thermostats, setpoints, fancoil 3-speed modes, "
+            "0–10 V proportional actuator output levels (`0..100 %`), "
             "offset tracking, Central Unit 3550 (`#0`) & 4695 (`#0#1`) master coordination & seasonal propagation"
         ),
     },
@@ -102,6 +103,8 @@ DOMAIN_METADATA: dict[str, dict[str, str]] = {
         "label": "**`sensor`**",
         "capabilities": (
             "Power meters, energy counters (total/daily/monthly), temperature probes (3475), "
+            "passive climate zone companion temperature & dynamic humidity sensors (WHO=4 Dimension 0 / 60), "
+            "0–10 V proportional actuator output level sensors (`%`, WHO=4 Dimension 20 `100..200`), "
             "illuminance / lux sensors"
         ),
     },
@@ -116,7 +119,8 @@ DOMAIN_METADATA: dict[str, dict[str, str]] = {
     "number": {
         "label": "**`number`**",
         "capabilities": (
-            "Direct manual FM radio frequency input & stepping (`87.50–108.00 MHz`, `0.05 MHz` step) "
+            "Native cover minimum position step (`1–5 %`, `EntityCategory.CONFIG`, WHO=2), "
+            "direct manual FM radio frequency input & stepping (`87.50–108.00 MHz`, `0.05 MHz` step) "
             "for declared F500/F500N tuner sources (WHO=16 / 22)"
         ),
     },

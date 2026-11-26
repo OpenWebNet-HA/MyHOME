@@ -12,6 +12,7 @@ import pytest
 
 COMPONENT = Path(__file__).resolve().parent.parent / "custom_components" / "myhome"
 PLACEHOLDER = re.compile(r"\{(\w+)\}")
+SINGLE_QUOTED_PLACEHOLDER = re.compile(r"'\{\w+\}'")
 LANGUAGES = sorted(p.stem for p in (COMPONENT / "translations").glob("*.json") if p.stem != "en")
 
 
@@ -47,3 +48,15 @@ def test_translations_have_no_keys_missing_from_english(language: str) -> None:
     translated = _strings(COMPONENT / "translations" / f"{language}.json")
 
     assert not sorted(set(translated) - set(source)), f"{language}: keys not in strings.json"
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    ["strings.json", *(f"translations/{p.name}" for p in sorted((COMPONENT / "translations").glob("*.json")))],
+)
+def test_no_single_quoted_placeholders(relative_path: str) -> None:
+    """Hassfest rejects placeholders inside single quotes due to ICU escaping."""
+    offending = sorted(
+        key for key, text in _strings(COMPONENT / relative_path).items() if SINGLE_QUOTED_PLACEHOLDER.search(text)
+    )
+    assert not offending, f"{relative_path}: single-quoted placeholders break ICU/hassfest: {offending}"

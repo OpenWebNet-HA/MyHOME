@@ -71,9 +71,9 @@ async def test_standalone_zone_auto_discovery_exposes_fan_by_default(hass: HomeA
     attach_runtime(hass, config_entry)
     await async_setup_entry(hass, config_entry, added_entities.extend)
 
-    # Deliver a frame from zone 1 to trigger auto-discovery
-    event = OWNEvent.parse("*#4*1*0*0234##")
-    async_dispatcher_send(hass, f"myhome_message_{MAC}", event)
+    # Deliver two distinct frames from zone 1 to confirm auto-discovery
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*#4*1*0*0234##"))
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*4*1*1##"))
     await hass.async_block_till_done()
 
     assert len(added_entities) == 1
@@ -151,8 +151,9 @@ async def test_plant_with_central_unit_and_zone_1_radiator_has_no_fan(hass: Home
 
     # 1. Discover central unit #0
     async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*#4*#0*0*0215##"))
-    # 2. Discover zone 1 (radiator, emits temperature reading)
+    # 2. Discover zone 1 (radiator, emits temperature reading + mode confirmation)
     async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*#4*1*0*0205##"))
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNEvent.parse("*4*1*1##"))
     await hass.async_block_till_done()
 
     assert len(added_entities) == 2
@@ -485,12 +486,18 @@ async def test_issue_303_bus_trace_replay(hass: HomeAssistant, mock_gateway):
 
     by_where = {e._where: e for e in added_entities}
 
-    # All zones 1, 2, 3, 5, 6 should be discovered
-    assert "1" in by_where
-    assert "2" in by_where
-    assert "3" in by_where
+    # Zones 1, 2, 3, 6 have >= 2 distinct frames and confirm immediately; Zone 5 has 1 frame and waits
+    assert {"1", "2", "3", "6"} <= set(by_where)
+    assert "5" not in by_where
+
+    # Second distinct frame confirms Zone 5 and replays its held dim 20 fan speed frame
+    confirm_z5 = OWNEvent.parse("*#4*5*0*0220##")
+    assert confirm_z5 is not None
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", confirm_z5)
+    await hass.async_block_till_done()
+
+    by_where = {e._where: e for e in added_entities}
     assert "5" in by_where
-    assert "6" in by_where
 
     # All should have fan support enabled
     for zone in ("1", "2", "3", "5", "6"):
@@ -548,9 +555,10 @@ async def test_subordinate_zone_central_mode_update(hass: HomeAssistant, mock_ga
     climate._handle_central_mode_update(HVACMode.COOL)
     assert climate.hvac_mode == HVACMode.COOL
 
-    # Master mode AUTO when zone is not OFF -> zone mode AUTO
+    # Master mode AUTO -> the zone keeps its mode (the central unit's `auto` is a command to the
+    # central unit; a program is shown `heat` / `cool`, decisions of 2026-11-18 and 2026-11-22)
     climate._handle_central_mode_update(HVACMode.AUTO)
-    assert climate.hvac_mode == HVACMode.AUTO
+    assert climate.hvac_mode == HVACMode.COOL
 
 
 async def test_central_unit_async_set_hvac_mode(hass: HomeAssistant, mock_gateway):
@@ -605,19 +613,25 @@ async def test_central_unit_async_set_temperature(hass: HomeAssistant, mock_gate
     )
     central.entity_id = "climate.central_unit"
 
-    # In HEAT mode
+    # In HEAT mode (state follows the central unit's bus report, not an optimistic write)
     central._attr_hvac_mode = HVACMode.HEAT
     mock_gateway.send.reset_mock()
     await central.async_set_temperature(temperature=21.5)
-    assert central._target_temperature == 21.5
     mock_gateway.send.assert_awaited_once()
+    assert str(mock_gateway.send.await_args.args[0]) == "*#4*#0*#14*0215*3##"
+    assert central.target_temperature is None
+    central.handle_event(OWNEvent.parse("*4*110#0215*#0##"))
+    assert central.target_temperature == 21.5
 
     # In COOL mode
     central._attr_hvac_mode = HVACMode.COOL
     mock_gateway.send.reset_mock()
     await central.async_set_temperature(temperature=24.0)
-    assert central._target_temperature == 24.0
     mock_gateway.send.assert_awaited_once()
+    assert str(mock_gateway.send.await_args.args[0]) == "*#4*#0*#14*0240*3##"
+    assert central.target_temperature == 21.5
+    central.handle_event(OWNEvent.parse("*4*210#0240*#0##"))
+    assert central.target_temperature == 24.0
 
 
 async def test_central_unit_event_dispatches_central_mode(hass: HomeAssistant, mock_gateway):

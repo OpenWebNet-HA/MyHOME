@@ -125,6 +125,15 @@ class CoverKinematicsStrategy(Protocol):
     ) -> float:
         """Return motor run duration in seconds required to move from ``start`` to ``target``."""
 
+    def remaining_travel_for(
+        self,
+        start: int,
+        opening: bool,
+        *,
+        entity: Any = None,
+    ) -> float | None:
+        """Return nominal seconds remaining from ``start`` to the ``opening`` endpoint, or None for full travel."""
+
     def reanchor_on_stop_echo(
         self,
         entity: Any,
@@ -216,6 +225,16 @@ class BaseCoverStrategy:
     def slat_time_for(self) -> float:
         """Return the effective slat full-rotation time in seconds."""
         return self.slat_time
+
+    def remaining_travel_for(
+        self,
+        start: int,
+        opening: bool,
+        *,
+        entity: Any = None,
+    ) -> float | None:  # pylint: disable=unused-argument
+        """No remaining-travel shortcut by default: full runs wait ``travel_for_direction``."""
+        return None
 
     def quantize_target(self, current: int | None, target: int) -> int:  # pylint: disable=unused-argument
         """Return target unchanged by default (overridden by NativePositionStrategy)."""

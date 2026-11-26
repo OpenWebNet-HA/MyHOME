@@ -13,10 +13,10 @@ rules:
     comment: Services are registered once in async_setup (services.py) and stay registered regardless of config entry state.
   appropriate-polling:
     status: done
-    comment: local_push; only temperature sensors poll (5 min) and probes (WHERE >= 100) are receive-only unless the push stream goes silent.
+    comment: local_push; only explicit temperature sensors poll (5 min), probes (WHERE >= 100) are receive-only unless the push stream goes silent, and climate companion temperature/humidity sensors are strictly passive (should_poll = False).
   brands:
     status: done
-    comment: Bundled locally in custom_components/myhome/brand/ (icon.png, icon@2x.png, logo.png, logo@2x.png) for HA 2026.8+, Home Assistant Marketplace (2026.11+), and HACS, and listed in home-assistant/brands (PR home-assistant/brands#2052).
+    comment: Bundled locally in custom_components/myhome/brand/ (icon.png, icon@2x.png, dark_icon.png, dark_icon@2x.png, logo.png, logo@2x.png, dark_logo.png, dark_logo@2x.png) for HA 2026.8+, Home Assistant Marketplace (2026.11+), and HACS, and listed in home-assistant/brands (PR home-assistant/brands#2052).
   common-modules:
     status: done
     comment: Base entity in myhome_device.py; gateway handler in gateway.py; shared constants in const.py; the restore / configure / discover / route platform skeleton in discovery.py (every entity platform; button creates its entities from the other platforms' announcements); the per-gateway frame router in router.py that delivers bus frames to the entities owning their addresses.
@@ -72,7 +72,7 @@ rules:
   # 🥈 Silver
   action-exceptions:
     status: done
-    comment: Handled in services.py with parameter validation and robust logging.
+    comment: services.py validates parameters with closed schemas and raises translated ServiceValidationError when nothing can be sent (send_message - empty, unparsable or refused frame; send_message / sync_time / send_scenario_plus_command - unknown gateway or no gateway set up; sync_time - half-hour time zone). A frame that was queued and is NACKed by the gateway afterwards is logged, not raised, by these actions, and diagnostic sweep_bus logs and returns when no matching gateway is loaded.
   config-entry-unloading:
     status: done
     comment: async_unload_entry unloads platforms via async_unload_platforms and closes the gateway sessions; listeners are registered with entry.async_on_unload.
@@ -96,7 +96,7 @@ rules:
     comment: PARALLEL_UPDATES = 0 declared across all 11 platform files for push-driven event streaming.
   reauthentication-flow:
     status: done
-    comment: async_setup_entry raises ConfigEntryAuthFailed on password rejection; Home Assistant starts the reauth flow natively.
+    comment: async_setup_entry raises ConfigEntryAuthFailed on password rejection; a password refused while the entry is loaded stops both sessions and starts the same reauth flow (gateway.py _on_auth_refused).
   test-coverage:
     status: done
     comment: 100.0% statement coverage verified across all integration modules.
@@ -110,7 +110,7 @@ rules:
     comment: Native diagnostics.py sanitizes credentials and exports gateway and bus telemetry.
   discovery-update-info:
     status: done
-    comment: Updates gateway host and port dynamically if IP changes on rediscovery.
+    comment: A gateway found over SSDP that is announced at a new address gets the address updated and the entry reloaded; the port is not announced and is kept. A gateway added by hand and an ignored gateway are not updated.
   discovery:
     status: done
     comment: Automatically discovers F454, MyHomeServer1, and MH200 gateways via SSDP/UPnP.
@@ -140,16 +140,16 @@ rules:
     comment: PlatformDiscovery (discovery.py) creates an entity from the first frame of an unknown address and routes later frames to it; registry entries are restored first so devices exist before the bus speaks.
   entity-category:
     status: done
-    comment: Audited in tests/test_entity_audit.py - lock/unlock and calibration buttons plus binary-sensor invert switches are EntityCategory.CONFIG; every other entity is a primary control or measurement and carries no category (there are no diagnostic entities).
+    comment: Audited in tests/test_entity_audit.py - lock/unlock and calibration buttons, binary-sensor invert switches, and native-cover minimum position step numbers are EntityCategory.CONFIG; every other entity is a primary control or measurement and carries no category (there are no diagnostic entities).
   entity-device-class:
     status: done
-    comment: Audited in tests/test_entity_audit.py - switch (switch/outlet; config invert switch has none), cover (shutter), binary sensors, sensors (power/energy/temperature/illuminance) and media player (speaker) declare device classes; light, climate, button and alarm panel have none applicable.
+    comment: Audited in tests/test_entity_audit.py - switch (switch/outlet; config invert switch has none), cover (shutter), binary sensors, sensors (power/energy/temperature/humidity/illuminance; proportional actuator output level has none applicable), media player (speaker), and tuner frequency number (frequency; cover minimum position step config number has none) declare device classes; light, climate, button and alarm panel have none applicable.
   entity-disabled-by-default:
     status: done
     comment: Audited in tests/test_entity_audit.py - the daily and monthly energy counters are disabled by default; all other entities are primary controls and stay enabled.
   entity-translations:
     status: done
-    comment: Translation keys for the lock / unlock / calibration buttons, the binary-sensor invert switch and the energy counters under `entity` in strings.json and translations/en.json; device-class-named sensors and binary sensors use Home Assistant's own translations.
+    comment: Translation keys for the lock / unlock / calibration buttons, the binary-sensor invert switch, the cover minimum position step and tuner frequency numbers, and the energy counters under `entity` in strings.json and translations/en.json; device-class-named sensors and binary sensors use Home Assistant's own translations.
   exception-translations:
     status: done
     comment: HomeAssistantError/ServiceValidationError raised from cover calibration, travel-time services and the media player decoder proxy carry translation keys defined under `exceptions` in strings.json / translations/en.json (guarded by test_every_raised_translation_key_is_defined).
