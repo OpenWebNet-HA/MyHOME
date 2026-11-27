@@ -93,7 +93,14 @@ class MyHomeBusCard extends HTMLElement {
       },
       config
     );
-    this._maxDisplayFrames = this._config.max_frames || DEFAULT_MAX_FRAMES;
+    if (this._config.title == null) {
+      this._config.title = "MyHOME OpenWebNet Bus Monitor";
+    }
+    const parsedMax = Number(this._config.max_frames);
+    this._maxDisplayFrames =
+      Number.isFinite(parsedMax) && parsedMax > 0
+        ? Math.floor(parsedMax)
+        : DEFAULT_MAX_FRAMES;
     this._render();
   }
 
@@ -291,8 +298,14 @@ class MyHomeBusCard extends HTMLElement {
       } else if (this._connectionStatus === "disconnected") {
         msg = `Disconnected from MyHOME gateway. Reconnecting in ${Math.round(this._retryDelay / 1000)}s...`;
       }
-      container.innerHTML = `<div class="placeholder-msg">${msg}</div>`;
+      container.innerHTML = `<div class="placeholder-msg">${this._escapeHtml(msg)}</div>`;
     }
+  }
+
+  _getWhoCatalogEntry(whoStr) {
+    return Object.prototype.hasOwnProperty.call(WHO_CATALOG, whoStr)
+      ? WHO_CATALOG[whoStr]
+      : null;
   }
 
   _ensureWhoRegistered(who) {
@@ -305,7 +318,7 @@ class MyHomeBusCard extends HTMLElement {
       if (select.options[i].value === whoStr) return;
     }
 
-    const catalogEntry = WHO_CATALOG[whoStr];
+    const catalogEntry = this._getWhoCatalogEntry(whoStr);
     const label = catalogEntry
       ? `${catalogEntry.name} (WHO=${whoStr})`
       : `Subsystem (WHO=${whoStr})`;
@@ -404,7 +417,7 @@ class MyHomeBusCard extends HTMLElement {
   _formatWho(who) {
     if (who == null || String(who).trim() === "") return "Sys";
     const strWho = String(who).trim();
-    const entry = WHO_CATALOG[strWho];
+    const entry = this._getWhoCatalogEntry(strWho);
     if (entry && entry.short) return entry.short;
     if (entry && entry.name) return entry.name;
     return `WHO=${strWho}`;
@@ -426,7 +439,7 @@ class MyHomeBusCard extends HTMLElement {
 
   _getWhoClass(who) {
     if (who == null) return "who-default";
-    const entry = WHO_CATALOG[String(who).trim()];
+    const entry = this._getWhoCatalogEntry(String(who).trim());
     if (entry && entry.class) return entry.class;
     return "who-default";
   }
@@ -434,11 +447,12 @@ class MyHomeBusCard extends HTMLElement {
   _getWhoBadgeStyle(who) {
     if (who == null || String(who).trim() === "") return "";
     const str = String(who).trim();
-    if (WHO_CATALOG[str] && WHO_CATALOG[str].class !== "who-default") {
+    const entry = this._getWhoCatalogEntry(str);
+    if (entry && entry.class !== "who-default") {
       return "";
     }
     const num = parseInt(str, 10);
-    const hue = !isNaN(num) ? (num * 137.5) % 360 : 200;
+    const hue = Number.isFinite(num) ? (((num * 137.5) % 360) + 360) % 360 : 200;
     return `style="background: hsl(${hue}, 45%, 18%); color: hsl(${hue}, 85%, 75%);"`;
   }
 
@@ -456,7 +470,9 @@ class MyHomeBusCard extends HTMLElement {
     for (const key of sortedWhoKeys) {
       const item = WHO_CATALOG[key];
       const sel = String(this._filterWho) === key ? " selected" : "";
-      optionsList.push(`<option value="${key}"${sel}>${item.name} (WHO=${key})</option>`);
+      const escapedKey = this._escapeHtml(key);
+      const escapedName = this._escapeHtml(item.name);
+      optionsList.push(`<option value="${escapedKey}"${sel}>${escapedName} (WHO=${escapedKey})</option>`);
     }
 
     const seenWhos = new Set(sortedWhoKeys);
@@ -466,11 +482,16 @@ class MyHomeBusCard extends HTMLElement {
         if (wStr && !seenWhos.has(wStr)) {
           seenWhos.add(wStr);
           const sel = String(this._filterWho) === wStr ? " selected" : "";
-          optionsList.push(`<option value="${wStr}"${sel}>Subsystem (WHO=${wStr})</option>`);
+          const escapedWho = this._escapeHtml(wStr);
+          optionsList.push(`<option value="${escapedWho}"${sel}>Subsystem (WHO=${escapedWho})</option>`);
         }
       }
     }
     const whoOptionsHtml = optionsList.join("\n            ");
+    const titleText =
+      this._config && this._config.title != null
+        ? String(this._config.title)
+        : "MyHOME OpenWebNet Bus Monitor";
 
     this.shadowRoot.innerHTML = `
       <style>
@@ -773,7 +794,7 @@ class MyHomeBusCard extends HTMLElement {
       <ha-card>
         <div class="header">
           <div class="title-row">
-            <span class="title" title="${this._escapeHtml(String(this._config.title))}">📡 ${this._config.title}</span>
+            <span class="title" title="${this._escapeHtml(titleText)}">📡 ${this._escapeHtml(titleText)}</span>
             <span id="badge" class="badge badge-connecting">CONNECTING...</span>
             <button id="btn-help" class="btn-help" title="How this card works: Start Trace vs Sweep Bus, exports, transmit bar" aria-label="How this card works">i</button>
           </div>
@@ -817,11 +838,11 @@ class MyHomeBusCard extends HTMLElement {
         <div id="feedback-banner" class="feedback-banner"></div>
 
         <div class="stats-bar">
-          <div>Buffered: <span id="stat-buffer" class="stat-val">0</span>/<span id="stat-max">${this._maxDisplayFrames}</span></div>
+          <div>Buffered: <span id="stat-buffer" class="stat-val">0</span>/<span id="stat-max">${this._escapeHtml(this._maxDisplayFrames)}</span></div>
           <div>RX: <span id="stat-rx" class="stat-val">0</span></div>
           <div>TX: <span id="stat-tx" class="stat-val">0</span></div>
           <div>Queue: <span id="stat-queue" class="stat-val">0</span></div>
-          <div style="margin-left: auto; font-size: 0.75rem; opacity: 0.85;">MyHOME <span id="stat-version" class="stat-val">v${CARD_VERSION}</span></div>
+          <div style="margin-left: auto; font-size: 0.75rem; opacity: 0.85;">MyHOME <span id="stat-version" class="stat-val">v${this._escapeHtml(CARD_VERSION)}</span></div>
         </div>
 
         <div class="controls">
@@ -1000,7 +1021,7 @@ class MyHomeBusCard extends HTMLElement {
       );
       if (input) input.value = "";
     } catch (err) {
-      alert(`Error sending frame: ${err.message || err}`);
+      alert(`Error sending frame: ${err && err.message ? err.message : err}`);
     }
   }
 
@@ -1174,7 +1195,7 @@ ${framesText}
         if (banner) {
           banner.className = "feedback-banner banner-warning";
           banner.innerHTML = `
-            <span><strong>⚠️ Bus sweep failed:</strong> ${this._escapeHtml(err.message || String(err))}</span>
+            <span><strong>⚠️ Bus sweep failed:</strong> ${this._escapeHtml(err && err.message ? err.message : String(err))}</span>
           `;
           banner.style.display = "flex";
           this._bannerTimeout = setTimeout(() => {
@@ -1212,9 +1233,18 @@ ${framesText}
 
   _captureFilterSlug() {
     const parts = [];
-    if (this._filterWho !== "all") parts.push(`who${this._filterWho}`);
-    if (this._filterDir !== "all") parts.push(this._filterDir);
-    if (this._filterWhere) parts.push(this._filterWhere.trim().replace(/[^a-z0-9]+/gi, "").slice(0, 12).toLowerCase());
+    if (this._filterWho !== "all") {
+      const whoSlug = String(this._filterWho).trim().replace(/[^a-z0-9]+/gi, "").slice(0, 16);
+      if (whoSlug) parts.push(`who${whoSlug}`);
+    }
+    if (this._filterDir !== "all") {
+      const dirSlug = String(this._filterDir).trim().replace(/[^a-z0-9]+/gi, "").slice(0, 12).toLowerCase();
+      if (dirSlug) parts.push(dirSlug);
+    }
+    if (this._filterWhere) {
+      const whereSlug = this._filterWhere.trim().replace(/[^a-z0-9]+/gi, "").slice(0, 12).toLowerCase();
+      if (whereSlug) parts.push(whereSlug);
+    }
     return parts.length ? parts.join("-") : "all";
   }
 
@@ -1343,7 +1373,7 @@ ${framesText}
       banner.className = "feedback-banner banner-success";
       banner.innerHTML = `
         <div style="display: flex; flex-direction: column; gap: 4px;">
-          <span><strong>✅ Exported ${kind === "sweep" ? "bus sweep" : "trace"}:</strong> <code>${fileName}</code></span>
+          <span><strong>✅ Exported ${kind === "sweep" ? "bus sweep" : "trace"}:</strong> <code>${this._escapeHtml(fileName)}</code></span>
           <span style="font-size: 0.75rem; opacity: 0.9;">${frames.length} of ${this._frames.length} buffered frames (active filters applied). Attach this file directly to GitHub Discussion #291 or a bug report.</span>
         </div>
         <a href="https://github.com/orgs/OpenWebNet-HA/discussions/291" target="_blank" rel="noopener noreferrer" class="banner-link">Open Discussion #291 ↗</a>
@@ -1414,7 +1444,7 @@ ${framesText}
             <span style="font-size: 0.75rem; opacity: 0.9;">Paste the clipboard contents directly into the <em>Bus Monitor Diagnostic Payload / Bus Trace</em> field.</span>
             <span style="font-size: 0.72rem; opacity: 0.85;">💡 <em>Tip: Also download and drag &amp; drop your HA log (Settings &rarr; System &rarr; Logs &rarr; Download full log) into the issue!</em></span>
           </div>
-          <a href="${issueUrl}" target="_blank" rel="noopener noreferrer" class="banner-link">Open GitHub Form ↗</a>
+          <a href="${this._escapeHtml(issueUrl)}" target="_blank" rel="noopener noreferrer" class="banner-link">Open GitHub Form ↗</a>
         `;
       } else {
         banner.className = "feedback-banner banner-warning";
@@ -1423,7 +1453,7 @@ ${framesText}
             <span><strong>⚠️ Clipboard write failed.</strong> Diagnostic payload printed to browser console.</span>
             <span style="font-size: 0.75rem; opacity: 0.9;">Copy the payload from your browser console (F12) and open the issue form below.</span>
           </div>
-          <a href="${issueUrl}" target="_blank" rel="noopener noreferrer" class="banner-link">Open GitHub Form ↗</a>
+          <a href="${this._escapeHtml(issueUrl)}" target="_blank" rel="noopener noreferrer" class="banner-link">Open GitHub Form ↗</a>
         `;
         console.log("MyHOME Diagnostic Payload:\n", payload);
       }
@@ -1481,7 +1511,7 @@ ${framesText}
   }
 
   _escapeHtml(text) {
-    return String(text || "")
+    return String(text ?? "")
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
@@ -1495,7 +1525,7 @@ ${framesText}
 
     const timeStr = this._formatFrameTime(frame);
     const dirClass = frame.direction === "rx" ? "dir-rx" : "dir-tx";
-    const dirLabel = frame.direction ? frame.direction.toUpperCase() : "RX";
+    const dirLabel = frame.direction ? String(frame.direction).toUpperCase() : "RX";
     const whoClass = this._getWhoClass(frame.who);
     const whoLabel = this._formatWho(frame.who);
     const whoCustomStyle = this._getWhoBadgeStyle(frame.who);
@@ -1505,8 +1535,8 @@ ${framesText}
     if (frame.is_nack) rawClass += " raw-nack";
 
     div.innerHTML = `
-      <span class="col-time">${timeStr}</span>
-      <span class="col-dir ${dirClass}">${dirLabel}</span>
+      <span class="col-time">${this._escapeHtml(timeStr)}</span>
+      <span class="col-dir ${dirClass}">${this._escapeHtml(dirLabel)}</span>
       <span class="col-who ${whoClass}" ${whoCustomStyle}>${this._escapeHtml(whoLabel)}</span>
       <span class="${rawClass}">${this._escapeHtml(frame.raw)}</span>
     `;
