@@ -264,6 +264,29 @@ async def async_setup_entry(
             if num is not None:
                 entities.append(num)
 
+        # 3. Prune orphaned -min_position_delta numbers whose parent cover was removed
+        try:
+            registry = er.async_get(hass)
+            prefixes = tuple(f"{p}-2-" for p in {gateway.mac, mac, entry_mac} if p)
+            suffix = "-min_position_delta"
+            for reg_entry in list(
+                er.async_entries_for_config_entry(registry, config_entry.entry_id)
+            ):
+                if (
+                    reg_entry.domain != "number"
+                    or not reg_entry.unique_id
+                    or not reg_entry.unique_id.endswith(suffix)
+                ):
+                    continue
+                for prefix in prefixes:
+                    if reg_entry.unique_id.startswith(prefix):
+                        dev_str = reg_entry.unique_id[len(prefix) : -len(suffix)]
+                        if dev_str and dev_str not in known_cover_delta_numbers:
+                            registry.async_remove(reg_entry.entity_id)
+                        break
+        except Exception as err:  # pragma: no cover - registry unavailable in minimal mocks
+            LOGGER.debug("Could not prune orphaned min_position_delta numbers: %s", err)
+
         @callback
         def _async_new_device_listener(dev_info: dict[str, Any]) -> None:
             if str(dev_info.get("who", "")) != "2":

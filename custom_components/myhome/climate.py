@@ -2,7 +2,7 @@ import asyncio
 import inspect
 import math
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any, cast
 
 from homeassistant.components.climate import (
@@ -15,6 +15,7 @@ from homeassistant.components.climate.const import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
+    CONF_MAC,
     CONF_NAME,
     Platform,
     UnitOfTemperature,
@@ -67,6 +68,7 @@ from .const import (
     CONF_MANUFACTURER,
     CONF_STANDALONE,
     CONF_STANDALONE_ZONES,
+    CONF_WHO,
     DOMAIN,
     LOGGER,
     SIGNAL_CLIMATE_HUMIDITY,
@@ -75,7 +77,7 @@ from .const import (
 )
 from .data import get_runtime_data
 from .device_health import FaultKind
-from .discovery import DeviceContext, PlatformDiscovery, prune_entity
+from .discovery import Address, DeviceContext, PlatformDiscovery, prune_entity
 from .expose import is_exposed_on_bus
 from .gateway import (
     _ZONE_WHERE,
@@ -1977,6 +1979,45 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         registry = er.async_get(target_hass)
         if (entry := registry.async_get(entity_id)) is not None:
             prune_entity(target_hass, registry, entry, entry.config_entry_id or "")
+
+    async def async_removed_from_registry(self) -> None:
+        """Drop device fault issues and companion temperature/humidity sensors on manual deletion."""
+        await super().async_removed_from_registry()
+        if self._central or is_probe(self._where):
+            return
+        zone = canonical_thermo_zone(self._where)
+        if zone is None:
+            return
+        target_hass = self.hass or self._hass
+        entry = getattr(self._gateway_handler, "config_entry", None)
+        if target_hass is None or entry is None:
+            return
+        zone_key = f"{zone}#4#{self._interface}" if self._interface else zone
+        runtime = get_runtime_data(entry)
+        yaml_temp_owned = False
+        if runtime is not None:
+            for dev_id, cfg in runtime.platforms.get("sensor", {}).items():
+                if not isinstance(cfg, Mapping) or str(cfg.get(CONF_WHO)) != "4":
+                    continue
+                addr = Address.from_config(str(dev_id), dict(cfg))
+                if canonical_thermo_zone(addr.where) == zone and addr.interface == self._interface:
+                    yaml_temp_owned = True
+                    break
+        try:
+            reg = er.async_get(target_hass)
+            entry_mac = str((getattr(entry, "data", None) or {}).get(CONF_MAC, "") or "")
+            prefixes = {p for p in (self._gateway_handler.mac, entry_mac) if p}
+            suffixes = ("-humidity",) if yaml_temp_owned else ("-temperature", "-humidity")
+            for prefix in prefixes:
+                for suffix in suffixes:
+                    uid = f"{prefix}-4-{zone_key}{suffix}"
+                    if (
+                        (ent_id := reg.async_get_entity_id("sensor", DOMAIN, uid)) is not None
+                        and (reg_ent := reg.async_get(ent_id)) is not None
+                    ):
+                        prune_entity(target_hass, reg, reg_ent, entry.entry_id)
+        except Exception:  # pragma: no cover - registry unavailable in minimal mocks
+            pass
 
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added to hass."""

@@ -313,7 +313,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
             return
         claim = getattr(gateway, "claim_in_flight_dimension_where", None)
         where = claim(1, dimension) if callable(claim) else None
-        if isinstance(where, str) and where and any(k in ctx_discovery["1"].known for k in _spellings(where)):
+        if isinstance(where, str) and where and any(k in ctx_discovery["1"].known for k in _motion_spellings(where)):
             ctx_discovery["1"].route(message, Address.from_device_id(where))
 
     common = dict(hass=hass, config_entry=config_entry, async_add_entities=async_add_entities, platform=PLATFORM)
@@ -410,9 +410,32 @@ def _contact_peer_spellings(unique_id: str) -> list[str]:
     return list(dict.fromkeys(peers))
 
 
+def _motion_spellings(where: str) -> list[str]:
+    """Spellings of a WHO 1 motion address, unifying Area-00 ``0001..0009`` with ``01..09``."""
+    keys = _spellings(where)
+    extra: list[str] = []
+    for key in keys:
+        clean = key.split("-")[-1]
+        base, sep, iface = clean.partition(BUS_ROUTING)
+        if base.isascii() and base.isdigit():
+            if len(base) == 4 and base.startswith("000") and base[3] != "0":
+                alt: str | None = base[2:]
+            elif len(base) == 2 and base.startswith("0") and base[1] != "0":
+                alt = f"00{base}"
+            else:
+                alt = None
+            if alt is not None:
+                extra.append(f"{alt}{BUS_ROUTING}{iface}" if sep else alt)
+    return list(dict.fromkeys([*keys, *extra]))
+
+
 def _spellings_for(who: str) -> typing.Callable[[str], list[str]]:
-    """The spellings of an address of ``who``: only a WHO 25 contact has a padded one."""
-    return _contact_spellings if str(who) == "25" else _spellings
+    """The spellings of an address of ``who``: contacts carry 301/31 aliases and motion carries 0001..0009/01..09."""
+    if str(who) == "25":
+        return _contact_spellings
+    if str(who) == "1":
+        return _motion_spellings
+    return _spellings
 
 
 def dry_contact_config_keys(candidate: str) -> tuple[str, ...]:

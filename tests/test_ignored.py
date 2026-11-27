@@ -284,9 +284,9 @@ def test_ignored_addresses_matching_routed_interfaces():
     assert ign_qual.is_ignored(1, "74", interface="2") is False
     assert ign_qual.is_ignored(1, "74", interface="bus") is False
 
-    # Hyphenated WHERE stripping on main bus
+    # Legacy ``{who}-`` prefix stripping on main bus; arbitrary hyphenated YAML keys never match
     assert ign_bare.is_ignored(1, "1-74") is True
-    assert ign_bare.is_ignored(1, "prefix-74") is True
+    assert ign_bare.is_ignored(1, "prefix-74") is False
     assert ign_bare.is_ignored(1, "1-74", interface="01") is False
 
 

@@ -2005,6 +2005,22 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         record = await self._async_last_restore_record()
         await self._async_restore_actuator_lock(last_state, record)
         if self._advanced:
+            saved_unavailable = last_state.state == STATE_UNAVAILABLE
+            if (
+                self._slat_tilt
+                and not self._ran_since_start
+                and self._attr_current_cover_tilt_position is None
+            ):
+                last_tilt = last_state.attributes.get(ATTR_CURRENT_TILT_POSITION)
+                if last_tilt is None and saved_unavailable:
+                    last_tilt = record.get("tilt")
+                if last_tilt is not None:
+                    try:
+                        self._attr_current_cover_tilt_position = max(
+                            0, min(100, int(round(float(last_tilt))))
+                        )
+                    except (ValueError, TypeError):
+                        pass
             self._restore_last_run(record)
             self._restore_strategy_state(record)
             return
@@ -2154,8 +2170,6 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 data["is_closed"] = position == 0
             elif not (self.is_opening or self.is_closing) and (is_closed := self.is_closed) is not None:
                 data["is_closed"] = is_closed
-            if self._slat_tilt and (tilt := self.current_cover_tilt_position) is not None:
-                data["tilt"] = tilt
             if self._motion_started_at:
                 data["motion_started_at"] = self._motion_started_at
                 if self.is_opening or self.is_closing:
@@ -2172,6 +2186,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     data["relay_hold_direction"] = "open" if self._relay_hold_opening else "close"
             elif self._relay_hold_cleared and (self._last_run or self._motion_started_at):
                 data["relay_hold_until"] = None
+        if self._slat_tilt and (tilt := self.current_cover_tilt_position) is not None:
+            # WHO=2 Dimension 10 reports curtain height only, never slat angle; persist
+            # slat tilt for both timed and advanced (Dim 10) Venetian blinds.
+            data["tilt"] = tilt
         if self._last_run:
             data["last_run"] = dict(self._last_run)
         if self._actuator_locked is not None and self.scope is None:
@@ -2241,6 +2259,17 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 changed = True
         if changed:
             hass.config_entries.async_update_entry(entry, options=options)
+        try:
+            reg = er.async_get(hass)
+            entry_mac = str((getattr(entry, "data", None) or {}).get(CONF_MAC, "") or "")
+            prefixes = {p for p in (self._gateway_handler.mac, entry_mac) if p}
+            for prefix_mac in prefixes:
+                if old_entity_id := reg.async_get_entity_id(
+                    "number", DOMAIN, f"{prefix_mac}-2-{key}-min_position_delta"
+                ):
+                    reg.async_remove(old_entity_id)
+        except Exception:  # pragma: no cover - registry unavailable in minimal mocks
+            pass
 
 
     # ── Calibration ──────────────────────────────────────────────────────
