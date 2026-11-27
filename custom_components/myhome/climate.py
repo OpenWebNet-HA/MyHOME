@@ -166,6 +166,8 @@ _FOUR_ZONE_BURST_WINDOW = 5.0
 _ZONE_CONTEXT_MODES = {"heating": HVACMode.HEAT, "cooling": HVACMode.COOL, "automatic": HVACMode.AUTO}
 _ZONE_STATES_ON = ("setpoint", "comfort", "eco")
 _ZONE_STATES_OFF = ("protection", "off")
+_MESSAGE_TYPE_PUMP_CALL = "pump_call"
+_MESSAGE_TYPE_LOCAL_OFFSET_RELEASE = "local_offset_release"
 # Central unit protection modes (WHO 4 p. 5 and p. 64): the plant keeps its season and
 # regulates to the protection setpoint; it is not switched off.
 _CENTRAL_PROTECTION = {"102": ("antifreeze", HVACMode.HEAT), "202": ("thermal_protection", HVACMode.COOL)}
@@ -697,6 +699,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         where = self._bus_where
         if not self._central and not is_actuator_where(where) and not is_probe(where):
             where = zone_number(where)
+            if len(where) == 2 and where[0] == "0" and where[1] in "123456789":
+                where = where[1]
         if self._interface is not None:
             return f"{where}{BUS_ROUTING}{self._interface}"
         return where
@@ -2118,6 +2122,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         ``Z#4#II#N``.
         """
         zone = zone_number(self._where)
+        if len(zone) == 2 and zone[0] == "0" and zone[1] in "123456789":
+            zone = zone[1]
         routing = f"{BUS_ROUTING}{self._interface}" if self._interface is not None else ""
         temperature_known = self._attr_native_current_temperature is not None and not self._current_temperature_restored
         shown_known = self.native_target_temperature is not None and not self._target_temperature_restored
@@ -2127,7 +2133,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         silent = not temperature_known or not setpoint_known or not mode_known
         reads: list[str] = []
         if not temperature_known:
-            reads.append(f"*#4*{zone}{routing}*0##")
+            reads.append(str(OWNHeatingCommand.get_temperature(f"{zone}{routing}")))
         if (
             knob_missing
             and not self._local_offset_read_sent
@@ -5359,6 +5365,24 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             elif diag_what == 31:
                 self._battery_fault = True
                 self._report_fault(FaultKind.CENTRAL_BATTERY_FAULT, code="31")
+        elif message.message_type == _MESSAGE_TYPE_PUMP_CALL:
+            LOGGER.debug(
+                "%s %s",
+                self._gateway_handler.log_id,
+                message.human_readable_log,
+            )
+        elif message.message_type == _MESSAGE_TYPE_LOCAL_OFFSET_RELEASE:
+            LOGGER.debug(
+                "%s %s",
+                self._gateway_handler.log_id,
+                message.human_readable_log,
+            )
+            if (not self._central or self._unified_master) and (
+                self._local_offset != 0
+                or not self._local_offset_reported
+                or self._knob_pos not in (None, "0")
+            ):
+                self._request_zone_dimension(13)
 
         self._settle_action_of_active_actuators()
         self._ask_actuators_assumed_off()

@@ -80,6 +80,11 @@ from .where_grammar import (
     zone_number,
 )
 
+# Matches OWNd P2's MESSAGE_TYPE_PUMP_CALL and MESSAGE_TYPE_LOCAL_OFFSET_RELEASE
+# while staying compatible with OWNd 2.0.2.
+_MESSAGE_TYPE_PUMP_CALL = "pump_call"
+_MESSAGE_TYPE_LOCAL_OFFSET_RELEASE = "local_offset_release"
+
 # How many zones in a row may leave their temperature read unanswered before the zones known
 # only from their actuators are left to report by themselves (``_ask_actuator_only_zones``):
 # an unanswered read holds a command session for 2.1 s on an F461 and about 9 s on an F455.
@@ -219,7 +224,9 @@ def _calling_zones(message: Any) -> tuple[list[str], str | None]:
         zones.append(str(zone))
     if what in ("4001", "4002", 4001, 4002) and what_param:
         try:
-            zones.append(str(int(what_param[0])))
+            calling_zone = int(what_param[0])
+            if calling_zone > 0:
+                zones.append(str(calling_zone))
         except (ValueError, TypeError):
             pass
     clean_raw = str(raw_where).split("-")[-1] if raw_where is not None else ""
@@ -786,10 +793,11 @@ class ZoneDiscovery:
         if (
             ctx.source == "bus"
             and _zone_pair(ctx.address) in self._switch_actuator_zones
-            and getattr(ctx.message, "message_type", None) is None
+            and getattr(ctx.message, "message_type", None)
+            in (None, _MESSAGE_TYPE_PUMP_CALL, _MESSAGE_TYPE_LOCAL_OFFSET_RELEASE)
         ):
             LOGGER.debug(
-                "Deferring climate zone %s creation on typeless WHO=4 frame (%s) for thermo switch zone (#785)",
+                "Deferring climate zone %s creation on non-telemetry WHO=4 frame (%s) for thermo switch zone (#785)",
                 ctx.address.key,
                 ctx.message,
             )
