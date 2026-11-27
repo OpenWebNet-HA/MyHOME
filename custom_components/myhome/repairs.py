@@ -571,7 +571,7 @@ def async_create_cover_cutoff_issue(
             "limit": limit_str,
             "seconds": seconds_str,
         },
-        learn_more_url="https://openwebnet-ha.github.io/MyHOME/latest/diagnostics/repair-issues/#cover-calibration-cutoff",
+        learn_more_url="https://openwebnet-ha.github.io/MyHOME/latest/diagnostics/repair-issues/#cover-actuator-run-time-cutoff",
         data={
             "entry_id": entry_id,
             "device_id": str(device_id),
@@ -637,7 +637,7 @@ def async_sync_legacy_cover_cutoff_issues(
                 "down": down_str,
                 "up": up_str,
             },
-            learn_more_url="https://openwebnet-ha.github.io/MyHOME/latest/diagnostics/repair-issues/#cover-legacy-calibration-cutoff",
+            learn_more_url="https://openwebnet-ha.github.io/MyHOME/latest/diagnostics/repair-issues/#legacy-cover-cutoff-travel-time-detected",
             data={
                 "entry_id": entry_id,
                 "device_id": device_id,
