@@ -471,7 +471,11 @@ def async_sync_cover_calibration_issues(
         ent_reg = er.async_get(hass)
         dev_reg = dr.async_get(hass)
         for reg_entry in er.async_entries_for_config_entry(ent_reg, config_entry.entry_id):
-            if reg_entry.domain != PLATFORM or not reg_entry.unique_id:
+            if (
+                reg_entry.domain != PLATFORM
+                or not reg_entry.unique_id
+                or reg_entry.disabled_by is not None
+            ):
                 continue
             who, dev_id = parse_unique_id(reg_entry.unique_id, gw_mac, entry_mac)
             entry_who = who if who is not None else "2"
@@ -769,6 +773,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     _scope_run_active_until: float | None = None
     _unconfirmed_move_unsub: CALLBACK_TYPE | None = None
     _unconfirmed_move_task: asyncio.Task[None] | None = None
+    _manual_timing_failsafe_unsub: CALLBACK_TYPE | None = None
 
     def __init__(  # type: ignore
         self,
@@ -1147,12 +1152,37 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._cancel_wall_settle()
             self._travel_recomputed.set()
 
+    def _cancel_manual_timing_failsafe(self) -> None:
+        """Cancel any pending manual-timing failsafe timer."""
+        if self._manual_timing_failsafe_unsub is not None:
+            self._manual_timing_failsafe_unsub()
+            self._manual_timing_failsafe_unsub = None
+
     def begin_manual_timing(self) -> None:
         """Disable early travel-timer settling during a guided manual timing run."""
+        self._cancel_manual_timing_failsafe()
         self._settles_on_timer = False
+        target_hass = self.hass or self._hass
+        if target_hass is not None and hasattr(target_hass, "loop"):
+
+            @callback
+            def _restore_on_timeout(_now: datetime) -> None:
+                self._manual_timing_failsafe_unsub = None
+                self._settles_on_timer = True
+
+            self._manual_timing_failsafe_unsub = async_call_later(
+                target_hass,
+                CALIBRATION_RUN_TIMEOUT,
+                HassJob(
+                    _restore_on_timeout,
+                    f"myhome cover manual timing failsafe {self._full_where}",
+                    cancel_on_shutdown=True,
+                ),
+            )
 
     def end_manual_timing(self) -> None:
         """Restore normal travel-timer settling after a guided manual timing run."""
+        self._cancel_manual_timing_failsafe()
         self._settles_on_timer = True
 
     @property
@@ -2347,6 +2377,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._run_generation += 1  # a run in flight must not act on a removed entity
         self._cancel_echo_stop_timer()
         self._cancel_unconfirmed_move_timer()
+        self._cancel_manual_timing_failsafe()
+        self._settles_on_timer = True
         self._stop_live_refresh()
         self._cancel_stop_task()
         self._pending_stop_context = None

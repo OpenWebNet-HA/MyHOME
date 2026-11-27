@@ -631,6 +631,13 @@ async def test_cover_manual_calibration_repair_flow_manual_and_reset(hass: HomeA
     assert invalid["errors"] == {"base": "invalid_travel_time"}
     assert set_calls == []
 
+    too_high = await flow.async_step_manual_entry(
+        user_input={"travel_time_down": 350.0, "travel_time_up": 20.0}
+    )
+    assert too_high["type"] == "form"
+    assert too_high["errors"] == {"base": "invalid_travel_time"}
+    assert set_calls == []
+
     done = await flow.async_step_manual_entry(
         user_input={"travel_time_down": 35.0, "travel_time_up": 37.5}
     )

@@ -2283,6 +2283,7 @@ async def test_legacy_cutoff_travel_times_create_and_auto_clear_repair_issues(ha
                 "26": {"slat_time": 1.8, "min_motor_pulse": 0.4},  # partial record
                 "27": {"down": 22.4, "up": 23.1, "source": "measured"},  # valid non-cutoff
                 "28": {"down": 61.0, "up": 61.0},  # deleted cover (not in registry)
+                "29": {"down": 61.0, "up": 61.0},  # disabled cover in entity registry
             },
         },
     )
@@ -2305,6 +2306,10 @@ async def test_legacy_cutoff_travel_times_create_and_auto_clear_repair_issues(ha
         ent_reg.async_get_or_create(
             "cover", DOMAIN, f"{gateway.mac}-2-{dev_id}", config_entry=entry
         )
+    disabled_29 = ent_reg.async_get_or_create(
+        "cover", DOMAIN, f"{gateway.mac}-2-29", config_entry=entry
+    )
+    ent_reg.async_update_entity(disabled_29.entity_id, disabled_by=er.RegistryEntryDisabler.USER)
 
     async_sync_cover_calibration_issues(hass, entry)
 
@@ -2320,8 +2325,8 @@ async def test_legacy_cutoff_travel_times_create_and_auto_clear_repair_issues(ha
     assert issue_22.is_fixable is True
     assert issue_22.translation_placeholders["down"] == "121.5"
 
-    # Non-legacy, manual, copied, ignored, partial, normal, and deleted covers must NOT be flagged
-    for excluded_slug in ("23", "24", "25", "26", "27", "28"):
+    # Non-legacy, manual, copied, ignored, partial, normal, deleted, and disabled covers must NOT be flagged
+    for excluded_slug in ("23", "24", "25", "26", "27", "28", "29"):
         assert issue_reg.async_get_issue(
             DOMAIN, f"{ISSUE_COVER_LEGACY_CUTOFF}_{entry.entry_id}_{excluded_slug}"
         ) is None
@@ -2336,6 +2341,42 @@ async def test_legacy_cutoff_travel_times_create_and_auto_clear_repair_issues(ha
     cover_22 = _make_cover(hass, gateway, device_id="22#4#02", where="22", interface="02", name="Cover 22I02")
     await cover_22.async_reset_travel_time()
     assert issue_reg.async_get_issue(DOMAIN, issue_22_id) is None
+
+
+async def test_manual_timing_failsafe_restores_settle_on_timeout_and_cancels_cleanly(hass, gateway) -> None:
+    """begin_manual_timing() arms a CALIBRATION_RUN_TIMEOUT failsafe and cancels cleanly on end/removal."""
+    from datetime import timedelta
+
+    from homeassistant.util import dt as dt_util
+    from pytest_homeassistant_custom_component.common import async_fire_time_changed
+
+    from custom_components.myhome.const import CALIBRATION_RUN_TIMEOUT
+
+    cover = _make_cover(hass, gateway, device_id="21", where="21")
+
+    # 1. Timeout restores _settles_on_timer automatically if modal is never closed cleanly
+    cover.begin_manual_timing()
+    assert cover._settles_on_timer is False
+    assert cover._manual_timing_failsafe_unsub is not None
+
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=CALIBRATION_RUN_TIMEOUT + 1))
+    await hass.async_block_till_done()
+    assert cover._settles_on_timer is True
+    assert cover._manual_timing_failsafe_unsub is None
+
+    # 2. end_manual_timing() cancels the failsafe handle immediately
+    cover.begin_manual_timing()
+    assert cover._manual_timing_failsafe_unsub is not None
+    cover.end_manual_timing()
+    assert cover._settles_on_timer is True
+    assert cover._manual_timing_failsafe_unsub is None
+
+    # 3. Entity removal cancels any pending failsafe handle and restores _settles_on_timer
+    cover.begin_manual_timing()
+    assert cover._manual_timing_failsafe_unsub is not None
+    await cover.async_will_remove_from_hass()
+    assert cover._settles_on_timer is True
+    assert cover._manual_timing_failsafe_unsub is None
 
 
 

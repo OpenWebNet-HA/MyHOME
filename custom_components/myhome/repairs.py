@@ -26,6 +26,7 @@ from homeassistant.helpers.issue_registry import (
 )
 
 from .const import (
+    CALIBRATION_MAX_RUN,
     CALIBRATION_MIN_RUN,
     CONF_BUS_TOPOLOGY,
     CONF_DELEGATED_WHOS,
@@ -69,7 +70,6 @@ ISSUE_LEGACY_YAML_IMPORTED = "legacy_yaml_imported"
 ISSUE_COVER_CALIBRATION_CUTOFF = "cover_calibration_cutoff"
 ISSUE_COVER_LEGACY_CUTOFF = "cover_legacy_calibration_cutoff"
 
-_MANUAL_TRAVEL_MAX_SECONDS = 600.0
 _STOP_ECHO_WAIT_SECONDS = 0.35
 
 
@@ -659,7 +659,7 @@ def _travel_time_schema(default_down: float, default_up: float) -> vol.Schema:
     num_selector = selector.NumberSelector(
         selector.NumberSelectorConfig(
             min=CALIBRATION_MIN_RUN,
-            max=_MANUAL_TRAVEL_MAX_SECONDS,
+            max=CALIBRATION_MAX_RUN,
             step=0.1,
             unit_of_measurement="s",
             mode=selector.NumberSelectorMode.BOX,
@@ -841,13 +841,13 @@ class CoverManualCalibrationRepairFlow(RepairsFlow):
         if (
             isinstance(raw_down, (int, float))
             and not isinstance(raw_down, bool)
-            and CALIBRATION_MIN_RUN <= float(raw_down) <= _MANUAL_TRAVEL_MAX_SECONDS
+            and CALIBRATION_MIN_RUN <= float(raw_down) <= CALIBRATION_MAX_RUN
         ):
             down = float(raw_down)
         if (
             isinstance(raw_up, (int, float))
             and not isinstance(raw_up, bool)
-            and CALIBRATION_MIN_RUN <= float(raw_up) <= _MANUAL_TRAVEL_MAX_SECONDS
+            and CALIBRATION_MIN_RUN <= float(raw_up) <= CALIBRATION_MAX_RUN
         ):
             up = float(raw_up)
 
@@ -858,7 +858,7 @@ class CoverManualCalibrationRepairFlow(RepairsFlow):
             if (
                 isinstance(lr_sec, (int, float))
                 and not isinstance(lr_sec, bool)
-                and CALIBRATION_MIN_RUN <= float(lr_sec) <= _MANUAL_TRAVEL_MAX_SECONDS
+                and CALIBRATION_MIN_RUN <= float(lr_sec) <= CALIBRATION_MAX_RUN
             ):
                 if lr_dir == "close":
                     down = float(lr_sec)
@@ -973,8 +973,8 @@ class CoverManualCalibrationRepairFlow(RepairsFlow):
             if (
                 not math.isfinite(down)
                 or not math.isfinite(up)
-                or not (CALIBRATION_MIN_RUN <= down <= _MANUAL_TRAVEL_MAX_SECONDS)
-                or not (CALIBRATION_MIN_RUN <= up <= _MANUAL_TRAVEL_MAX_SECONDS)
+                or not (CALIBRATION_MIN_RUN <= down <= CALIBRATION_MAX_RUN)
+                or not (CALIBRATION_MIN_RUN <= up <= CALIBRATION_MAX_RUN)
             ):
                 errors["base"] = "invalid_travel_time"
 

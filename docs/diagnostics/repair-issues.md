@@ -409,7 +409,7 @@ Because saving the actuator's relay cutoff as the cover's travel time would prod
    - Open **Settings → System → Repairs** and click **Fix** on the issue card.
    - Choose one of three options:
      - **Guided Start → Stop measurement**: Drives the cover closed (disabling early timer settle so tall covers never settle prematurely), stops immediately when you click **Submit** at the bottom end stop, optionally reuses the closing time or performs the same timed opening measurement, and lets you review and save the exact durations directly via `myhome.set_cover_travel_time` (`calibration_source: manual`). Closing the dialog mid-run automatically stops the motor.
-     - **Enter travel times manually**: Enter known `travel_time_down` and `travel_time_up` values (`1.0–600.0 s`).
+     - **Enter travel times manually**: Enter known `travel_time_down` and `travel_time_up` values (`1.0–300.0 s`).
      - **Reset to default**: Clears stored calibration and returns to `myhome.yaml` or the `25 s` default.
 2. **Manual Service Action**:
    - Time a closing and opening run manually using the cover's `last_run_seconds` attribute and call `myhome.set_cover_travel_time` (see [Covers → Method 3](../configuration/covers.md#method-3-set-explicit-travel-time-via-service-action)).
