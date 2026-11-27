@@ -270,9 +270,10 @@ def test_firmware_oracle_pre_move_stop_gateway_split() -> None:
             "*2*1000#1*31##" if dir_scs == "1208" else "*2*1000#2*31##"
         ]
 
-        # All 10 other WHO=2-capable Linux gateways in firmware_oracle.json emit
+        # All 11 other WHO=2-capable Linux gateways in firmware_oracle.json emit
         # a preceding 120A STOP telegram before 1208/1209.
         pre_stop_gateways = (
+            "3488",
             "F453",
             "F453AV",
             "F454",
