@@ -295,7 +295,7 @@ SILENT_ZONE_GRACE = 30.0
 # one after another), and a single-dimension read on a probe-less channel holds a command
 # session ~9 s before the NACK.
 KNOB_READ_IN_SILENT_ZONE_POLL = frozenset({"F455"})
-# Zones behind an F422 bus interface (WHERE Z#4#II): zero of the twelve emulated gateways in
+# Zones behind an F422 bus interface (WHERE Z#4#II): zero of the thirteen emulated gateways in
 # own-firmware-oracle (findings/thermo-zone-requests.md) emit $06EC / $06E4 interface-routed SCS
 # frames for WHO 4. Gateways either NACK/drop Z#4#II queries, truncate Z#4#II at # and cross-poll
 # local main-bus zone Z (F450, F454, F459, F460, F461, H4684, MH200, MyHomeServer1), or on MH202
@@ -1207,7 +1207,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
     def interface_zone_request_refused(self) -> bool:
         """Whether WHO 4 requests behind an ``#4#II`` interface are dropped, misrouted, or crash the gateway.
 
-        Zero of the twelve emulated gateways in own-firmware-oracle (``findings/thermo-zone-requests.md``)
+        Zero of the thirteen emulated gateways in own-firmware-oracle (``findings/thermo-zone-requests.md``)
         emit ``$06EC`` / ``$06E4`` interface-routed SCS frames for WHO 4: gateways either NACK/drop them,
         truncate ``Z#4#II`` at ``#`` and cross-poll local zone ``Z`` on the main bus, or on MH202 ``010024``
         misparse trailing ``#4#01`` as local zone 4 actuator 1 and crash ``coso`` with ``SIGSEGV`` on

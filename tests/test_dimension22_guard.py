@@ -4,7 +4,7 @@ Every dimension 22 spelling whose WHERE carries no actuator token (a zone, the
 general ``0``, the central unit ``#0``) kills the thermostat daemon of the Linux
 IP gateways (own-firmware-oracle ``thermo-dim22``; a live F461 2.0.11 rebooted,
 OWNd#136). The published split forms ``*#4*3#Z#N*22##`` and
-``*#4*3#Z#N*#22*MOD*SP*VEL*SWING##`` crashed none of the twelve emulated
+``*#4*3#Z#N*#22*MOD*SP*VEL*SWING##`` crashed none of the thirteen emulated
 gateways and are what OWNd >= 2.0.0b12 forwards (OWNd#151,
 ``is_who4_dimension_22_crash_form``). MyHOME follows that detector when the
 installed OWNd has it and refuses every dimension 22 frame otherwise.

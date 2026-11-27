@@ -44,7 +44,7 @@ SERVICE_SEND_MESSAGE = "send_message"
 # ``*#4*#0*22##``) the frame kills the thermostat daemon of the Linux IP gateways
 # (own-firmware-oracle ``thermo-dim22``, OWNd#136 / OWNd#151). The published split
 # forms ``*#4*3#Z#N*22##`` and ``*#4*3#Z#N*#22*MOD*SP*VEL*SWING##`` crashed none of
-# the twelve emulated gateways. OWNd >= 2.0.0b12 tells the two apart
+# the thirteen emulated gateways. OWNd >= 2.0.0b12 tells the two apart
 # (``is_who4_dimension_22_crash_form``); with an older OWNd no form is known to be
 # safe, so every dimension 22 frame stays refused. Used by handle_send_message,
 # the bus-monitor WebSocket and the thermo switch trigger validation.
