@@ -136,10 +136,10 @@ def test_unconfigured_timezone_real_newlines_and_localized_strings() -> None:
             *cover_keys,
         ),
     }
-    cover_wording_rules: dict[str, tuple[str, str]] = {
-        "nl": ("raambedekking", "rolluik"),
-        "fr": ("ouverture", "volet"),
-        "it": ("copertur", "tapparell"),
+    cover_wording_rules: dict[str, tuple[tuple[str, ...], str]] = {
+        "nl": (("raambedekking",), "rolluik"),
+        "fr": (("ouverture", "ouvrant"), "volet"),
+        "it": (("copertur",), "tapparell"),
     }
 
     for language in ("nl", "fr", "it"):
@@ -170,11 +170,11 @@ def test_unconfigured_timezone_real_newlines_and_localized_strings() -> None:
         assert not untranslated, f"{language}: untranslated keys matching English: {untranslated}"
 
         # PR #1028 cover keys must use generic cover wording instead of shutter-specific wording.
-        expected_stem, forbidden_stem = cover_wording_rules[language]
+        expected_stems, forbidden_stem = cover_wording_rules[language]
         for key in cover_keys:
             lowered = translated[key].lower()
-            assert expected_stem in lowered, (
-                f"{language}: {key} should contain {expected_stem!r}: {translated[key]!r}"
+            assert any(stem in lowered for stem in expected_stems), (
+                f"{language}: {key} should contain one of {expected_stems!r}: {translated[key]!r}"
             )
             assert forbidden_stem not in lowered, (
                 f"{language}: {key} should not contain {forbidden_stem!r}: {translated[key]!r}"

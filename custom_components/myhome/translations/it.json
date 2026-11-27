@@ -527,7 +527,7 @@
     },
     "calibrate_cover": {
       "name": "Calibra il tempo di corsa della copertura",
-      "description": "Misura i tempi di corsa in apertura e in chiusura di una copertura temporizzata sul bus SCS e li salva: la copertura viene portata tutta aperta, poi tutta chiusa (cronometrata), poi di nuovo tutta aperta (cronometrata). Le coperture vengono calibrate una alla volta per gateway."
+      "description": "Misura i tempi di corsa in apertura e in chiusura di una copertura temporizzata sul bus SCS e li salva: la copertura viene portata tutta aperta, poi tutta chiusa (misurata), poi di nuovo tutta aperta (misurata). Le coperture vengono calibrate una alla volta per gateway."
     },
     "stop_cover_calibration": {
       "name": "Interrompi la calibrazione delle coperture",
@@ -707,7 +707,7 @@
         "step": {
           "init": {
             "title": "Imposta il tempo di corsa della copertura",
-            "description": "{detail}\n\nScegli come calibrare **{name}**:",
+            "description": "La calibrazione automatica è terminata dopo {seconds} s al limite di {limit} s dell'attuatore anziché al finecorsa fisico.\n\nScegli come calibrare **{name}**:",
             "menu_options": {
               "timed_close_ready": "Misurazione guidata Avvia → Ferma",
               "manual_entry": "Inserisci manualmente i tempi di corsa",
@@ -716,7 +716,7 @@
           },
           "timed_close_ready": {
             "title": "Passaggio 1 di 2: pronto per misurare la chiusura",
-            "description": "Assicurati che **{name}** sia completamente aperta, quindi fai clic su **Invia** per avviare la chiusura. Preparati a fare di nuovo clic su **Invia** non appena raggiunge il finecorsa inferiore."
+            "description": "Assicurati che la copertura **{name}** sia completamente aperta, quindi fai clic su **Invia** per avviare la chiusura. Preparati a fare di nuovo clic su **Invia** non appena raggiunge il finecorsa inferiore."
           },
           "timed_close_stop": {
             "title": "Passaggio 1 di 2: chiusura in corso — fai clic su Invia al finecorsa",
@@ -756,6 +756,10 @@
         },
         "abort": {
           "cover_missing": "L'entità copertura non è più disponibile.",
+          "cover_unavailable": "La copertura o il relativo gateway non è attualmente disponibile. Riconnetti il gateway e riprova.",
+          "cover_locked": "L'attuatore della copertura è attualmente bloccato (WHO=14). Sbloccalo prima di avviare la misurazione guidata.",
+          "calibration_in_progress": "Un'altra calibrazione o sessione di misurazione guidata è già attiva per questa copertura o questo gateway.",
+          "cover_reports_position": "Questa copertura segnala nativamente la propria posizione; la calibrazione del tempo di corsa non si applica e la voce obsoleta è stata rimossa.",
           "save_failed": "Impossibile salvare i tempi di corsa della copertura."
         },
         "error": {
@@ -769,7 +773,7 @@
         "step": {
           "init": {
             "title": "Imposta il tempo di corsa della copertura",
-            "description": "{detail}\n\nScegli come calibrare **{name}**:",
+            "description": "I tempi di corsa salvati sono {down} s (chiusura) e {up} s (apertura), valori che corrispondono a un limite dell'attuatore.\n\nScegli come calibrare **{name}**:",
             "menu_options": {
               "timed_close_ready": "Misurazione guidata Avvia → Ferma",
               "manual_entry": "Inserisci manualmente i tempi di corsa",
@@ -778,7 +782,7 @@
           },
           "timed_close_ready": {
             "title": "Passaggio 1 di 2: pronto per misurare la chiusura",
-            "description": "Assicurati che **{name}** sia completamente aperta, quindi fai clic su **Invia** per avviare la chiusura. Preparati a fare di nuovo clic su **Invia** non appena raggiunge il finecorsa inferiore."
+            "description": "Assicurati che la copertura **{name}** sia completamente aperta, quindi fai clic su **Invia** per avviare la chiusura. Preparati a fare di nuovo clic su **Invia** non appena raggiunge il finecorsa inferiore."
           },
           "timed_close_stop": {
             "title": "Passaggio 1 di 2: chiusura in corso — fai clic su Invia al finecorsa",
@@ -818,6 +822,10 @@
         },
         "abort": {
           "cover_missing": "L'entità copertura non è più disponibile.",
+          "cover_unavailable": "La copertura o il relativo gateway non è attualmente disponibile. Riconnetti il gateway e riprova.",
+          "cover_locked": "L'attuatore della copertura è attualmente bloccato (WHO=14). Sbloccalo prima di avviare la misurazione guidata.",
+          "calibration_in_progress": "Un'altra calibrazione o sessione di misurazione guidata è già attiva per questa copertura o questo gateway.",
+          "cover_reports_position": "Questa copertura segnala nativamente la propria posizione; la calibrazione del tempo di corsa non si applica e la voce obsoleta è stata rimossa.",
           "save_failed": "Impossibile salvare i tempi di corsa della copertura."
         },
         "error": {
@@ -882,10 +890,10 @@
       "message": "{name}: nessuno stato di arresto dall'attuatore entro {timeout} s - potrebbe non segnalare lo stato; imposta travel_time manualmente"
     },
     "calibration_actuator_cutoff_open": {
-      "message": "{name}: la corsa di apertura è terminata dopo {seconds} s, al limite del tempo di funzionamento di {limit} s dell'attuatore, non al finecorsa; l'attuatore non può misurare automaticamente questa copertura — usa il flusso guidato di misurazione manuale in Impostazioni -> Riparazioni, oppure misura una corsa manualmente (last_run_seconds) e salvala con myhome.set_cover_travel_time"
+      "message": "{name}: la corsa di apertura è terminata dopo {seconds} s, al limite del tempo di funzionamento di {limit} s dell'attuatore, non al finecorsa; l'attuatore non può misurare automaticamente questa copertura — usa il flusso guidato di misurazione manuale in Impostazioni -> Sistema -> Riparazioni, oppure misura una corsa manualmente (last_run_seconds) e salvala con myhome.set_cover_travel_time"
     },
     "calibration_actuator_cutoff_close": {
-      "message": "{name}: la corsa di chiusura è terminata dopo {seconds} s, al limite del tempo di funzionamento di {limit} s dell'attuatore, non al finecorsa; l'attuatore non può misurare automaticamente questa copertura — usa il flusso guidato di misurazione manuale in Impostazioni -> Riparazioni, oppure misura una corsa manualmente (last_run_seconds) e salvala con myhome.set_cover_travel_time"
+      "message": "{name}: la corsa di chiusura è terminata dopo {seconds} s, al limite del tempo di funzionamento di {limit} s dell'attuatore, non al finecorsa; l'attuatore non può misurare automaticamente questa copertura — usa il flusso guidato di misurazione manuale in Impostazioni -> Sistema -> Riparazioni, oppure misura una corsa manualmente (last_run_seconds) e salvala con myhome.set_cover_travel_time"
     },
     "cover_reports_position": {
       "message": "{name} segnala la propria posizione (Dimension 10 / advanced: true); la calibrazione del tempo di corsa non si applica. Se si tratta di un attuatore temporizzato standard (es. F411) che non supporta la dimensione 10, impostare advanced: false o rimuovere advanced: true da myhome.yaml."

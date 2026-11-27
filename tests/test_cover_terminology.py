@@ -30,7 +30,14 @@ EXPECTED_FIX_FLOW_STEPS = {
 }
 
 EXPECTED_MENU_OPTIONS = {"timed_close_ready", "manual_entry", "reset_default"}
-EXPECTED_ABORT_REASONS = {"cover_missing", "save_failed"}
+EXPECTED_ABORT_REASONS = {
+    "cover_missing",
+    "cover_unavailable",
+    "cover_locked",
+    "calibration_in_progress",
+    "cover_reports_position",
+    "save_failed",
+}
 EXPECTED_ERRORS = {"invalid_travel_time"}
 
 
@@ -107,8 +114,21 @@ def test_generic_who2_cover_terminology_across_locales_and_code() -> None:
             assert "myhome.set_cover_travel_time" in msg, (
                 f"{name}.{exc_key}: must mention myhome.set_cover_travel_time"
             )
+            assert msg.count("->") >= 2, (
+                f"{name}.{exc_key}: must reference full Settings -> System -> Repairs path: {msg}"
+            )
 
     # 4. Items 3 & 6b: Both new fixable Repair Issues satisfy hassfest schema & placeholder parity.
+    assert set(
+        PLACEHOLDER_RE.findall(
+            strings_data["issues"]["cover_calibration_cutoff"]["fix_flow"]["step"]["init"]["description"]
+        )
+    ) == {"name", "seconds", "limit"}
+    assert set(
+        PLACEHOLDER_RE.findall(
+            strings_data["issues"]["cover_legacy_calibration_cutoff"]["fix_flow"]["step"]["init"]["description"]
+        )
+    ) == {"name", "down", "up"}
     en_issue_placeholders: dict[str, dict[str, set[str]]] = {}
     for issue_key in REPAIR_ISSUE_KEYS:
         en_issue = strings_data["issues"][issue_key]

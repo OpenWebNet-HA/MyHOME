@@ -59,10 +59,10 @@ Home Assistant renders different open/close control icons depending on the cover
 | `curtain` | Side-drawing curtains / drapes | Horizontal **↔** arrows | Renders horizontal open/close arrows for side-drawing curtains; for vertically opening pleated or Roman shades, use `shade` or `blind` instead. |
 | `awning` | Retractable patio or window awnings | Inverted vertical **↓ / ↑** (extend / retract) | Direction arrows match outward/downward awning extension. |
 | `door` | Motorized doors | Door open / close icons | State wording reflects open/closed door semantics. |
-| `garage` | Sectional, tilt, or roller garage doors | Garage open / close icons | Typical for `WHO = 1` impulse garage relays (`device_class: garage`). |
+| `garage` | Sectional, tilt, or roller garage doors | Vertical **↑ / ↓** arrows *(garage state icon)* | Typical for `WHO = 1` impulse garage relays (`device_class: garage`). |
 | `gate` | Sliding or swing entrance gates | Gate open / close icons | Default for `WHO = 1` impulse covers (`device_class: gate`). |
-| `damper` | HVAC air dampers / ventilation louvres | Damper open / close icons | For motorized air-flow dampers. |
-| `window` | Motorized windows, skylights, roof vents | Window open / close icons | State wording reflects open/closed window semantics. |
+| `damper` | HVAC air dampers / ventilation louvres | Vertical **↑ / ↓** arrows *(damper state icon)* | For motorized air-flow dampers. |
+| `window` | Motorized windows, skylights, roof vents | Vertical **↑ / ↓** arrows *(window state icon)* | State icon and wording reflect open/closed window semantics. |
 
 ```yaml
 # /config/myhome.yaml
@@ -109,9 +109,9 @@ The smallest change is set per native cover directly in the Home Assistant UI vi
 ```yaml
 # Optional /config/myhome.yaml fallback (the UI Minimum position step entity takes precedence)
 cover:
-  living_room_shutter:
+  living_room_cover:
     where: '31'
-    name: Living Room Shutter
+    name: Living Room Cover
     advanced_shutter: true
     min_position_delta: 1
 ```
@@ -159,12 +159,12 @@ When you click **Calibrate Travel Time**, the integration performs a fully autom
 
 > [!NOTE]
 >
-> * **Clean UI Feedback (Notifications & Guided Repair Flow)**: Calibration runs in a managed background task so the button responds immediately. Any refusal (already calibrating, locked actuator, native position-reporting cover, missing stop status after `180 s`, or actuator cutoff) is logged cleanly at `WARNING` level without raw tracebacks and surfaced directly in the Home Assistant UI via a **persistent notification**. When an actuator hits its `60 s` / `120 s` run-time cutoff, the notification links directly to **Settings → System → Repairs**, where clicking **Fix** launches the interactive **Guided Start → Stop** manual timing dialog (which drives the cover without settling early, stops immediately on **Submit**, saves `calibration_source: manual`, and automatically stops the motor if the dialog is closed mid-run).
+> * **Clean UI Feedback (Notifications & Guided Repair Flow)**: Calibration runs in a managed background task so the button responds immediately. Pre-flight checks refuse unavailable or unloaded covers, `WHO = 14`-locked actuators, active calibrations, native position-reporting covers, missing stop status after `180 s`, and actuator cutoffs cleanly at `WARNING` level (without raw tracebacks) and surface the outcome directly in the Home Assistant UI via a **persistent notification**. When an actuator hits its `60 s` / `120 s` run-time cutoff, the notification links directly to **Settings → System → Repairs**, where clicking **Fix** launches the interactive **Guided Start → Stop** manual timing dialog (which verifies the cover is available, unlocked, and not already calibrating, drives the cover without settling early under a `180 s` failsafe, stops immediately on **Submit** or if the dialog is closed mid-run, saves `calibration_source: manual`, and automatically clears both the Repair Issue and the cover's calibration notification).
 > * **Do NOT stop the cover during automated calibration — neither from the cover entity nor from the wall**: While gateways that emit command-translation frames (`*2*1000#0*<WHERE>##`) recognise an external stop and abort calibration, gateways or controls that put only a plain stop frame (`*2*0*<WHERE>##`) on the bus emit the very same frame the actuator sends when the cover reaches its end stop. When only `*2*0*<WHERE>##` is seen, the integration cannot tell them apart and stores the partial elapsed time (e.g. 5–6 seconds) as the calibrated travel time.
 > * **How to Abort Safely**: The one safe way out is the `myhome.stop_cover_calibration` action in **Developer Tools → Actions**: it stops the moving cover, aborts any remaining covers in a batch run (even if called during the one-second settle pause between runs), marks the run as interrupted, and stores nothing. (Driving the cover in the *opposite* direction from the wall is also recognised as an interruption, because it arrives as an explicit open/close command rather than a stop — but prefer the action.)
 
 ### Method 2: Calibrate All Covers Sequentially
-On your gateway device page, click **Calibrate All Covers** (`button.<gateway name>_calibrate_all_covers`, e.g. `button.f454_gateway_calibrate_all_covers`). It runs a managed background batch targeting every enabled cover of that gateway **one at a time**, because two motors moving on one paced session would make the timings meaningless. Covers still waiting report `phase: queued`. Individual refusals (such as position-reporting advanced covers, locked actuators, or actuators hitting a `60 s` / `120 s` cutoff) are logged at `WARNING` level and recorded without stopping the rest of the batch; every cutoff cover also gets a per-cover fixable Repair Issue. Calling `myhome.stop_cover_calibration` immediately stops the moving cover and aborts the remaining batch. When the batch finishes (or is stopped), MyHOME posts one summary **persistent notification** listing succeeded, stopped/skipped, and failed covers with reasons and a direct link to **Settings → System → Repairs** whenever any cover hit a cutoff.
+On your gateway device page, click **Calibrate All Covers** (`button.<gateway name>_calibrate_all_covers`, e.g. `button.f454_gateway_calibrate_all_covers`). It runs a managed background batch targeting every enabled, non-exposed cover of that gateway **one at a time** (and refuses a duplicate press if a batch is already running), because two motors moving on one paced session would make the timings meaningless. Covers still waiting report `phase: queued`. Individual refusals (such as unavailable covers, position-reporting advanced covers, locked actuators, or actuators hitting a `60 s` / `120 s` cutoff) are logged at `WARNING` level and recorded without stopping the rest of the batch; every cutoff cover also gets a per-cover fixable Repair Issue. Calling `myhome.stop_cover_calibration` immediately stops the moving cover and aborts the remaining batch. When the batch finishes (or is stopped), MyHOME posts one summary **persistent notification** listing succeeded, stopped/skipped, and failed covers with reasons and a direct link to **Settings → System → Repairs** whenever any cover hit a cutoff.
 
 ### Method 3: Set Explicit Travel Time via Service Action
 If your actuators enforce a configurator run-time cutoff (such as 60 s or 120 s) and you prefer not to use the guided Repair Flow, if your gateway is single-session (such as MH200 / MH200N), or if you already know the exact run duration (e.g. from a handheld stopwatch or technical datasheet), set it directly using the `myhome.set_cover_travel_time` action in **Developer Tools → Actions**.
@@ -180,7 +180,7 @@ You rarely need a handheld stopwatch: the integration times **every** run of a t
 ```yaml
 action: myhome.set_cover_travel_time
 target:
-  entity_id: cover.living_room_shutter
+  entity_id: cover.living_room_cover
 data:
   travel_time_down: 22.5
   travel_time_up: 24.0
@@ -193,7 +193,7 @@ To forget the measured or manual times and return to the `travel_time` from `myh
 ```yaml
 action: myhome.reset_cover_travel_time
 target:
-  entity_id: cover.living_room_shutter
+  entity_id: cover.living_room_cover
 ```
 
 ---

@@ -707,7 +707,7 @@
         "step": {
           "init": {
             "title": "Définir le temps de course de l'ouverture",
-            "description": "{detail}\n\nChoisissez comment calibrer **{name}** :",
+            "description": "La calibration automatique s'est arrêtée après {seconds} s à la limite de temps de marche de {limit} s de l'actionneur plutôt qu'en butée physique.\n\nChoisissez comment calibrer **{name}** :",
             "menu_options": {
               "timed_close_ready": "Mesure guidée Démarrer → Arrêter",
               "manual_entry": "Saisir les temps de course manuellement",
@@ -716,7 +716,7 @@
           },
           "timed_close_ready": {
             "title": "Étape 1 sur 2 : prêt à mesurer la fermeture",
-            "description": "Assurez-vous que **{name}** est entièrement ouverte, puis cliquez sur **Valider** pour lancer la fermeture. Préparez-vous à cliquer de nouveau sur **Valider** dès que la butée basse est atteinte."
+            "description": "Assurez-vous que l'ouverture **{name}** est complètement ouverte, puis cliquez sur **Valider** pour lancer la fermeture. Préparez-vous à cliquer de nouveau sur **Valider** dès que la butée basse est atteinte."
           },
           "timed_close_stop": {
             "title": "Étape 1 sur 2 : fermeture en cours — cliquez sur Valider en butée",
@@ -756,6 +756,10 @@
         },
         "abort": {
           "cover_missing": "L'entité d'ouverture n'est plus disponible.",
+          "cover_unavailable": "L'ouverture ou sa passerelle est actuellement indisponible. Rétablissez la connexion de la passerelle et réessayez.",
+          "cover_locked": "L'actionneur de l'ouverture est actuellement verrouillé (WHO=14). Déverrouillez-le avant de lancer une mesure guidée.",
+          "calibration_in_progress": "Une autre calibration ou session de mesure guidée est déjà en cours pour cette ouverture ou cette passerelle.",
+          "cover_reports_position": "Cette ouverture signale nativement sa position ; la calibration du temps de course ne s'applique pas et l'entrée obsolète a été supprimée.",
           "save_failed": "Échec de l'enregistrement des temps de course de l'ouverture."
         },
         "error": {
@@ -769,7 +773,7 @@
         "step": {
           "init": {
             "title": "Définir le temps de course de l'ouverture",
-            "description": "{detail}\n\nChoisissez comment calibrer **{name}** :",
+            "description": "Les temps de course enregistrés sont de {down} s (fermeture) et {up} s (ouverture), ce qui correspond à une limite de l'actionneur.\n\nChoisissez comment calibrer **{name}** :",
             "menu_options": {
               "timed_close_ready": "Mesure guidée Démarrer → Arrêter",
               "manual_entry": "Saisir les temps de course manuellement",
@@ -778,7 +782,7 @@
           },
           "timed_close_ready": {
             "title": "Étape 1 sur 2 : prêt à mesurer la fermeture",
-            "description": "Assurez-vous que **{name}** est entièrement ouverte, puis cliquez sur **Valider** pour lancer la fermeture. Préparez-vous à cliquer de nouveau sur **Valider** dès que la butée basse est atteinte."
+            "description": "Assurez-vous que l'ouverture **{name}** est complètement ouverte, puis cliquez sur **Valider** pour lancer la fermeture. Préparez-vous à cliquer de nouveau sur **Valider** dès que la butée basse est atteinte."
           },
           "timed_close_stop": {
             "title": "Étape 1 sur 2 : fermeture en cours — cliquez sur Valider en butée",
@@ -818,6 +822,10 @@
         },
         "abort": {
           "cover_missing": "L'entité d'ouverture n'est plus disponible.",
+          "cover_unavailable": "L'ouverture ou sa passerelle est actuellement indisponible. Rétablissez la connexion de la passerelle et réessayez.",
+          "cover_locked": "L'actionneur de l'ouverture est actuellement verrouillé (WHO=14). Déverrouillez-le avant de lancer une mesure guidée.",
+          "calibration_in_progress": "Une autre calibration ou session de mesure guidée est déjà en cours pour cette ouverture ou cette passerelle.",
+          "cover_reports_position": "Cette ouverture signale nativement sa position ; la calibration du temps de course ne s'applique pas et l'entrée obsolète a été supprimée.",
           "save_failed": "Échec de l'enregistrement des temps de course de l'ouverture."
         },
         "error": {
@@ -882,10 +890,10 @@
       "message": "{name} : aucun état d'arrêt de l'actionneur dans les {timeout} s - il ne signale peut-être pas son état ; définissez travel_time manuellement"
     },
     "calibration_actuator_cutoff_open": {
-      "message": "{name} : la course d'ouverture s'est terminée après {seconds} s, à la limite de temps de marche de {limit} s de l'actionneur, pas en butée ; l'actionneur ne peut pas mesurer cette ouverture automatiquement — utilisez le flux guidé de mesure manuelle dans Paramètres -> Réparations, ou mesurez une course manuellement (last_run_seconds) et enregistrez-la avec myhome.set_cover_travel_time"
+      "message": "{name} : la course d'ouverture s'est terminée après {seconds} s, à la limite de temps de marche de {limit} s de l'actionneur, pas en butée ; l'actionneur ne peut pas mesurer cette ouverture automatiquement — utilisez le flux guidé de mesure manuelle dans Paramètres -> Système -> Réparations, ou mesurez une course manuellement (last_run_seconds) et enregistrez-la avec myhome.set_cover_travel_time"
     },
     "calibration_actuator_cutoff_close": {
-      "message": "{name} : la course de fermeture s'est terminée après {seconds} s, à la limite de temps de marche de {limit} s de l'actionneur, pas en butée ; l'actionneur ne peut pas mesurer cette ouverture automatiquement — utilisez le flux guidé de mesure manuelle dans Paramètres -> Réparations, ou mesurez une course manuellement (last_run_seconds) et enregistrez-la avec myhome.set_cover_travel_time"
+      "message": "{name} : la course de fermeture s'est terminée après {seconds} s, à la limite de temps de marche de {limit} s de l'actionneur, pas en butée ; l'actionneur ne peut pas mesurer cette ouverture automatiquement — utilisez le flux guidé de mesure manuelle dans Paramètres -> Système -> Réparations, ou mesurez une course manuellement (last_run_seconds) et enregistrez-la avec myhome.set_cover_travel_time"
     },
     "cover_reports_position": {
       "message": "{name} signale sa position (Dimension 10 / advanced: true) ; la calibration du temps de course ne s'y applique pas. S'il s'agit d'un actionneur temporisé standard (ex. F411) qui ne prend pas en charge la dimension 10, définissez advanced: false ou retirez advanced: true dans myhome.yaml."
@@ -1191,9 +1199,9 @@
       "rotary_cw_fast": "« {subtype} » tourné rapidement dans le sens horaire",
       "rotary_ccw_slow": "« {subtype} » tourné lentement dans le sens antihoraire",
       "rotary_ccw_fast": "« {subtype} » tourné rapidement dans le sens antihoraire",
-      "centralized_shutter_open": "Commande centralisée d'OUVERTURE des ouvertures reçue",
-      "centralized_shutter_close": "Commande centralisée de FERMETURE des ouvertures reçue",
-      "centralized_shutter_stop": "Commande centralisée d'ARRÊT des ouvertures reçue"
+      "centralized_shutter_open": "Commande centralisée d'OUVERTURE des ouvrants reçue",
+      "centralized_shutter_close": "Commande centralisée de FERMETURE des ouvrants reçue",
+      "centralized_shutter_stop": "Commande centralisée d'ARRÊT des ouvrants reçue"
     },
     "trigger_subtype": {
       "button_0": "Bouton 0",

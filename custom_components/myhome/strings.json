@@ -707,7 +707,7 @@
         "step": {
           "init": {
             "title": "Set cover travel time",
-            "description": "{detail}\n\nChoose how you want to calibrate **{name}**:",
+            "description": "Auto-calibration ended after {seconds} s at the actuator's {limit} s run-time limit rather than the physical end stop.\n\nChoose how you want to calibrate **{name}**:",
             "menu_options": {
               "timed_close_ready": "Guided Start → Stop measurement",
               "manual_entry": "Enter travel times manually",
@@ -756,6 +756,10 @@
         },
         "abort": {
           "cover_missing": "The cover entity is no longer available.",
+          "cover_unavailable": "The cover or its gateway is currently unavailable. Reconnect the gateway and try again.",
+          "cover_locked": "The cover actuator is currently locked (WHO=14). Unlock the cover before running guided timing.",
+          "calibration_in_progress": "Another calibration or guided timing session is already active for this cover or gateway.",
+          "cover_reports_position": "This cover reports its position natively; travel-time calibration does not apply and the stale entry was cleared.",
           "save_failed": "Failed to save cover travel times."
         },
         "error": {
@@ -769,7 +773,7 @@
         "step": {
           "init": {
             "title": "Set cover travel time",
-            "description": "{detail}\n\nChoose how you want to calibrate **{name}**:",
+            "description": "Stored travel times are {down} s (closing) and {up} s (opening), which matches an actuator run-time limit.\n\nChoose how you want to calibrate **{name}**:",
             "menu_options": {
               "timed_close_ready": "Guided Start → Stop measurement",
               "manual_entry": "Enter travel times manually",
@@ -818,6 +822,10 @@
         },
         "abort": {
           "cover_missing": "The cover entity is no longer available.",
+          "cover_unavailable": "The cover or its gateway is currently unavailable. Reconnect the gateway and try again.",
+          "cover_locked": "The cover actuator is currently locked (WHO=14). Unlock the cover before running guided timing.",
+          "calibration_in_progress": "Another calibration or guided timing session is already active for this cover or gateway.",
+          "cover_reports_position": "This cover reports its position natively; travel-time calibration does not apply and the stale entry was cleared.",
           "save_failed": "Failed to save cover travel times."
         },
         "error": {
@@ -891,10 +899,10 @@
       "message": "{name}: no stop status from the actuator within {timeout} s - it may not report status; set travel_time manually"
     },
     "calibration_actuator_cutoff_open": {
-      "message": "{name}: the open run ended after {seconds} s, at the actuator's {limit} s run-time limit, not at the end stop; the actuator cannot measure this cover automatically — use the guided manual timing flow in Settings -> Repairs, or time a run manually (last_run_seconds) and save it with myhome.set_cover_travel_time"
+      "message": "{name}: the open run ended after {seconds} s, at the actuator's {limit} s run-time limit, not at the end stop; the actuator cannot measure this cover automatically — use the guided manual timing flow in Settings -> System -> Repairs, or time a run manually (last_run_seconds) and save it with myhome.set_cover_travel_time"
     },
     "calibration_actuator_cutoff_close": {
-      "message": "{name}: the close run ended after {seconds} s, at the actuator's {limit} s run-time limit, not at the end stop; the actuator cannot measure this cover automatically — use the guided manual timing flow in Settings -> Repairs, or time a run manually (last_run_seconds) and save it with myhome.set_cover_travel_time"
+      "message": "{name}: the close run ended after {seconds} s, at the actuator's {limit} s run-time limit, not at the end stop; the actuator cannot measure this cover automatically — use the guided manual timing flow in Settings -> System -> Repairs, or time a run manually (last_run_seconds) and save it with myhome.set_cover_travel_time"
     },
     "cover_reports_position": {
       "message": "{name} reports its position (Dimension 10 / advanced: true); travel-time calibration does not apply to it. If this is a standard timed actuator (e.g. F411) that does not support Dimension 10, set advanced: false or remove advanced: true in myhome.yaml."

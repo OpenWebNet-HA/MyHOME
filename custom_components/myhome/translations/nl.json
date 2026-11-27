@@ -116,7 +116,7 @@
             "who": "WHO-subsysteem"
           },
           "data_description": {
-            "who": "WHO 1 (verlichting/schakelaar) en WHO 2 (raambedekking) bieden keuzelijsten voor A en PL plus een optionele ruwe WHERE-overschrijving; WHO 4, 13 en 18 tonen alleen hun eigen velden."
+            "who": "WHO 1 (verlichting/schakelaars) en WHO 2 (raambedekkingen) bieden keuzelijsten voor A en PL plus een optionele ruwe WHERE-overschrijving; WHO 4, 13 en 18 tonen alleen hun eigen velden."
           }
         },
         "reconfigure": {
@@ -188,7 +188,7 @@
             "interface": "Optionele F422 lokale businterface (#4#01–#4#09 of #4#11–#4#15) voor routering naar een lokale bus.",
             "where": "Optioneel veld voor gevorderde gebruikers (bijv. 31, 08, 0812, 0012, 1008 of 31#4#01). Indien ingevuld overschrijft dit A, PL en Interface.",
             "entity_id": "Home Assistant cover-bronentiteit (optioneel als hieronder aangepaste acties zijn ingesteld).",
-            "attribute": "Optioneel attribuut zoals 'current_position' om posities van raambedekking te spiegelen.",
+            "attribute": "Optioneel attribuut zoals 'current_position' om de positie van raambedekkingen te spiegelen.",
             "turn_on_action": "Optionele aangepaste actiereeks bij een inkomend OMHOOG / open-commando vanaf de bus.",
             "turn_off_action": "Optionele aangepaste actiereeks bij een inkomend OMLAAG / sluit-commando vanaf de bus."
           }
@@ -485,7 +485,7 @@
     },
     "sweep_bus": {
       "name": "Busstatus scannen",
-      "description": "Voert een alleen-lezen statusverzoek uit over alle bussubsystemen (verlichting, raambedekking, klimaatregeling, klok en gatewaydiagnostiek) om de diagnostische ringbuffer te vullen.",
+      "description": "Voert een alleen-lezen statusverzoek uit over alle bussubsystemen (verlichting, raambedekkingen, klimaatregeling, klok en gatewaydiagnostiek) om de diagnostische ringbuffer te vullen.",
       "fields": {
         "gateway": {
           "name": "Gateway",
@@ -527,7 +527,7 @@
     },
     "calibrate_cover": {
       "name": "Looptijd raambedekking kalibreren",
-      "description": "Meet de op- en neerwaartse looptijden van tijdgestuurde raambedekking op de SCS-bus en slaat ze op: de raambedekking gaat helemaal omhoog, dan helemaal omlaag (getimed) en daarna weer helemaal omhoog (getimed). Raambedekking wordt per gateway één voor één gekalibreerd."
+      "description": "Meet de op- en neerwaartse looptijden van een tijdgestuurde raambedekking op de SCS-bus en slaat ze op: de raambedekking gaat helemaal omhoog, dan helemaal omlaag (getimed) en daarna weer helemaal omhoog (getimed). Raambedekkingen worden per gateway één voor één gekalibreerd."
     },
     "stop_cover_calibration": {
       "name": "Kalibratie raambedekking stoppen",
@@ -541,7 +541,7 @@
     },
     "set_cover_travel_time": {
       "name": "Looptijd raambedekking instellen",
-      "description": "Slaat de fysieke looptijden van tijdgestuurde raambedekking handmatig op in plaats van ze op de bus te kalibreren.",
+      "description": "Slaat de fysieke looptijden van een tijdgestuurde raambedekking handmatig op in plaats van ze op de bus te kalibreren.",
       "fields": {
         "travel_time": {
           "name": "Looptijd",
@@ -557,7 +557,7 @@
         },
         "slat_time": {
           "name": "Kanteltijd lamellen",
-          "description": "Seconden die de lamellen van een jaloezie nodig hebben voor een volledige kanteling (0.5-10). Alleen gebruikt door raambedekking met slat_tilt ingeschakeld."
+          "description": "Seconden die de lamellen van een jaloezie nodig hebben voor een volledige kanteling (0,5–10). Alleen gebruikt door raambedekkingen waarbij slat_tilt is ingeschakeld."
         },
         "copied_from": {
           "name": "Gekopieerd van",
@@ -707,7 +707,7 @@
         "step": {
           "init": {
             "title": "Looptijd raambedekking instellen",
-            "description": "{detail}\n\nKies hoe u **{name}** wilt kalibreren:",
+            "description": "De automatische kalibratie stopte na {seconds} s op de looptijdgrens van {limit} s van de actuator in plaats van op de fysieke eindstop.\n\nKies hoe u **{name}** wilt kalibreren:",
             "menu_options": {
               "timed_close_ready": "Begeleide Start → Stop-meting",
               "manual_entry": "Looptijden handmatig invoeren",
@@ -756,6 +756,10 @@
         },
         "abort": {
           "cover_missing": "De raambedekkingsentiteit is niet langer beschikbaar.",
+          "cover_unavailable": "De raambedekking of de bijbehorende gateway is momenteel niet beschikbaar. Herstel de gatewayverbinding en probeer het opnieuw.",
+          "cover_locked": "De actuator van deze raambedekking is vergrendeld (WHO=14). Ontgrendel de raambedekking voordat u een begeleide meting start.",
+          "calibration_in_progress": "Er is al een andere kalibratie of begeleide meting actief voor deze raambedekking of gateway.",
+          "cover_reports_position": "Deze raambedekking meldt zelf haar positie; looptijdkalibratie is niet van toepassing en de verouderde instelling is gewist.",
           "save_failed": "Opslaan van de looptijden van de raambedekking is mislukt."
         },
         "error": {
@@ -764,12 +768,12 @@
       }
     },
     "cover_legacy_calibration_cutoff": {
-      "title": "{name}: opgeslagen looptijd lijkt op een actuatorlimiet",
+      "title": "{name}: opgeslagen looptijd komt overeen met een looptijdgrens van de actuator",
       "fix_flow": {
         "step": {
           "init": {
             "title": "Looptijd raambedekking instellen",
-            "description": "{detail}\n\nKies hoe u **{name}** wilt kalibreren:",
+            "description": "De opgeslagen looptijden zijn {down} s (sluiten) en {up} s (openen), wat overeenkomt met een looptijdgrens van de actuator.\n\nKies hoe u **{name}** wilt kalibreren:",
             "menu_options": {
               "timed_close_ready": "Begeleide Start → Stop-meting",
               "manual_entry": "Looptijden handmatig invoeren",
@@ -818,6 +822,10 @@
         },
         "abort": {
           "cover_missing": "De raambedekkingsentiteit is niet langer beschikbaar.",
+          "cover_unavailable": "De raambedekking of de bijbehorende gateway is momenteel niet beschikbaar. Herstel de gatewayverbinding en probeer het opnieuw.",
+          "cover_locked": "De actuator van deze raambedekking is vergrendeld (WHO=14). Ontgrendel de raambedekking voordat u een begeleide meting start.",
+          "calibration_in_progress": "Er is al een andere kalibratie of begeleide meting actief voor deze raambedekking of gateway.",
+          "cover_reports_position": "Deze raambedekking meldt zelf haar positie; looptijdkalibratie is niet van toepassing en de verouderde instelling is gewist.",
           "save_failed": "Opslaan van de looptijden van de raambedekking is mislukt."
         },
         "error": {
@@ -882,10 +890,10 @@
       "message": "{name}: geen stopstatus van de actuator binnen {timeout} s - mogelijk meldt hij geen status; stel travel_time handmatig in"
     },
     "calibration_actuator_cutoff_open": {
-      "message": "{name}: de openingsloop eindigde na {seconds} s, op de looptijdgrens van {limit} s van de actuator, niet op de eindstop; de actuator kan deze raambedekking niet automatisch meten — gebruik de begeleide handmatige meting in Instellingen -> Reparaties, of meet een beweging handmatig (last_run_seconds) en sla deze op met myhome.set_cover_travel_time"
+      "message": "{name}: de openingsloop eindigde na {seconds} s, op de looptijdgrens van {limit} s van de actuator, niet op de eindstop; de actuator kan deze raambedekking niet automatisch meten — gebruik de begeleide handmatige meting in Instellingen -> Systeem -> Reparaties, of meet een beweging handmatig (last_run_seconds) en sla deze op met myhome.set_cover_travel_time"
     },
     "calibration_actuator_cutoff_close": {
-      "message": "{name}: de sluitloop eindigde na {seconds} s, op de looptijdgrens van {limit} s van de actuator, niet op de eindstop; de actuator kan deze raambedekking niet automatisch meten — gebruik de begeleide handmatige meting in Instellingen -> Reparaties, of meet een beweging handmatig (last_run_seconds) en sla deze op met myhome.set_cover_travel_time"
+      "message": "{name}: de sluitloop eindigde na {seconds} s, op de looptijdgrens van {limit} s van de actuator, niet op de eindstop; de actuator kan deze raambedekking niet automatisch meten — gebruik de begeleide handmatige meting in Instellingen -> Systeem -> Reparaties, of meet een beweging handmatig (last_run_seconds) en sla deze op met myhome.set_cover_travel_time"
     },
     "cover_reports_position": {
       "message": "{name} meldt zijn positie (Dimension 10 / advanced: true); looptijdkalibratie is daarop niet van toepassing. Als dit een standaard tijdgestuurde actuator is (bijv. F411) die dimensie 10 niet ondersteunt, stel dan advanced: false in of verwijder advanced: true uit myhome.yaml."
@@ -1071,7 +1079,7 @@
         "name": "Looptijd kalibreren"
       },
       "calibrate_all_covers": {
-        "name": "Alle raambedekking kalibreren"
+        "name": "Alle raambedekkingen kalibreren"
       },
       "tuner_seek_up": {
         "name": "Vooruit zoeken"
@@ -1122,7 +1130,7 @@
     "delegated_whos": {
       "options": {
         "1": "1 - Verlichting",
-        "2": "2 - Automatisering / raambedekking",
+        "2": "2 - Automatisering / raambedekkingen",
         "4": "4 - Thermoregeling",
         "5": "5 - Inbraakalarm",
         "6": "6 - Deurintercom",
