@@ -6,9 +6,12 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from scripts.manage_translations import (
     audit_status,
     extract_key_paths,
+    extract_leaf_values,
     format_json,
     main,
     prune_catalogs,
@@ -175,7 +178,7 @@ def test_prune_catalogs(tmp_path: Path) -> None:
 
 
 def test_audit_status(tmp_path: Path) -> None:
-    """Test audit_status coverage calculations with healthy files."""
+    """Test audit_status returns 0 in strict mode when all bundled locales are 100% complete."""
     strings_file = tmp_path / "strings.json"
     strings_file.write_text(json.dumps({"key1": "a", "key2": "b"}), encoding="utf-8")
 
@@ -184,13 +187,143 @@ def test_audit_status(tmp_path: Path) -> None:
     en_file = tr_dir / "en.json"
     en_file.write_text(json.dumps({"key1": "a", "key2": "b"}), encoding="utf-8")
     fr_file = tr_dir / "fr.json"
-    fr_file.write_text(json.dumps({"key1": "a"}), encoding="utf-8")
+    fr_file.write_text(json.dumps({"key1": "a_fr", "key2": "b_fr"}), encoding="utf-8")
 
     with patch("scripts.manage_translations.STRINGS_FILE", strings_file), patch(
         "scripts.manage_translations.TRANSLATIONS_DIR", tr_dir
     ):
         code = audit_status(verbose=True, strict=True)
         assert code == 0
+
+
+def test_audit_status_missing_keys_fails_strict(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Test audit_status fails strict mode when a non-English locale has missing keys."""
+    strings_file = tmp_path / "strings.json"
+    strings_file.write_text(
+        json.dumps(
+            {
+                "config": {"title": "Title", "desc": "Desc"},
+                "services": {"reload": "Reload"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    tr_dir = tmp_path / "translations"
+    tr_dir.mkdir()
+    (tr_dir / "en.json").write_text(strings_file.read_text(encoding="utf-8"), encoding="utf-8")
+    (tr_dir / "fr.json").write_text(
+        json.dumps({"config": {"title": "Titre"}}),
+        encoding="utf-8",
+    )
+
+    with patch("scripts.manage_translations.STRINGS_FILE", strings_file), patch(
+        "scripts.manage_translations.TRANSLATIONS_DIR", tr_dir
+    ):
+        assert audit_status(verbose=False, strict=False) == 0
+        non_strict = capsys.readouterr()
+        assert "ALERT: Missing translation keys detected in fr!" in non_strict.err
+
+        assert audit_status(verbose=False, strict=True) == 1
+        strict_out = capsys.readouterr()
+        assert "config.desc" in strict_out.out
+        assert "services.reload" in strict_out.out
+        assert "config: 1, services: 1" in strict_out.out
+        assert "ALERT: Missing translation keys detected in fr!" in strict_out.err
+
+        assert audit_status(verbose=True, strict=True) == 1
+        verbose_out = capsys.readouterr()
+        assert "config.desc" in verbose_out.out
+        assert "services.reload" in verbose_out.out
+
+
+def test_audit_status_missing_keys_truncates_unless_verbose(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Strict non-verbose mode caps long missing-key lists while verbose mode prints every key."""
+    strings_data = {f"k{i:02d}": f"Value {i}" for i in range(25)}
+    strings_file = tmp_path / "strings.json"
+    strings_file.write_text(json.dumps(strings_data), encoding="utf-8")
+
+    tr_dir = tmp_path / "translations"
+    tr_dir.mkdir()
+    (tr_dir / "en.json").write_text(json.dumps(strings_data), encoding="utf-8")
+    (tr_dir / "fr.json").write_text(json.dumps({}), encoding="utf-8")
+
+    with patch("scripts.manage_translations.STRINGS_FILE", strings_file), patch(
+        "scripts.manage_translations.TRANSLATIONS_DIR", tr_dir
+    ):
+        assert audit_status(verbose=False, strict=True) == 1
+        capped = capsys.readouterr().out
+        assert "... and 5 more (re-run with -v to list all)" in capped
+        assert "- k00" in capped
+        assert "- k24" not in capped
+
+        assert audit_status(verbose=True, strict=True) == 1
+        full = capsys.readouterr().out
+        assert "... and" not in full
+        assert "- k24" in full
+
+
+def test_audit_status_empty_values_fails_strict(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Test audit_status flags empty/whitespace-only translations in strict mode."""
+    strings_file = tmp_path / "strings.json"
+    strings_file.write_text(
+        json.dumps({"key1": "Hello", "key2": "World", "key3": "Test"}),
+        encoding="utf-8",
+    )
+
+    tr_dir = tmp_path / "translations"
+    tr_dir.mkdir()
+    (tr_dir / "en.json").write_text(strings_file.read_text(encoding="utf-8"), encoding="utf-8")
+    (tr_dir / "fr.json").write_text(
+        json.dumps({"key1": "Bonjour", "key2": "", "key3": "   "}),
+        encoding="utf-8",
+    )
+
+    with patch("scripts.manage_translations.STRINGS_FILE", strings_file), patch(
+        "scripts.manage_translations.TRANSLATIONS_DIR", tr_dir
+    ):
+        assert audit_status(verbose=True, strict=False) == 0
+        capsys.readouterr()
+
+        assert audit_status(verbose=True, strict=True) == 1
+        captured = capsys.readouterr()
+        assert "! key2" in captured.out
+        assert "! key3" in captured.out
+        assert "ALERT: Empty/blank translation values detected in fr!" in captured.err
+
+
+def test_audit_status_malformed_locale_json_fails_strict(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Test audit_status reports malformed JSON cleanly without misattributing en.json drift."""
+    strings_file = tmp_path / "strings.json"
+    strings_file.write_text(json.dumps({"key1": "Hello"}), encoding="utf-8")
+
+    tr_dir = tmp_path / "translations"
+    tr_dir.mkdir()
+    (tr_dir / "en.json").write_text(json.dumps({"key1": "Hello"}), encoding="utf-8")
+    (tr_dir / "fr.json").write_text("{not valid json", encoding="utf-8")
+    (tr_dir / "it.json").write_text("[]", encoding="utf-8")
+
+    with patch("scripts.manage_translations.STRINGS_FILE", strings_file), patch(
+        "scripts.manage_translations.TRANSLATIONS_DIR", tr_dir
+    ):
+        assert audit_status(verbose=True, strict=True) == 1
+        captured = capsys.readouterr()
+        assert "ALERT: Malformed JSON detected in fr, it!" in captured.err
+        assert "en.json is out of sync" not in captured.err
+
+
+def test_extract_leaf_values() -> None:
+    """Test leaf value extraction preserves exact leaf values for nested dicts."""
+    data = {"a": {"b": "val"}, "c": "other"}
+    assert extract_leaf_values(data) == {("a", "b"): "val", ("c",): "other"}
 
 
 def test_audit_status_orphaned_fails_strict(tmp_path: Path) -> None:

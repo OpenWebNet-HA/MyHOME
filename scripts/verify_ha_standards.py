@@ -1978,6 +1978,186 @@ def check_marketplace_manifest_rule(checker: StandardsChecker, root_dir: Path | 
         checker.log_ok("Home Assistant Marketplace / HACS manifest (hacs.json) and validate.yml verified.")
 
 
+def _extract_translation_leaves(
+    node: object, current_path: tuple[str, ...] = ()
+) -> dict[tuple[str, ...], object]:
+    """Extract all leaf key paths and values from a nested translation dict."""
+    leaves: dict[tuple[str, ...], object] = {}
+    if isinstance(node, dict):
+        for key, value in node.items():
+            leaves.update(_extract_translation_leaves(value, current_path + (str(key),)))
+    else:
+        leaves[current_path] = node
+    return leaves
+
+
+def _format_translation_key_sample(keys: Sequence[str], limit: int = 10) -> str:
+    """Format a compact comma-separated preview of dot-separated translation keys."""
+    if len(keys) <= limit:
+        return ", ".join(keys)
+    return f"{', '.join(keys[:limit])} (+{len(keys) - limit} more)"
+
+
+def check_entity_translations_parity(
+    checker: StandardsChecker,
+    custom_components_dir: Path | None = None,
+    translations_dir: Path | None = None,
+) -> None:
+    """[GOLD] Verify strings.json == en.json, issues schema, and 100% key parity across bundled locales."""
+    cc_dir = custom_components_dir if custom_components_dir is not None else CUSTOM_COMPONENTS_DIR
+    tr_dir = (
+        translations_dir
+        if translations_dir is not None
+        else (cc_dir / "translations" if custom_components_dir is not None else TRANSLATIONS_DIR)
+    )
+    strings_file = cc_dir / "strings.json"
+    en_file = tr_dir / "en.json"
+    if not strings_file.exists() or not en_file.exists():
+        checker.log_error(
+            "RULE_IQS_GOLD",
+            strings_file,
+            1,
+            "Quality Scale Gold rule 'entity-translations': strings.json and translations/en.json must exist",
+        )
+        return
+
+    try:
+        with open(strings_file, "r", encoding="utf-8") as f:
+            strings_data = json.load(f)
+        if not isinstance(strings_data, dict):
+            checker.log_error(
+                "RULE_IQS_GOLD",
+                strings_file,
+                1,
+                "Quality Scale Gold rule 'entity-translations': strings.json root must be a JSON object",
+            )
+            return
+    except Exception as e:
+        checker.log_error("RULE_IQS_GOLD", strings_file, 1, f"Failed parsing strings.json: {e}")
+        return
+
+    en_synced = False
+    try:
+        with open(en_file, "r", encoding="utf-8") as f:
+            en_data = json.load(f)
+        if strings_data != en_data:
+            checker.log_error(
+                "RULE_IQS_GOLD",
+                strings_file,
+                1,
+                "Quality Scale Gold rule 'entity-translations': strings.json and translations/en.json do not match. Run 'python scripts/manage_translations.py sync-en' to synchronize.",
+            )
+        else:
+            en_synced = True
+            checker.log_ok("[GOLD] entity-translations: strings.json and translations/en.json synchronized.")
+    except Exception as e:
+        checker.log_error("RULE_IQS_GOLD", en_file, 1, f"Failed parsing translations/en.json: {e}")
+
+    # Validate Home Assistant issues schema (hassfest fixable exclusion group)
+    issues = strings_data.get("issues", {})
+    if isinstance(issues, dict):
+        for issue_key, issue_val in issues.items():
+            if isinstance(issue_val, dict):
+                has_desc = "description" in issue_val
+                has_flow = "fix_flow" in issue_val
+                if has_desc and has_flow:
+                    checker.log_error(
+                        "RULE_IQS_GOLD",
+                        strings_file,
+                        1,
+                        f"Issue '{issue_key}' violates hassfest exclusion group 'fixable': cannot have both 'description' and 'fix_flow'",
+                    )
+
+    # Verify 100% key parity and non-empty values for all bundled non-English locales
+    strings_leaves = _extract_translation_leaves(strings_data)
+    strings_paths = set(strings_leaves)
+    locale_errors = False
+    bundled_locales = ["en"]
+
+    for locale_file in sorted(tr_dir.glob("*.json")):
+        if locale_file.name == "en.json":
+            continue
+        bundled_locales.append(locale_file.stem)
+        try:
+            with open(locale_file, "r", encoding="utf-8") as f:
+                locale_data = json.load(f)
+        except Exception as e:
+            checker.log_error(
+                "RULE_IQS_GOLD",
+                locale_file,
+                1,
+                f"Quality Scale Gold rule 'entity-translations': failed parsing {locale_file.name}: {e}. "
+                "Run 'python scripts/manage_translations.py check -v' for details.",
+            )
+            locale_errors = True
+            continue
+
+        if not isinstance(locale_data, dict):
+            checker.log_error(
+                "RULE_IQS_GOLD",
+                locale_file,
+                1,
+                f"Quality Scale Gold rule 'entity-translations': {locale_file.name} root must be a JSON object. "
+                "Run 'python scripts/manage_translations.py check -v' for details.",
+            )
+            locale_errors = True
+            continue
+
+        locale_leaves = _extract_translation_leaves(locale_data)
+        locale_paths = set(locale_leaves)
+        missing = sorted(".".join(p) for p in (strings_paths - locale_paths))
+        orphaned = sorted(".".join(p) for p in (locale_paths - strings_paths))
+        empty = sorted(
+            ".".join(p)
+            for p in (strings_paths & locale_paths)
+            if isinstance(strings_leaves[p], str)
+            and strings_leaves[p].strip()
+            and (
+                not isinstance(locale_leaves[p], str)
+                or not locale_leaves[p].strip()
+            )
+        )
+
+        if missing:
+            checker.log_error(
+                "RULE_IQS_GOLD",
+                locale_file,
+                1,
+                f"Quality Scale Gold rule 'entity-translations': {locale_file.name} is missing "
+                f"{len(missing)} key(s) relative to strings.json: {_format_translation_key_sample(missing)}. "
+                "Run 'python scripts/manage_translations.py check -v' for details.",
+            )
+            locale_errors = True
+
+        if orphaned:
+            checker.log_error(
+                "RULE_IQS_GOLD",
+                locale_file,
+                1,
+                f"Quality Scale Gold rule 'entity-translations': {locale_file.name} has "
+                f"{len(orphaned)} orphaned key(s) not in strings.json: {_format_translation_key_sample(orphaned)}. "
+                "Run 'python scripts/manage_translations.py check -v' for details.",
+            )
+            locale_errors = True
+
+        if empty:
+            checker.log_error(
+                "RULE_IQS_GOLD",
+                locale_file,
+                1,
+                f"Quality Scale Gold rule 'entity-translations': {locale_file.name} has "
+                f"{len(empty)} empty/blank translation value(s): {_format_translation_key_sample(empty)}. "
+                "Run 'python scripts/manage_translations.py check -v' for details.",
+            )
+            locale_errors = True
+
+    if en_synced and not locale_errors:
+        checker.log_ok(
+            f"[GOLD] entity-translations: all bundled locales ({', '.join(sorted(bundled_locales))}) "
+            "have 100% key parity with strings.json."
+        )
+
+
 def check_quality_scale_rules(checker: StandardsChecker):
     """Enforce Home Assistant Integration Quality Scale (Bronze, Silver, Gold, Platinum)."""
     # 1. [BRONZE] Runtime Data
@@ -2091,47 +2271,12 @@ def check_quality_scale_rules(checker: StandardsChecker):
         else:
             checker.log_ok("[GOLD] reconfiguration-flow: async_step_reconfigure implemented.")
 
-    # 5. [GOLD] Translations & Strings Sync
-    strings_file = CUSTOM_COMPONENTS_DIR / "strings.json"
-    en_file = TRANSLATIONS_DIR / "en.json"
-    if not strings_file.exists() or not en_file.exists():
-        checker.log_error(
-            "RULE_IQS_GOLD",
-            strings_file,
-            1,
-            "Quality Scale Gold rule 'entity-translations': strings.json and translations/en.json must exist",
-        )
-    else:
-        try:
-            with open(strings_file, "r", encoding="utf-8") as f:
-                strings_data = json.load(f)
-            with open(en_file, "r", encoding="utf-8") as f:
-                en_data = json.load(f)
-            if strings_data != en_data:
-                checker.log_error(
-                    "RULE_IQS_GOLD",
-                    strings_file,
-                    1,
-                    "Quality Scale Gold rule 'entity-translations': strings.json and translations/en.json do not match. Run 'python scripts/manage_translations.py sync-en' to synchronize.",
-                )
-            else:
-                checker.log_ok("[GOLD] entity-translations: strings.json and translations/en.json synchronized.")
-
-            # Validate Home Assistant issues schema (hassfest fixable exclusion group)
-            issues = strings_data.get("issues", {})
-            for issue_key, issue_val in issues.items():
-                if isinstance(issue_val, dict):
-                    has_desc = "description" in issue_val
-                    has_flow = "fix_flow" in issue_val
-                    if has_desc and has_flow:
-                        checker.log_error(
-                            "RULE_IQS_GOLD",
-                            strings_file,
-                            1,
-                            f"Issue '{issue_key}' violates hassfest exclusion group 'fixable': cannot have both 'description' and 'fix_flow'",
-                        )
-        except Exception as e:
-            checker.log_error("RULE_IQS_GOLD", strings_file, 1, f"Failed parsing strings/translations JSON: {e}")
+    # 5. [GOLD] Translations & Strings Sync (including all bundled locales)
+    check_entity_translations_parity(
+        checker,
+        custom_components_dir=CUSTOM_COMPONENTS_DIR,
+        translations_dir=TRANSLATIONS_DIR,
+    )
 
     # 6. [GOLD] Icon Translations
     icons_file = CUSTOM_COMPONENTS_DIR / "icons.json"

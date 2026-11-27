@@ -53,8 +53,8 @@ jobs:
         # (action-setup, parallel-updates, reconfiguration-flow, diagnostics, manifest pin, ...).
         run: python scripts/verify_ha_standards.py
 
-      - name: Translation anti-drift check (manage_translations.py check)
-        run: python scripts/manage_translations.py check
+      - name: Translation anti-drift check (manage_translations.py check -v)
+        run: python scripts/manage_translations.py check -v
 
       - name: Quality scale audit and badge
         id: audit

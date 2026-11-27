@@ -76,7 +76,10 @@
       "password_retry": "Gateway refusing password negotiation, wait 60s before retrying.",
       "password_error": "Ongeldig wachtwoord",
       "primary_gateway_required": "Voor de rollen secundair en stand-by op een gedeelde bus moet een primaire gateway worden gekozen.",
-      "primary_gateway_not_found": "De gekozen primaire gateway is niet gevonden."
+      "primary_gateway_not_found": "De gekozen primaire gateway is niet gevonden.",
+      "overlapping_delegated_whos": "Een of meer van de geselecteerde WHO-subsystemen zijn al gedelegeerd aan een andere secundaire gateway op deze bus.",
+      "who_not_supported_by_gateway": "Een of meer van de geselecteerde WHO-subsystemen worden niet ondersteund door het profiel van dit gatewaymodel.",
+      "multiple_standbys": "Voor deze primaire gateway is al een stand-by geconfigureerd. Er is slechts één stand-by per primaire gateway toegestaan."
     },
     "abort": {
       "discovery_timeout": "Geen MyHome gateway gevonden",
@@ -331,15 +334,19 @@
           "decoder_1_entity": "Decoder 1 — media player-entiteit (bijv. media_player.cambridge_audio_cxn)",
           "decoder_1_source": "Decoder 1 — nummer van de BTicino-bronningang (1–4)",
           "decoder_1_pre_gain": "Decoder 1 — voorversterkingscorrectie % (0 = Cambridge met Pre-Amp UIT, 20 = squeezelite)",
+          "decoder_1_companion": "Decoder 1 — begeleidende streaming-entiteit (optioneel; leeg laten voor automatische detectie)",
           "decoder_2_entity": "Decoder 2 — media player-entiteit",
           "decoder_2_source": "Decoder 2 — nummer van de BTicino-bronningang (1–4)",
           "decoder_2_pre_gain": "Decoder 2 — voorversterkingscorrectie %",
+          "decoder_2_companion": "Decoder 2 — begeleidende streaming-entiteit (optioneel; leeg laten voor automatische detectie)",
           "decoder_3_entity": "Decoder 3 — media player-entiteit",
           "decoder_3_source": "Decoder 3 — nummer van de BTicino-bronningang (1–4)",
           "decoder_3_pre_gain": "Decoder 3 — voorversterkingscorrectie %",
+          "decoder_3_companion": "Decoder 3 — begeleidende streaming-entiteit (optioneel; leeg laten voor automatische detectie)",
           "decoder_4_entity": "Decoder 4 — media player-entiteit",
           "decoder_4_source": "Decoder 4 — nummer van de BTicino-bronningang (1–4)",
           "decoder_4_pre_gain": "Decoder 4 — voorversterkingscorrectie %",
+          "decoder_4_companion": "Decoder 4 — begeleidende streaming-entiteit (optioneel; leeg laten voor automatische detectie)",
           "default_source_env_1": "Standaardbron voor omgeving 1 — gebruikt wanneer een zone in die ruimte vanuit Home Assistant wordt aangezet",
           "default_source_env_2": "Standaardbron voor omgeving 2 — gebruikt wanneer een zone in die ruimte vanuit Home Assistant wordt aangezet",
           "default_source_env_3": "Standaardbron voor omgeving 3 — gebruikt wanneer een zone in die ruimte vanuit Home Assistant wordt aangezet",
@@ -353,13 +360,17 @@
           "gateway_role": "Gatewayrol",
           "primary_gateway": "Primaire gateway",
           "delegated_whos": "Gedelegeerde subsystemen",
+          "auto_join_streaming": "Automatisch aansluiten bij streaminggroepen",
           "ignored_addresses": "Genegeerde adressen",
+          "standalone_zones": "Zelfstandige thermostaten",
           "tuner_pictures": "Tunerafbeeldingen"
         },
         "data_description": {
           "decoder_1_pre_gain": "Kalibreer aan de hand van de hardware, niet op gevoel: voedt de line-out van deze decoder een BTicino Ingresso RCA-module (L/N/NT4560) of Controllo Stereo (L4561), verhoog dan Pre-Gain tijdens het afspelen tot het signaal-ledje van die module oranje knippert — niet vast groen (signaal te laag) of vast rood/oranje (clipping). Sluit altijd de vaste line-out ('OUT') van de decoder aan, nooit een volume-afhankelijke hoofdtelefoon-/AUX-uitgang: een tweede ongecontroleerde versterkingstrap daar veroorzaakt precies de vervorming waar BTicino's eigen storingzoektabel voor waarschuwt.",
           "delegated_whos": "Alleen voor de rol secundair: subsystemen waarvan deze gateway nieuwe apparaten detecteert. Apparaten die de primaire gateway al heeft, blijven bij de primaire.",
+          "auto_join_streaming": "Sluit automatisch aan bij een actieve streaminggroep wanneer een ruimte wordt aangezet of het volume wordt aangepast via een fysieke wandbediening.",
           "ignored_addresses": "Negeer vermelde adressen permanent (bijv. 1/74, 1/74#4#01): slaat detectie, entiteiten en storingsregistratie over. Scheid meerdere vermeldingen met nieuwe regels of komma's.",
+          "standalone_zones": "Thermostaatzones (1-99, bijv. 2, 7) die niet door de centrale worden beheerd hoewel de installatie er wel een heeft: hun setpoint en modus worden rechtstreeks naar de thermostaat geschreven (`*#4*Z*#14*...`) in plaats van via de centrale (`*#4*#Z*#14*...`). Laat leeg om de integratie dit zelf vanaf de bus te laten bepalen. Gelijk aan `standalone: true` in myhome.yaml.",
           "tuner_pictures": "Eén MHz=URL per regel (bijv. 96.2=/local/radio/one.png): de afbeelding die wordt getoond zolang een tuner op die frequentie staat. Je eigen afbeeldingen; er worden er geen meegeleverd.",
           "command_worker_count": "Aanbevolen voor de {model}: {session_default}. Hij accepteert maximaal {session_limit} commandosessie(s), en elke sessie gebruikt samen met de eventsessie een van de weinige verbindingen, die ook de Legrand/BTicino-app en andere clients nodig hebben. Verhoog alleen als commando's in de wachtrij komen."
         }
@@ -369,17 +380,24 @@
       "invalid_ip": "Ongeldig IP address",
       "invalid_worker_count": "Aantal workers moet tussen 1 and 10 zijn",
       "worker_count_above_gateway_limit": "De {model} accepteert maximaal {session_limit} gelijktijdige command sessie(s); met meer reageert hij niet meer.",
+      "invalid_standalone_zone": "Zelfstandige thermostaten moeten zonenummers van 1 tot 99 zijn, gescheiden door komma's (bijv. 2, 7).",
       "invalid_config_path": "Ongeldig path voor configuratie bestand",
       "invalid_password": "Ongeldig password",
       "password_error": "Ongeldig password",
       "not_a_media_player": "Moet een media_player-entiteit zijn (bijv. media_player.cambridge_audio_cxn)",
+      "companion_same_as_decoder": "De begeleidende streaming-entiteit moet een andere entiteit zijn dan de decoder zelf.",
+      "companion_without_decoder": "Een begeleidende streaming-entiteit kan alleen worden geconfigureerd voor een slot met een decoderentiteit.",
       "mass_entity_not_allowed": "Bescherming tegen oneindige lussen: kies geen Music Assistant-klonen! Kies in plaats daarvan de oorspronkelijke hardware-entiteit.",
+      "myhome_entity_not_allowed": "Kies geen MyHOME-audiozones als decoder! Kies in plaats daarvan de onderliggende fysieke streamingspeler.",
       "primary_gateway_required": "Voor de rollen secundair en stand-by op een gedeelde bus moet een primaire gateway worden gekozen.",
       "invalid_primary_gateway": "Deze gateway kan niet zijn eigen primaire gateway zijn.",
       "primary_gateway_not_found": "De gekozen primaire gateway is niet gevonden.",
       "circular_gateway_reference": "Kringverwijzing: de gekozen primaire gateway verwijst al naar deze gateway.",
       "primary_gateway_not_shared_primary": "De gekozen gateway moet eerst worden ingesteld met bustopologie Gedeeld en rol Primair.",
       "gateway_has_dependents": "Andere gateways gebruiken deze gateway als primaire gateway. Laat ze eerst naar een andere primaire gateway verwijzen (of maak ze zelfstandig).",
+      "overlapping_delegated_whos": "Een of meer van de geselecteerde WHO-subsystemen zijn al gedelegeerd aan een andere secundaire gateway op deze bus.",
+      "who_not_supported_by_gateway": "Een of meer van de geselecteerde WHO-subsystemen worden niet ondersteund door het profiel van dit gatewaymodel.",
+      "multiple_standbys": "Voor deze primaire gateway is al een stand-by geconfigureerd. Er is slechts één stand-by per primaire gateway toegestaan.",
       "secondary_requires_shared_topology": "Voor secundaire en warm-stand-by rollen moet de bustopologie zijn ingesteld op Gedeeld.",
       "multiple_shared_primaries": "Er is al een andere gateway ingesteld als primaire gateway voor deze gedeelde bus. Selecteer Secundair of Warm-stand-by.",
       "duplicate_decoder_source": "Elke decoder moet aangesloten zijn op een andere matrix broningang.",
@@ -399,7 +417,7 @@
     },
     "send_message": {
       "name": "Send message",
-      "description": "Send an arbitrary (but valid) OpenWebNet message to the gateway.",
+      "description": "Stuur een willekeurig (maar geldig) OpenWebNet-bericht naar de gateway (alleen voor beheerders).",
       "fields": {
         "gateway": {
           "name": "Gateway",
@@ -555,6 +573,24 @@
       "name": "Looptijd rolluik terugzetten",
       "description": "Vergeet de gemeten of handmatig ingestelde looptijden en valt terug op travel_time uit myhome.yaml of de standaardwaarde van 25 s."
     },
+    "send_scenario_plus_command": {
+      "name": "Scenario Plus-commando verzenden",
+      "description": "Stuur een WHO 25 Scenario Plus-commando (\"on\", \"off\", \"increase\", \"decrease\", \"stop\") naar een geadresseerd Scenario Plus-object.",
+      "fields": {
+        "gateway": {
+          "name": "Gateway",
+          "description": "Het MAC-adres van de gateway (optioneel; standaard de primaire gateway)."
+        },
+        "where": {
+          "name": "WHERE-adres",
+          "description": "Het adres van het Scenario Plus-object op de bus."
+        },
+        "action": {
+          "name": "Actie",
+          "description": "De uit te voeren Scenario Plus-actie (\"on\", \"off\", \"increase\", \"decrease\" of \"stop\"; stap en snelheid voor verhogen/verlagen liggen vast in het protocol)."
+        }
+      }
+    },
     "cancel_cover_request": {
       "name": "Annuleer poort- of garagedeurverzoek",
       "description": "Annuleert een openstaand goedkeuringsverzoek of een lopende voorwaarschuwing van een impuls-poort of garagedeur. Annuleren is altijd veilig; er beweegt niets."
@@ -565,6 +601,22 @@
     }
   },
   "issues": {
+    "invalid_decoder": {
+      "title": "Decoder {decoder} is een {platform}-entiteit en wordt genegeerd",
+      "description": "Het decoderslot verwijst naar `{decoder}`, die bij de integratie `{platform}` hoort. Een decoder moet de fysieke streamer zijn die op de matrix is aangesloten; een MyHOME-zone of een Music Assistant-speler zou audio terug naar zichzelf routeren, dus MyHOME laat dit slot buiten beschouwing.\n\nOpen Configureren op de gateway en kies de echte hardware-entiteit (Squeezelite, WiiM, Cambridge Audio, Cast, ...)."
+    },
+    "ambiguous_companion": {
+      "title": "Meerdere begeleidende streaming-entiteiten gevonden voor {decoder}",
+      "description": "`{decoder}` heeft een DLNA-, UPnP- of Cast-renderer van hetzelfde apparaat nodig om stream-URL's te ontvangen, maar er kwamen meerdere apparaten overeen: {candidates}.\n\nMyHOME gokt niet. Open Configureren op de gateway en stel de *begeleidende streaming-entiteit* van dit decoderslot in op de juiste entiteit."
+    },
+    "multiple_audio_gateways": {
+      "title": "Meer dan één gateway bedient audiozones",
+      "description": "Er zijn audiozones geconfigureerd op meerdere gateways ({gateways}). De geluidsadressering bevat nog geen businterface, waardoor zones van twee audiomatrices kunnen botsen op hetzelfde ruimtenummer, dezelfde entiteit en dezelfde omgeving (issue #426).\n\nHoud de audiomatrix op één gateway totdat dit is opgelost."
+    },
+    "unresponsive_zone": {
+      "title": "Verwarmingszone {device} reageert niet meer ({gateway})",
+      "description": "Verwarmingszone {device} op {gateway} heeft bij twee herstarts op rij niet geantwoord op het statusverzoek, dus MyHOME vraagt er bij het opstarten niet meer naar (elk onbeantwoord verzoek kost de commandowachtrij van de gateway enkele seconden). Als de zone niet meer bestaat, verwijder dan het apparaat of de entiteit in Home Assistant. Bestaat de zone nog wel, dan verdwijnt deze melding zodra de zone weer een frame stuurt en wordt deze na een week opnieuw bevraagd."
+    },
     "unconfigured_timezone": {
       "title": "Unconfigured timezone on MyHOME gateway ({gateway})",
       "description": "The MyHOME gateway {gateway} is reporting an unconfigured timezone (999). This will cause incorrect timestamps in the bus monitor and potentially alarm logs.\\n\\nPlease log into the gateway web UI or MyHOME Suite and configure a valid timezone, then restart the gateway."
@@ -574,7 +626,22 @@
       "description": "De gateway heeft een hardware-apparaattypecode ({code}) gerapporteerd die onbekend is bij de MyHOME-integratie. Klik op 'Meer informatie' om een GitHub-issue te openen en een diagnostische trace bij te voegen, zodat we ondersteuning voor dit model kunnen toevoegen."
     },
     "incompatible_decoder_platform": {
-      "title": "Decoder {decoder} gebruikt een niet-ondersteunde integratie ({platform})"
+      "title": "Decoder {decoder} gebruikt een niet-ondersteunde integratie ({platform})",
+      "fix_flow": {
+        "step": {
+          "confirm_companion": {
+            "title": "Begeleidende DLNA-streaming-entiteit gebruiken",
+            "description": "De geconfigureerde decoder `{decoder}` ({platform}) ondersteunt geen directe HTTP-stream-URL's. Er is echter een compatibele DLNA Digital Media Renderer gevonden voor dit apparaat: `{companion}`.\n\nKlik op **Verzenden** om uw MyHOME-decoderconfiguratie automatisch bij te werken zodat `{companion}` wordt gebruikt."
+          },
+          "missing_companion": {
+            "title": "DLNA-renderer niet gevonden",
+            "description": "De geconfigureerde decoder `{decoder}` ({platform}) vereist de integratie DLNA Digital Media Renderer om stream-URL's van Music Assistant te kunnen ontvangen.\n\nHome Assistant heeft nog geen DLNA voor dit apparaat geconfigureerd. Ga naar **Instellingen → Apparaten en diensten**, voeg de integratie **DLNA Digital Media Renderer** voor uw apparaat toe en klik op **Verzenden** om af te ronden."
+          }
+        },
+        "abort": {
+          "companion_still_missing": "Er is geen DLNA Digital Media Renderer-entiteit gevonden voor dit apparaat. Configureer DLNA en probeer het opnieuw."
+        }
+      }
     },
     "gateway_authentication_failed": {
       "title": "Authenticatie mislukt voor MyHOME-gateway {gateway}",
@@ -645,6 +712,30 @@
     "auto_standalone_zone": {
       "message": "{name} is een zelfstandige thermostaat: de centrale heeft er geen programma voor"
     },
+    "setpoint_not_taken": {
+      "message": "{name} heeft het setpoint {temperature} °C niet overgenomen, noch via de centrale noch rechtstreeks: deze meldt nog steeds {reported} °C"
+    },
+    "setpoint_refused": {
+      "message": "{name}: de gateway heeft het schrijven van het setpoint geweigerd ({frame})"
+    },
+    "zone_no_setpoint_known": {
+      "message": "{name} heeft nog geen setpoint gemeld: stel eerst een temperatuur in"
+    },
+    "zone_command_refused": {
+      "message": "{name}: de gateway heeft {frame} geweigerd"
+    },
+    "central_command_refused": {
+      "message": "{name}: de gateway heeft {frame} geweigerd"
+    },
+    "central_command_not_written": {
+      "message": "{name}: de gateway heeft {frame} niet binnen 15 seconden geschreven; de opdracht is ingetrokken"
+    },
+    "central_command_unconfirmed": {
+      "message": "{name}: de gateway heeft {frame} niet bevestigd; de opdracht heeft de centrale mogelijk toch bereikt"
+    },
+    "setpoint_not_taken_via_central": {
+      "message": "{name} heeft het setpoint {temperature} °C dat via de centrale is verzonden ({frame}) niet overgenomen: deze meldt nog steeds {reported} °C. Als dit een zelfstandige thermostaat is, vermeld de zone dan onder \"Zelfstandige thermostaten\" in de gateway-opties (of stel `standalone: true` in myhome.yaml in)"
+    },
     "zone_heat_in_conditioning_season": {
       "message": "{name} volgt de centrale, die in het koelseizoen staat: wijzig het seizoen op de centrale"
     },
@@ -696,6 +787,12 @@
     "cover_busy_calibrating": {
       "message": "{entity_id} wordt gekalibreerd; probeer het opnieuw wanneer dat klaar is"
     },
+    "cover_position_unknown": {
+      "message": "{name}: de positie is onbekend totdat het rolluik eenmaal volledig is geopend of gesloten"
+    },
+    "cover_tilt_position_unknown": {
+      "message": "{name}: de hoek van de lamellen is onbekend totdat de lamellen eenmaal volledig zijn open- of dichtgekanteld"
+    },
     "cover_busy_moving": {
       "message": "{name} beweegt; stop het voordat u de lamellen kantelt"
     },
@@ -735,6 +832,15 @@
     "decoder_wake_timeout": {
       "message": "{entity_id}: decoder {decoder} werd niet binnen 5 seconden wakker"
     },
+    "unknown_station": {
+      "message": "{entity_id}: onbekende zender \"{station}\""
+    },
+    "frequency_out_of_range": {
+      "message": "{entity_id}: {frequency} MHz valt buiten de FM-band"
+    },
+    "invalid_tuner_media": {
+      "message": "{entity_id}: \"{media_id}\" is noch een zender noch een frequentie"
+    },
     "seek_not_supported": {
       "message": "{entity_id}: frequentie zoeken wordt alleen ondersteund op tunerbron-entiteiten"
     },
@@ -749,6 +855,12 @@
     },
     "thermo_switch_no_timer": {
       "message": "{name} is een WHO=4 thermo-actuator en ondersteunt geen WHO=1 hardware-bustimers; gebruik in plaats daarvan een vertraging in een Home Assistant-automatisering."
+    },
+    "thermo_switch_interface_write_refused": {
+      "message": "{name} zit achter businterface {interface} en deze gateway routeert WHO 4 daar niet doorheen: schrijven naar `{where}` zou een actuator op de lokale bus schakelen. Configureer in plaats daarvan een inschakel- en uitschakelcommando voor deze schakelaar."
+    },
+    "thermo_switch_write_refused": {
+      "message": "{name}: de gateway heeft {frames} geweigerd"
     },
     "invert_switch_no_timer": {
       "message": "{name} is een configuratieschakelaar voor een binaire sensor en ondersteunt geen WHO=1 hardware-bustimers."
@@ -791,6 +903,21 @@
     },
     "command_not_confirmed": {
       "message": "{name}: gateway {gateway} heeft het commando ({frame}) niet op tijd bevestigd; het is mogelijk wel uitgevoerd"
+    },
+    "scenario_plus_gateway_not_found": {
+      "message": "Gateway \"{gateway}\" niet gevonden voor Scenario Plus-commando"
+    },
+    "scenario_plus_no_gateway": {
+      "message": "Geen actieve MyHOME-gateways gevonden"
+    },
+    "scenario_plus_missing_where": {
+      "message": "Geen WHERE-adres/object opgegeven voor Scenario Plus-commando"
+    },
+    "scenario_plus_unknown_action": {
+      "message": "Onbekende Scenario Plus-actie \"{action}\""
+    },
+    "scenario_plus_command_invalid": {
+      "message": "Kon geen Scenario Plus-commando opbouwen voor WHERE-adres \"{where}\" en actie \"{action}\""
     },
     "gateway_not_found": {
       "message": "Gateway \"{gateway}\" niet gevonden"
@@ -927,6 +1054,56 @@
         "53": "53 - Gedeeltelijke energie huidige maand (Wh)",
         "54": "54 - Gedeeltelijke energie huidige dag (Wh)"
       }
+    }
+  },
+  "device_automation": {
+    "trigger_type": {
+      "pushbutton_short_press": "\"{subtype}\" ingedrukt",
+      "pushbutton_short_release": "\"{subtype}\" losgelaten na kort indrukken",
+      "pushbutton_long_press": "\"{subtype}\" ingedrukt gehouden",
+      "pushbutton_long_press_repeat": "\"{subtype}\" ingedrukt gehouden (herhalend)",
+      "pushbutton_long_release": "\"{subtype}\" losgelaten na lang indrukken",
+      "rotary_cw_slow": "\"{subtype}\" langzaam met de klok mee gedraaid",
+      "rotary_cw_fast": "\"{subtype}\" snel met de klok mee gedraaid",
+      "rotary_ccw_slow": "\"{subtype}\" langzaam tegen de klok in gedraaid",
+      "rotary_ccw_fast": "\"{subtype}\" snel tegen de klok in gedraaid",
+      "centralized_shutter_open": "Centraal OPEN-commando voor rolluiken ontvangen",
+      "centralized_shutter_close": "Centraal SLUIT-commando voor rolluiken ontvangen",
+      "centralized_shutter_stop": "Centraal STOP-commando voor rolluiken ontvangen"
+    },
+    "trigger_subtype": {
+      "button_0": "Knop 0",
+      "button_1": "Knop 1",
+      "button_2": "Knop 2",
+      "button_3": "Knop 3",
+      "button_4": "Knop 4",
+      "button_5": "Knop 5",
+      "button_6": "Knop 6",
+      "button_7": "Knop 7",
+      "button_8": "Knop 8",
+      "button_9": "Knop 9",
+      "button_10": "Knop 10",
+      "button_11": "Knop 11",
+      "button_12": "Knop 12",
+      "button_13": "Knop 13",
+      "button_14": "Knop 14",
+      "button_15": "Knop 15",
+      "button_16": "Knop 16",
+      "button_17": "Knop 17",
+      "button_18": "Knop 18",
+      "button_19": "Knop 19",
+      "button_20": "Knop 20",
+      "button_21": "Knop 21",
+      "button_22": "Knop 22",
+      "button_23": "Knop 23",
+      "button_24": "Knop 24",
+      "button_25": "Knop 25",
+      "button_26": "Knop 26",
+      "button_27": "Knop 27",
+      "button_28": "Knop 28",
+      "button_29": "Knop 29",
+      "button_30": "Knop 30",
+      "button_31": "Knop 31"
     }
   }
 }
