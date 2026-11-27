@@ -697,6 +697,37 @@ def _legacy_zero_padded_alias(device_id: str) -> str | None:
     return None
 
 
+def resolve_cover_label(
+    hass: HomeAssistant,
+    entity_id: str | None,
+    fallback: str,
+    cover: Any = None,
+) -> str:
+    """Return the user-visible cover name from registry, device, entity, or state."""
+    if entity_id:
+        reg_entry = er.async_get(hass).async_get(entity_id)
+        if reg_entry is not None:
+            if reg_entry.name:
+                return reg_entry.name
+            compat_name = getattr(reg_entry, "compat_name", None)
+            if isinstance(compat_name, str) and compat_name:
+                return compat_name
+            if reg_entry.device_id:
+                dev = dr.async_get(hass).async_get(reg_entry.device_id)
+                if dev is not None and (dev.name_by_user or dev.name):
+                    return str(dev.name_by_user or dev.name)
+            if reg_entry.original_name:
+                return reg_entry.original_name
+    display = getattr(cover, "_display_name", None)
+    if isinstance(display, str) and display:
+        return display
+    if entity_id:
+        state = hass.states.get(entity_id)
+        if state is not None and state.attributes.get("friendly_name"):
+            return str(state.attributes["friendly_name"])
+    return fallback
+
+
 def _cover_is_moving_or_settling(cover: Any) -> bool:
     """Return True if the cover motor is moving or inside its pre-move settle pause."""
     return bool(
@@ -742,14 +773,8 @@ class CoverManualCalibrationRepairFlow(RepairsFlow):
             cover = (runtime.entities.get("cover") or {}).get(self._device_id)
 
         entity_id: str | None = getattr(cover, "entity_id", None) or self._entity_id or None
-        ent_reg = er.async_get(self.hass)
-
-        if cover is None and entity_id:
-            entity_comp = self.hass.data.get(DATA_INSTANCES, {}).get("cover")
-            if entity_comp is not None and hasattr(entity_comp, "get_entity"):
-                cover = entity_comp.get_entity(entity_id)
-
         if cover is None and self._entry_id and self._device_id:
+            ent_reg = er.async_get(self.hass)
             gw_mac = runtime.mac if runtime is not None else ""
             entry_mac_val = (
                 str(entry.data.get(CONF_MAC, gw_mac))
@@ -766,10 +791,12 @@ class CoverManualCalibrationRepairFlow(RepairsFlow):
                 who, dev_id = parse_unique_id(reg_entry.unique_id, gw_mac, entry_mac_val)
                 if (who is None or who == "2") and dev_id == self._device_id:
                     entity_id = reg_entry.entity_id
-                    entity_comp = self.hass.data.get(DATA_INSTANCES, {}).get("cover")
-                    if entity_comp is not None and hasattr(entity_comp, "get_entity"):
-                        cover = entity_comp.get_entity(entity_id)
                     break
+
+        if cover is None and entity_id:
+            entity_comp = self.hass.data.get(DATA_INSTANCES, {}).get("cover")
+            if entity_comp is not None and hasattr(entity_comp, "get_entity"):
+                cover = entity_comp.get_entity(entity_id)
 
         if cover is None:
             return None, None
@@ -778,32 +805,6 @@ class CoverManualCalibrationRepairFlow(RepairsFlow):
         if resolved_id:
             self._entity_id = resolved_id
         return cover, resolved_id
-
-    def _resolve_cover_name(self, cover: Any, entity_id: str | None) -> str:
-        """Resolve the user-visible cover name from registry, entity, or state."""
-        if entity_id:
-            ent_reg = er.async_get(self.hass)
-            reg_entry = ent_reg.async_get(entity_id)
-            if reg_entry is not None:
-                if reg_entry.name:
-                    return reg_entry.name
-                compat_name = getattr(reg_entry, "compat_name", None)
-                if isinstance(compat_name, str) and compat_name:
-                    return compat_name
-                if reg_entry.device_id:
-                    dev = dr.async_get(self.hass).async_get(reg_entry.device_id)
-                    if dev is not None and (dev.name_by_user or dev.name):
-                        return str(dev.name_by_user or dev.name)
-                if reg_entry.original_name:
-                    return reg_entry.original_name
-        display = getattr(cover, "_display_name", None)
-        if isinstance(display, str) and display:
-            return display
-        if entity_id:
-            state = self.hass.states.get(entity_id)
-            if state is not None and state.attributes.get("friendly_name"):
-                return str(state.attributes["friendly_name"])
-        return self._cover_name
 
     def _is_native_cover(self, cover: Any, entity_id: str | None) -> bool:
         """Return True if the cover reports native position rather than timed travel."""
@@ -863,7 +864,9 @@ class CoverManualCalibrationRepairFlow(RepairsFlow):
             self._moving = False
             self._restore_manual_timing()
             return None, None, self._prune_native_stale_calibration_and_abort(entity_id)
-        self._cover_name = self._resolve_cover_name(cover, entity_id)
+        self._cover_name = resolve_cover_label(
+            self.hass, entity_id, self._cover_name, cover=cover
+        )
         return cover, entity_id, None
 
     def _preflight_motion(self, cover: Any) -> RepairsFlowResult | None:
@@ -1297,8 +1300,6 @@ class CoverManualCalibrationRepairFlow(RepairsFlow):
         self._run_started_at = None
         hass: HomeAssistant | None = getattr(self, "hass", None)
         cover = self._manual_timing_cover
-        if cover is None and hass is not None:
-            cover, _ = self._resolve_live_cover()
         self._manual_timing_cover = None
         if cover is not None and hasattr(cover, "end_manual_timing"):
             cover.end_manual_timing(self)

@@ -246,3 +246,29 @@ async def test_device_rename_listener_is_defensive_with_mocks() -> None:
     entity_stub_hass._register_device_rename_listener("Stub Reg")
     entity_stub_hass.hass = SimpleNamespace(bus=SimpleNamespace(async_listen=None))  # type: ignore[assignment]
     entity_stub_hass._register_device_rename_listener("Stub Reg")
+
+    # Case 4: Listener callback guards against non-Mapping event data, dr.async_get errors, and missing device
+    listeners: list = []
+
+    def _capture_listen(_event_type: str, cb):
+        listeners.append(cb)
+        return lambda: None
+
+    entity_stub_hass.hass = SimpleNamespace(bus=SimpleNamespace(async_listen=_capture_listen))  # type: ignore[assignment]
+    entity_stub_hass._register_device_rename_listener("Stub Reg")
+    assert len(listeners) == 1
+    listener_cb = listeners[0]
+
+    # Non-mapping event.data
+    listener_cb(SimpleNamespace(data=None))
+
+    # dr.async_get raising unexpected exception
+    with patch("custom_components.myhome.myhome_device.dr.async_get", side_effect=RuntimeError("no registry")):
+        listener_cb(SimpleNamespace(data={"action": "update", "device_id": "dev-stub"}))
+
+    # Updated device already removed (None)
+    with patch(
+        "custom_components.myhome.myhome_device.dr.async_get",
+        return_value=SimpleNamespace(async_get=lambda _id: None),
+    ):
+        listener_cb(SimpleNamespace(data={"action": "update", "device_id": "dev-stub"}))

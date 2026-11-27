@@ -64,6 +64,7 @@ from .repairs import (
     async_create_cover_cutoff_issue,
     async_delete_cover_cutoff_issue,
     cover_calibration_notification_id,
+    resolve_cover_label,
 )
 from .sound_source import source_address, tuner_source, uses_who22_commands
 
@@ -90,28 +91,6 @@ def _is_non_calibratable_cover(
     return is_native_point_cover(
         hass, config_entry, gateway_mac, device_id, entity_id=entity_id
     )
-
-
-def _resolve_cover_label(hass: HomeAssistant, entity_id: str, fallback: str) -> str:
-    """Return the user-visible cover name from registry, device, or state."""
-    ent_reg = er.async_get(hass)
-    reg_entry = ent_reg.async_get(entity_id)
-    if reg_entry is not None:
-        if reg_entry.name:
-            return reg_entry.name
-        compat_name = getattr(reg_entry, "compat_name", None)
-        if isinstance(compat_name, str) and compat_name:
-            return compat_name
-        if reg_entry.device_id:
-            dev = dr.async_get(hass).async_get(reg_entry.device_id)
-            if dev is not None and (dev.name_by_user or dev.name):
-                return str(dev.name_by_user or dev.name)
-        if reg_entry.original_name:
-            return reg_entry.original_name
-    state = hass.states.get(entity_id)
-    if state is not None and state.attributes.get("friendly_name"):
-        return str(state.attributes["friendly_name"])
-    return fallback
 
 
 def _resolve_cover_device_id(
@@ -149,20 +128,21 @@ def _check_cover_ready_for_calibration(
     if state is not None and state.state == STATE_UNAVAILABLE:
         return f"{label}: cover is unavailable"
     runtime = get_runtime_data(config_entry) if isinstance(config_entry, ConfigEntry) else None
+    has_source = False
+    live_cover: Any = None
     if runtime is not None and "cover" in runtime.entities:
+        has_source = True
         live_cover = runtime.entities["cover"].get(device_id) if device_id else None
+    else:
+        entity_comp = hass.data.get(DATA_INSTANCES, {}).get("cover")
+        if entity_comp is not None and hasattr(entity_comp, "get_entity"):
+            has_source = True
+            live_cover = entity_comp.get_entity(entity_id)
+    if has_source:
         if live_cover is None:
             return f"{label}: cover entity is not loaded"
         if not bool(getattr(live_cover, "available", True)):
             return f"{label}: cover is unavailable"
-    else:
-        entity_comp = hass.data.get(DATA_INSTANCES, {}).get("cover")
-        if entity_comp is not None and hasattr(entity_comp, "get_entity"):
-            live_cover = entity_comp.get_entity(entity_id)
-            if live_cover is None:
-                return f"{label}: cover entity is not loaded"
-            if not bool(getattr(live_cover, "available", True)):
-                return f"{label}: cover is unavailable"
     return None
 
 
@@ -647,7 +627,7 @@ class CalibrateCoverButtonEntity(ButtonEntity, MyHOMEEntity):
         notification_id = cover_calibration_notification_id(entry_id, self._device_id)
 
         async def _run_calibration() -> None:
-            cover_name = _resolve_cover_label(
+            cover_name = resolve_cover_label(
                 self.hass, cover_entity_id, self._device_name
             )
             unready_msg = _check_cover_ready_for_calibration(
@@ -686,7 +666,7 @@ class CalibrateCoverButtonEntity(ButtonEntity, MyHOMEEntity):
                     cover_entity_id,
                     err,
                 )
-                cover_name = _resolve_cover_label(
+                cover_name = resolve_cover_label(
                     self.hass, cover_entity_id, self._device_name
                 )
                 if entry_id is not None:
@@ -712,7 +692,7 @@ class CalibrateCoverButtonEntity(ButtonEntity, MyHOMEEntity):
                     cover_entity_id,
                     err,
                 )
-                cover_name = _resolve_cover_label(
+                cover_name = resolve_cover_label(
                     self.hass, cover_entity_id, self._device_name
                 )
                 persistent_notification.async_create(
@@ -873,7 +853,7 @@ class CalibrateAllCoversButtonEntity(ButtonEntity):
                     if hub.is_batch_stopped(gen):
                         stopped_remaining = list(entity_ids[idx:])
                         break
-                    label = _resolve_cover_label(self.hass, entity_id, entity_id)
+                    label = resolve_cover_label(self.hass, entity_id, entity_id)
                     dev_id = _resolve_cover_device_id(
                         self.hass,
                         entity_id,
@@ -948,9 +928,6 @@ class CalibrateAllCoversButtonEntity(ButtonEntity):
                             async_delete_cover_cutoff_issue(
                                 self.hass, entry_id, dev_id, entity_id
                             )
-                    if hub.is_batch_stopped(gen):
-                        stopped_remaining = list(entity_ids[idx + 1 :])
-                        break
             finally:
                 hub.end_batch(gen)
 
@@ -975,14 +952,9 @@ class CalibrateAllCoversButtonEntity(ButtonEntity):
             )
 
         task_name = f"myhome_calibrate_all_covers_{self._gateway_handler.mac}"
-        if isinstance(cfg_entry, ConfigEntry) and hasattr(
-            cfg_entry, "async_create_background_task"
-        ):
-            cfg_entry.async_create_background_task(
-                self.hass, _run_batch(), name=task_name
-            )
-        else:
-            self.hass.async_create_background_task(_run_batch(), name=task_name)
+        cfg_entry.async_create_background_task(
+            self.hass, _run_batch(), name=task_name
+        )
 
 
 class _TunerSeekButtonBase(ButtonEntity, MyHOMEEntity):

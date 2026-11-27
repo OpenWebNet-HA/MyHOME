@@ -2378,6 +2378,18 @@ async def test_manual_timing_failsafe_restores_settle_on_timeout_and_cancels_cle
     assert cover._settles_on_timer is True
     assert cover._manual_timing_failsafe_unsub is None
 
+    # 4. begin_manual_timing rejects while _calibrating, and end_manual_timing ignores non-owner tokens
+    cover._calibrating = True
+    assert cover.begin_manual_timing("owner_a") is False
+    cover._calibrating = False
+    assert cover.begin_manual_timing("owner_a") is True
+    cover.end_manual_timing("owner_b")
+    assert cover._settles_on_timer is False
+    assert cover._manual_timing_owner == "owner_a"
+    cover.end_manual_timing("owner_a")
+    assert cover._settles_on_timer is True
+    assert cover._manual_timing_owner is None
+
 
 async def test_legacy_cutoff_sync_guards_native_scope_zero_padded_and_registry_removal(
     hass, gateway
@@ -2571,6 +2583,166 @@ async def test_calibrate_buttons_guard_unloaded_unavailable_exposed_and_duplicat
         await cover_21.async_set_travel_time(travel_time_down=20.0, travel_time_up=21.0)
         assert any(c.args[1] == notif_21 for c in mock_dismiss.call_args_list)
     assert ir.async_get(hass).async_get_issue(DOMAIN, issue_21_id) is None
+
+
+async def test_button_readiness_helpers_and_batch_interruption_edge_cases(hass, gateway) -> None:
+    """Exercise button readiness checks, entity_component fallback, wall-switch interruption, and pre-loop batch stop."""
+    from types import SimpleNamespace
+
+    from homeassistant.const import STATE_UNAVAILABLE
+    from homeassistant.helpers import entity_registry as er
+    from homeassistant.helpers.entity_component import DATA_INSTANCES
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.button import (
+        CalibrateAllCoversButtonEntity,
+        _check_cover_ready_for_calibration,
+        _resolve_cover_device_id,
+    )
+    from custom_components.myhome.const import DOMAIN
+    from custom_components.myhome.cover import async_sync_cover_calibration_issues
+    from custom_components.myhome.cover_calibration import get_calibration_hub
+    from custom_components.myhome.data import MyHOMERuntimeData
+    from custom_components.myhome.repairs import ISSUE_COVER_LEGACY_CUTOFF
+
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": gateway.mac}, unique_id=gateway.mac)
+    entry.add_to_hass(hass)
+    gateway.config_entry = entry
+    gateway.unique_id = gateway.mac
+
+    # 1. _resolve_cover_device_id returns None when entity is absent from registry
+    assert _resolve_cover_device_id(hass, "cover.missing", gateway.mac, entry) is None
+
+    # 2. _check_cover_ready_for_calibration branches: gateway down, state unavailable, runtime cover unavailable, entity_comp fallback
+    gateway.available = False
+    assert (
+        _check_cover_ready_for_calibration(hass, entry, gateway, "cover.c1", "21", "Cover 21")
+        == "Cover 21: gateway is unavailable"
+    )
+    gateway.available = True
+
+    hass.states.async_set("cover.c1", STATE_UNAVAILABLE)
+    assert (
+        _check_cover_ready_for_calibration(hass, entry, gateway, "cover.c1", "21", "Cover 21")
+        == "Cover 21: cover is unavailable"
+    )
+    hass.states.async_set("cover.c1", "open")
+
+    runtime = MyHOMERuntimeData(gateway=gateway)
+    runtime.entities["cover"] = {"21": SimpleNamespace(available=False)}
+    entry.runtime_data = runtime
+    assert (
+        _check_cover_ready_for_calibration(hass, entry, gateway, "cover.c1", "21", "Cover 21")
+        == "Cover 21: cover is unavailable"
+    )
+
+    # EntityComponent fallback when runtime has no "cover" dict
+    entry_no_rt = MockConfigEntry(domain=DOMAIN, data={"mac": "00:03:50:aa:bb:01"}, unique_id="00:03:50:aa:bb:01")
+    entry_no_rt.add_to_hass(hass)
+    comp_map: dict[str, object] = {"cover.c1": SimpleNamespace(available=True)}
+    hass.data.setdefault(DATA_INSTANCES, {})["cover"] = SimpleNamespace(
+        get_entity=lambda eid: comp_map.get(eid)
+    )
+    try:
+        assert (
+            _check_cover_ready_for_calibration(hass, entry_no_rt, gateway, "cover.c1", "21", "Cover 21")
+            is None
+        )
+        assert (
+            _check_cover_ready_for_calibration(hass, entry_no_rt, gateway, "cover.missing", "99", "Cover 99")
+            == "Cover 99: cover entity is not loaded"
+        )
+    finally:
+        hass.data[DATA_INSTANCES].pop("cover", None)
+
+    # 3. Batch button: wall-switch CalibrationInterrupted without stop_all continues to next cover;
+    #    stop_all after non-interrupted error hits top-of-loop is_batch_stopped on next cover.
+    entry.runtime_data = MyHOMERuntimeData(gateway=gateway)
+    ent_reg = er.async_get(hass)
+    e1 = ent_reg.async_get_or_create("cover", DOMAIN, f"{gateway.mac}-2-21", suggested_object_id="b1", config_entry=entry)
+    e2 = ent_reg.async_get_or_create("cover", DOMAIN, f"{gateway.mac}-2-22", suggested_object_id="b2", config_entry=entry)
+    e3 = ent_reg.async_get_or_create("cover", DOMAIN, f"{gateway.mac}-2-23", suggested_object_id="b3", config_entry=entry)
+
+    btn_all = CalibrateAllCoversButtonEntity(hass=hass, config_entry=entry, gateway=gateway)
+    hub = get_calibration_hub(gateway)
+    seen: list[str] = []
+
+    async def _svc_wall_and_stop(call) -> None:
+        eid = call.data["entity_id"]
+        seen.append(eid)
+        if eid == e1.entity_id:
+            raise CalibrationInterrupted("Cover 21", "External wall switch pressed")
+        if eid == e2.entity_id:
+            await hub.async_stop()
+
+    hass.services.async_register(DOMAIN, "calibrate_cover", _svc_wall_and_stop)
+    with patch("custom_components.myhome.button.persistent_notification.async_create") as mock_notify:
+        await btn_all.async_press()
+        await hass.async_block_till_done(wait_background_tasks=True)
+        assert seen == [e1.entity_id, e2.entity_id]  # e3 skipped at top of loop after stop_all()
+        summary = mock_notify.call_args.args[1]
+        assert "Succeeded: 1" in summary
+        assert "Failed: 1" in summary
+        assert "Stopped / remaining: 1" in summary
+        assert e3.entity_id not in seen
+
+    # 4. cover.py sync & reset edge cases: None guard, non-mapping stored item, live-only covers, and 000X reset
+    async_sync_cover_calibration_issues(None, None)
+
+    mac2 = "00:03:50:aa:bb:02"
+    gw2 = MagicMock()
+    gw2.mac = mac2
+    gw2.log_id = "[GW2]"
+    gw2.available = True
+    gw2.is_who_available = lambda _w: True
+    gw2.availability_signal = f"avail_{mac2}"
+    gw2.device_registry_id = None
+
+    entry_live = MockConfigEntry(
+        domain=DOMAIN,
+        data={"mac": mac2},
+        unique_id=mac2,
+        options={
+            CONF_COVER_TRAVEL_TIMES: {
+                "bad": "not-a-dict",
+                "05": {"down": 20.0, "up": 21.0, "source": "manual"},
+                "0007": {"down": 61.0, "up": 61.0},
+                "31": {"down": 61.0, "up": 61.0},
+                "32": {"down": 61.0, "up": 61.0},
+                "33": {"down": 61.0, "up": 61.0},
+            }
+        },
+    )
+    entry_live.add_to_hass(hass)
+    gw2.config_entry = entry_live
+
+    # First: no registry entries on entry_live -> live_covers loop populates active_covers for 31, skips disabled 32
+    cov_31 = _make_cover(hass, gw2, device_id="31", where="31", name="Live 31")
+    cov_32 = _make_cover(hass, gw2, device_id="32", where="32", name="Disabled 32")
+    cov_32.registry_entry = SimpleNamespace(disabled_by="user")
+    rt2 = MyHOMERuntimeData(gateway=gw2)
+    rt2.entities["cover"] = {"31": cov_31, "32": cov_32}
+    entry_live.runtime_data = rt2
+    async_sync_cover_calibration_issues(hass, entry_live)
+    from homeassistant.helpers import issue_registry as ir
+
+    issue_reg = ir.async_get(hass)
+    assert issue_reg.async_get_issue(DOMAIN, f"{ISSUE_COVER_LEGACY_CUTOFF}_{entry_live.entry_id}_31") is not None
+    assert issue_reg.async_get_issue(DOMAIN, f"{ISSUE_COVER_LEGACY_CUTOFF}_{entry_live.entry_id}_32") is None
+
+    # Second: registered_any=True with stale live cover 33 whose entity_id is no longer in registry -> skipped
+    ent_reg.async_get_or_create("cover", DOMAIN, f"{mac2}-2-07", suggested_object_id="cov_07", config_entry=entry_live)
+    cov_33 = _make_cover(hass, gw2, device_id="33", where="33", name="Deleted 33")
+    cov_33.entity_id = "cover.deleted_33"
+    rt2.entities["cover"]["33"] = cov_33
+    async_sync_cover_calibration_issues(hass, entry_live)
+    assert issue_reg.async_get_issue(DOMAIN, f"{ISSUE_COVER_LEGACY_CUTOFF}_{entry_live.entry_id}_33") is None
+
+    # Third: async_reset_travel_time pops legacy 0007 key even when canonical 07 is absent from stored
+    cov_07 = _make_cover(hass, gw2, device_id="07", where="07", name="Cover 07")
+    await cov_07.async_reset_travel_time()
+    assert "0007" not in entry_live.options[CONF_COVER_TRAVEL_TIMES]
+
 
 
 

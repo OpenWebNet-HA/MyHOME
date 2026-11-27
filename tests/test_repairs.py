@@ -953,3 +953,304 @@ async def test_cover_manual_calibration_repair_flow_preflight_guards_and_native_
     await cover.async_will_remove_from_hass()
 
 
+@pytest.mark.asyncio
+async def test_cover_repair_helpers_fallbacks_and_error_aborts(hass: HomeAssistant) -> None:
+    """Exercise resolve_cover_label, entity_comp lookup, delayed stop echo, mid-flow aborts, and HomeAssistantError guards."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from homeassistant.exceptions import HomeAssistantError
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
+    from homeassistant.helpers.entity_component import DATA_INSTANCES
+
+    from custom_components.myhome.const import CONF_COVER_TRAVEL_TIMES
+    from custom_components.myhome.repairs import (
+        ISSUE_COVER_CALIBRATION_CUTOFF,
+        ISSUE_COVER_LEGACY_CUTOFF,
+        CoverManualCalibrationRepairFlow,
+        async_create_fix_flow,
+        async_sync_legacy_cover_cutoff_issues,
+        cover_calibration_notification_id,
+        resolve_cover_label,
+    )
+
+    assert cover_calibration_notification_id(None, "22#4#02") == "myhome_cover_calibration_22_4_02"
+
+    entry, gw, cover = _make_real_cover_repair_env(
+        hass,
+        mac="00:03:50:00:00:05",
+        device_id="22",
+        where="22",
+        interface=None,
+        name="Patio Awning",
+        object_id="patio_awning",
+        options={
+            CONF_COVER_TRAVEL_TIMES: {
+                "22": {"down": 61.0, "up": 61.0},
+                "99": {"down": 20.0, "up": 21.0, "source": "manual"},
+            }
+        },
+    )
+
+    # 1. async_sync_legacy_cover_cutoff_issues skips empty device_id and prunes resolved legacy issues
+    async_sync_legacy_cover_cutoff_issues(
+        hass,
+        entry.entry_id,
+        [
+            {"device_id": ""},
+            {"device_id": "22", "entity_id": cover.entity_id, "name": "Patio Awning", "down": None, "up": True},
+        ],
+    )
+    legacy_id = f"{ISSUE_COVER_LEGACY_CUTOFF}_{entry.entry_id}_22"
+    legacy_issue = ir.async_get(hass).async_get_issue(DOMAIN, legacy_id)
+    assert legacy_issue is not None
+    assert legacy_issue.translation_placeholders == {"name": "Patio Awning", "down": "?", "up": "?"}
+    async_sync_legacy_cover_cutoff_issues(hass, entry.entry_id, [])
+    assert ir.async_get(hass).async_get_issue(DOMAIN, legacy_id) is None
+
+    # 2. resolve_cover_label precedence: name, compat_name, device, original_name, _display_name, state friendly_name, fallback
+    ent_reg = er.async_get(hass)
+    dev_reg = dr.async_get(hass)
+    dev = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, f"{gw.mac}-2-22")},
+        name="Device Awning",
+    )
+    ent_reg.async_update_entity(cover.entity_id, name="Entity Custom Name")
+    assert resolve_cover_label(hass, cover.entity_id, "Fallback") == "Entity Custom Name"
+
+    with patch(
+        "custom_components.myhome.repairs.er.async_get",
+        return_value=SimpleNamespace(
+            async_get=lambda _eid: SimpleNamespace(
+                name=None, compat_name="Compat Label", device_id=None, original_name=None
+            )
+        ),
+    ):
+        assert resolve_cover_label(hass, cover.entity_id, "Fallback") == "Compat Label"
+
+    with patch(
+        "custom_components.myhome.repairs.er.async_get",
+        return_value=SimpleNamespace(
+            async_get=lambda _eid: SimpleNamespace(
+                name=None, compat_name=None, device_id=dev.id, original_name="Orig Label"
+            )
+        ),
+    ):
+        assert resolve_cover_label(hass, cover.entity_id, "Fallback") == "Device Awning"
+
+    with patch(
+        "custom_components.myhome.repairs.er.async_get",
+        return_value=SimpleNamespace(
+            async_get=lambda _eid: SimpleNamespace(
+                name=None, compat_name=None, device_id=None, original_name="Orig Label"
+            )
+        ),
+    ):
+        assert resolve_cover_label(hass, cover.entity_id, "Fallback") == "Orig Label"
+
+    ent_reg.async_update_entity(cover.entity_id, name=None)
+    cover.registry_entry = ent_reg.async_get(cover.entity_id)
+    assert resolve_cover_label(hass, "cover.unregistered", "Fallback", cover=cover) == "Patio Awning"
+    hass.states.async_set("cover.state_only", "open", {"friendly_name": "State Friendly"})
+    assert resolve_cover_label(hass, "cover.state_only", "Fallback", cover=None) == "State Friendly"
+    assert resolve_cover_label(hass, "cover.none_at_all", "Fallback", cover=None) == "Fallback"
+
+    # 3. _resolve_live_cover via registry scan + DATA_INSTANCES EntityComponent (and _is_native_cover with empty device_id)
+    ent_reg.async_get_or_create("button", DOMAIN, f"{gw.mac}-btn-22", config_entry=entry)
+    cov_23_reg = ent_reg.async_get_or_create(
+        "cover", DOMAIN, f"{gw.mac}-2-23", suggested_object_id="patio_23", config_entry=entry
+    )
+    entry.runtime_data.entities["cover"].clear()
+    hass.data.setdefault(DATA_INSTANCES, {})["cover"] = SimpleNamespace(
+        get_entity=lambda eid: cover if eid in (cover.entity_id, cov_23_reg.entity_id) else None
+    )
+    try:
+        flow_comp = await async_create_fix_flow(
+            hass,
+            f"{ISSUE_COVER_CALIBRATION_CUTOFF}_{entry.entry_id}_23",
+            {"entry_id": entry.entry_id, "device_id": "23", "entity_id": ""},
+        )
+        menu = await flow_comp.async_step_init()
+        assert menu["type"] == "menu"
+
+        flow_no_dev = await async_create_fix_flow(
+            hass,
+            f"{ISSUE_COVER_CALIBRATION_CUTOFF}_{entry.entry_id}_22",
+            {"entry_id": entry.entry_id, "device_id": "", "entity_id": cover.entity_id},
+        )
+        assert (await flow_no_dev.async_step_init())["type"] == "menu"
+    finally:
+        hass.data[DATA_INSTANCES].pop("cover", None)
+
+    # 4. Mid-flow cover disappearance aborts cleanly on all 7 step methods
+    flow_missing = await async_create_fix_flow(
+        hass,
+        f"{ISSUE_COVER_CALIBRATION_CUTOFF}_{entry.entry_id}_22",
+        {"entry_id": entry.entry_id, "device_id": "22", "entity_id": cover.entity_id},
+    )
+    for step_fn in (
+        flow_missing.async_step_timed_close_ready,
+        flow_missing.async_step_timed_close_stop,
+        flow_missing.async_step_timed_open_ready,
+        flow_missing.async_step_timed_open_stop,
+        flow_missing.async_step_manual_entry,
+        flow_missing.async_step_confirm_save,
+        flow_missing.async_step_reset_default,
+    ):
+        aborted = await step_fn()
+        assert aborted["type"] == "abort" and aborted["reason"] == "cover_missing"
+
+    # Restore cover into runtime for remaining checks
+    entry.runtime_data.entities["cover"] = {"22": cover}
+
+    # 5. State-based _read_last_run, _usable_prefill_value, _fresh_last_run_seconds guards, and delayed stop echo loop
+    cover._last_run = {}
+    hass.states.async_set(
+        cover.entity_id,
+        "closed",
+        {"last_run_seconds": 29.4, "last_run_direction": "close", "last_run_ended_at": "t0"},
+    )
+    flow_meas = await async_create_fix_flow(
+        hass,
+        f"{ISSUE_COVER_CALIBRATION_CUTOFF}_{entry.entry_id}_22",
+        {"entry_id": entry.entry_id, "device_id": "22", "entity_id": cover.entity_id},
+    )
+    assert flow_meas._usable_prefill_value(None) is None
+    assert flow_meas._usable_prefill_value(True) is None
+    assert flow_meas._default_travel_times(cover, cover.entity_id) == (29.4, 25.0)
+
+    hass.states.async_set(cover.entity_id, "closed", {})
+    assert flow_meas._fresh_last_run_seconds(cover, cover.entity_id, "close") is None
+    cover._last_run = {"direction": "open", "seconds": 20.0, "ended_at": "t1"}
+    assert flow_meas._fresh_last_run_seconds(cover, cover.entity_id, "close") is None
+    cover._last_run = {"direction": "close", "seconds": 0.0, "ended_at": "t1"}
+    assert flow_meas._fresh_last_run_seconds(cover, cover.entity_id, "close") is None
+    flow_meas._pre_run_snapshot = {"direction": "close", "seconds": 21.0, "ended_at": "t1"}
+    cover._last_run = {"direction": "close", "seconds": 21.0, "ended_at": "t1"}
+    assert flow_meas._fresh_last_run_seconds(cover, cover.entity_id, "close") is None
+
+    # Delayed stop echo arriving during _stop_motion_and_measure's short wait loop
+    from OWNd.message import OWNEvent
+
+    cover._last_run = {}
+    await flow_meas.async_step_timed_close_ready(user_input={})
+    with patch("custom_components.myhome.cover.time.monotonic", return_value=300.0):
+        cover.handle_event(OWNEvent.parse("*2*2*22##"))
+    assert cover._run_started_at is not None
+
+    async def _deliver_delayed_echo(_delay: float) -> None:
+        with patch("custom_components.myhome.cover.time.monotonic", return_value=326.8):
+            cover.handle_event(OWNEvent.parse("*2*0*22##"))
+
+    with (
+        patch.object(cover, "async_stop_cover", AsyncMock()),
+        patch("custom_components.myhome.repairs.asyncio.sleep", side_effect=_deliver_delayed_echo),
+    ):
+        step_after_stop = await flow_meas.async_step_timed_close_stop(user_input={})
+    assert step_after_stop["step_id"] == "timed_open_ready"
+    assert step_after_stop["description_placeholders"]["down"] == "26.8"
+
+    # 6. Error handling & motion preflight branches across start, stop, manual save, reset, and hass=None async_remove
+    with patch.object(cover, "async_close_cover", AsyncMock(side_effect=HomeAssistantError("Close NACK"))):
+        f_err = await async_create_fix_flow(
+            hass,
+            f"{ISSUE_COVER_CALIBRATION_CUTOFF}_{entry.entry_id}_22",
+            {"entry_id": entry.entry_id, "device_id": "22", "entity_id": cover.entity_id},
+        )
+        res_err = await f_err.async_step_timed_close_ready(user_input={})
+        assert res_err["type"] == "abort" and res_err["reason"] == "save_failed"
+        assert f_err._moving is False
+        assert cover._settles_on_timer is True
+
+    f_stop_err = await async_create_fix_flow(
+        hass,
+        f"{ISSUE_COVER_CALIBRATION_CUTOFF}_{entry.entry_id}_22",
+        {"entry_id": entry.entry_id, "device_id": "22", "entity_id": cover.entity_id},
+    )
+    cover._attr_is_closing = True
+    with patch.object(cover, "async_stop_cover", AsyncMock(side_effect=HomeAssistantError("Stop NACK"))):
+        res_err = await f_stop_err.async_step_timed_close_stop(user_input={})
+        assert res_err["type"] == "abort" and res_err["reason"] == "save_failed"
+    cover._attr_is_closing = False
+
+    f_open_unavail = await async_create_fix_flow(
+        hass,
+        f"{ISSUE_COVER_CALIBRATION_CUTOFF}_{entry.entry_id}_22",
+        {"entry_id": entry.entry_id, "device_id": "22", "entity_id": cover.entity_id},
+    )
+    gw.available = False
+    res_err = await f_open_unavail.async_step_timed_open_ready(user_input={"reuse_down_for_up": False})
+    assert res_err["type"] == "abort" and res_err["reason"] == "cover_unavailable"
+    gw.available = True
+
+    f_open_err = await async_create_fix_flow(
+        hass,
+        f"{ISSUE_COVER_CALIBRATION_CUTOFF}_{entry.entry_id}_22",
+        {"entry_id": entry.entry_id, "device_id": "22", "entity_id": cover.entity_id},
+    )
+    with patch.object(cover, "async_open_cover", AsyncMock(side_effect=HomeAssistantError("Open NACK"))):
+        res_err = await f_open_err.async_step_timed_open_ready(user_input={"reuse_down_for_up": False})
+        assert res_err["type"] == "abort" and res_err["reason"] == "save_failed"
+
+    f_open_stop_err = await async_create_fix_flow(
+        hass,
+        f"{ISSUE_COVER_CALIBRATION_CUTOFF}_{entry.entry_id}_22",
+        {"entry_id": entry.entry_id, "device_id": "22", "entity_id": cover.entity_id},
+    )
+    cover._attr_is_opening = True
+    with patch.object(cover, "async_stop_cover", AsyncMock(side_effect=HomeAssistantError("Stop NACK"))):
+        res_err = await f_open_stop_err.async_step_timed_open_stop(user_input={})
+        assert res_err["type"] == "abort" and res_err["reason"] == "save_failed"
+    cover._attr_is_opening = False
+
+    f_val = await async_create_fix_flow(
+        hass,
+        f"{ISSUE_COVER_CALIBRATION_CUTOFF}_{entry.entry_id}_22",
+        {"entry_id": entry.entry_id, "device_id": "22", "entity_id": cover.entity_id},
+    )
+    bad_type = await f_val.async_step_manual_entry(
+        user_input={"travel_time_down": "not-a-float", "travel_time_up": 20.0}
+    )
+    assert bad_type["type"] == "form" and bad_type["errors"] == {"base": "invalid_travel_time"}
+
+    with patch.object(cover, "async_set_travel_time", AsyncMock(side_effect=HomeAssistantError("Disk full"))):
+        res_err = await f_val.async_step_manual_entry(
+            user_input={"travel_time_down": 20.0, "travel_time_up": 20.0}
+        )
+        assert res_err["type"] == "abort" and res_err["reason"] == "save_failed"
+
+    f_rst_err = await async_create_fix_flow(
+        hass,
+        f"{ISSUE_COVER_CALIBRATION_CUTOFF}_{entry.entry_id}_22",
+        {"entry_id": entry.entry_id, "device_id": "22", "entity_id": cover.entity_id},
+    )
+    with patch.object(cover, "async_reset_travel_time", AsyncMock(side_effect=HomeAssistantError("Reset err"))):
+        res_err = await f_rst_err.async_step_reset_default(user_input={})
+        assert res_err["type"] == "abort" and res_err["reason"] == "save_failed"
+
+    # async_remove when hass is not yet bound still restores manual timing cleanly
+    detached_flow = CoverManualCalibrationRepairFlow({})
+    assert cover.begin_manual_timing(detached_flow) is True
+    detached_flow._moving = True
+    detached_flow._manual_timing_cover = cover
+    detached_flow.async_remove()
+    assert cover._settles_on_timer is True
+
+    # 7. Native cover prune on non-zero-padded id ("22") preserves other covers ("99") in options
+    cover._advanced = True
+    f_prune = await async_create_fix_flow(
+        hass,
+        f"{ISSUE_COVER_LEGACY_CUTOFF}_{entry.entry_id}_22",
+        {"entry_id": entry.entry_id, "device_id": "22", "entity_id": cover.entity_id},
+    )
+    res_prune = await f_prune.async_step_init()
+    assert res_prune["type"] == "abort" and res_prune["reason"] == "cover_reports_position"
+    assert entry.options[CONF_COVER_TRAVEL_TIMES] == {
+        "99": {"down": 20.0, "up": 21.0, "source": "manual"}
+    }
+
+    await cover.async_will_remove_from_hass()
+
+
