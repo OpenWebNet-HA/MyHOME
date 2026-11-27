@@ -1,7 +1,9 @@
-"""Translated strings must use exactly the placeholders of the English source.
+"""Translated strings must be complete, non-empty, and match English placeholders.
 
-Home Assistant validates this at runtime: when a translation's placeholders differ
-from strings.json it logs an ERROR and falls back to English for that string.
+Home Assistant validates placeholders at runtime: when a translation's placeholders differ
+from strings.json it logs an ERROR and falls back to English for that string. Bundled
+locales must also maintain 100% key parity with strings.json with no missing, orphaned,
+or empty/whitespace-only values.
 """
 
 import json
@@ -47,7 +49,35 @@ def test_translations_have_no_keys_missing_from_english(language: str) -> None:
     source = _strings(COMPONENT / "strings.json")
     translated = _strings(COMPONENT / "translations" / f"{language}.json")
 
-    assert not sorted(set(translated) - set(source)), f"{language}: keys not in strings.json"
+    orphaned = sorted(set(translated) - set(source))
+    assert not orphaned, f"{language}: keys not in strings.json: {orphaned}"
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_translations_have_no_missing_keys(language: str) -> None:
+    source = _strings(COMPONENT / "strings.json")
+    translated = _strings(COMPONENT / "translations" / f"{language}.json")
+
+    missing = sorted(set(source) - set(translated))
+    assert not missing, (
+        f"{language}: {len(missing)} key(s) missing relative to strings.json: {missing}"
+    )
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_translations_have_no_empty_values(language: str) -> None:
+    source = _strings(COMPONENT / "strings.json")
+    translated = _strings(COMPONENT / "translations" / f"{language}.json")
+
+    empty = sorted(
+        key
+        for key, text in translated.items()
+        if key in source and source[key].strip() and not text.strip()
+    )
+    assert not empty, (
+        f"{language}: {len(empty)} empty/whitespace translation value(s) "
+        f"for non-empty English keys: {empty}"
+    )
 
 
 @pytest.mark.parametrize(
