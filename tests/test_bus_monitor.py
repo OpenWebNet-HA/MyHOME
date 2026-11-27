@@ -27,6 +27,28 @@ def test_bus_frame_parsing():
     assert "timestamp" in d
 
 
+def test_bus_frame_preserves_routed_and_parameterized_where():
+    """Verify BusFrame keeps F422 #4#II routing and compound WHERE tokens intact."""
+    from OWNd.message import OWNMessage
+
+    cases = [
+        ("rx", "*2*0*11#4#02##", "2", "11#4#02", "0", None),
+        ("tx", "*#2*11#4#02##", "2", "11#4#02", None, None),
+        ("rx", "*#4*2#1*20*1##", "4", "2#1", None, "20"),
+        ("rx", "*4*102*#0#1##", "4", "#0#1", "102", None),
+        ("rx", "*#13**15*4##", "13", "", None, "15"),
+    ]
+    for direction, raw, exp_who, exp_where, exp_what, exp_dim in cases:
+        parsed = OWNMessage.parse(raw)
+        assert parsed is not None
+        frame = BusFrame(direction=direction, raw=raw, parsed=parsed)
+        d = frame.to_dict()
+        assert d["who"] == exp_who
+        assert d["where"] == exp_where
+        assert d["what"] == exp_what
+        assert d["dimension"] == exp_dim
+
+
 def test_bus_frame_signaling():
     """Verify BusFrame identifies ACK and NACK frames."""
     ack_frame = BusFrame(direction="rx", raw="*#*1##", parsed=OWNSignaling("*#*1##"))

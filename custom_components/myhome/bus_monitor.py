@@ -13,6 +13,8 @@ from typing import Any, Callable, Optional
 
 from OWNd.message import OWNMessage, OWNSignaling
 
+from .where_grammar import where_param
+
 _LOGGER = logging.getLogger(__name__)
 
 DEFAULT_RING_BUFFER_SIZE = 500
@@ -51,7 +53,11 @@ class BusFrame:
 
         # Extract semantics if parsed message is available
         self.who = getattr(parsed, "who", getattr(parsed, "_who", None)) if parsed else None
-        self.where = getattr(parsed, "where", getattr(parsed, "_where", None)) if parsed else None
+        self.where: str | None = None
+        raw_where = getattr(parsed, "where", getattr(parsed, "_where", None)) if parsed else None
+        if raw_where is not None:
+            params = [str(p) for p in where_param(parsed)]
+            self.where = f"{raw_where}#{'#'.join(params)}" if params else str(raw_where)
         self.what = getattr(parsed, "what", getattr(parsed, "_what", None)) if parsed else None
         self.dimension = getattr(parsed, "dimension", getattr(parsed, "_dimension", None)) if parsed else None
 
