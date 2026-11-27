@@ -433,17 +433,25 @@ def test_thermo_dim20_and_dim19_status_protocol_table_and_fallbacks() -> None:
         is None
     )
 
-    # Out-of-table Dimension 19 empty-field frame emitted by emulated MyHomeServer1/F461 -> None
+    # Single-side empty Dimension 19 frame emitted by bt_termo D2 04 13 for an unmapped
+    # SCS byte decodes the populated side without asserting idle while the other side is unknown.
     empty_dim19 = OWNMessage.parse("*#4*1*19*0*##")
     assert isinstance(empty_dim19, OWNHeatingEvent)
-    assert empty_dim19.message_type is None
+    assert empty_dim19.message_type == MESSAGE_TYPE_ACTION
     assert empty_dim19.dimension == 19
     assert empty_dim19.dimension_value == ["0", ""]
-    assert thermo_dim19_status(empty_dim19) is None
-    assert thermo_dim19_status(OWNHeatingEvent("*#4*1*19*0*##")) is None
-    assert thermo_dim19_status(OWNHeatingEvent("*#4*1*19**0##")) is None
+    assert thermo_dim19_status(empty_dim19) == (False, None, None, None, None, None)
+    assert thermo_dim19_status(OWNHeatingEvent("*#4*1*19*0*##")) == (
+        False, None, None, None, None, None
+    )
+    assert thermo_dim19_status(OWNHeatingEvent("*#4*1*19**0##")) == (
+        None, False, None, None, None, None
+    )
+    assert thermo_dim19_status(OWNHeatingEvent("*#4*1*19**1##")) == (
+        None, True, True, None, None, None
+    )
     assert thermo_dim19_status(OWNHeatingEvent("*#4*1*19**##")) is None
-    for bad_vals in (["0", ""], ["", "0"], ["0"]):
+    for bad_vals in (["", ""], ["999", ""], ["", "23"], ["0"]):
         assert (
             thermo_dim19_status(
                 MagicMock(

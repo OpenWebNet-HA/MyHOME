@@ -46,13 +46,14 @@ ZONE_3_TEMPERATURE = "*#4*3*0*0255##"
         ("F454", ["*#4*0#0*20##"]),
         ("F450", ["*#4*0#0*20##"]),
         ("F459", ["*#4*0#0*20##"]),
+        ("3488", ["*#4*0#0*20##"]),
         ("F460", ["*#4*0#0*20##"]),
         ("H4684", []),  # the oracle shows the request dropped
         ("MH200", []),
         ("MH202", []),
         ("MH201", []),  # not in the oracle, no capture
-        ("MH200N", ["*#4*0##"]),  # forwards the general request: nothing changes
-        ("F453", ["*#4*0##"]),
+        ("MH200N", []),  # Gen B *#4*0## polls zone 0 point-to-point (QUIRK-15)
+        ("F453", []),
     ],
 )
 def test_what_replaces_the_general_request_at_start(hass: HomeAssistant, model: str, who4: list[str]) -> None:
@@ -63,7 +64,9 @@ def test_what_replaces_the_general_request_at_start(hass: HomeAssistant, model: 
 def test_every_all_actuator_request_is_the_published_form() -> None:
     assert ALL_ACTUATORS_REQUEST == "*#4*0#0*20##"
     assert {model: dims[20] for model, dims in ALL_ZONE_REQUESTS.items() if 20 in dims} == {
+        "3488": "*#4*0#0*20##",
         "F455": "*#4*0#0*20##",
+        "F460": "*#4*0#0*20##",
         "F461": "*#4*0#0*20##",
         "MYHOMESERVER1": "*#4*0#0*20##",
     }

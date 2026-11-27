@@ -220,30 +220,39 @@ DISCOVERY_REQUESTS: tuple[tuple[int, str], ...] = (
 # (``supports_general_heating_status``, ``supports_who(16)``); these tables are the fallback
 # until the flags exist there. Gateways not listed keep sending the request.
 GENERAL_ZONE_REQUEST_REFUSED = frozenset(
-    {"F450", "F454", "F455", "F459", "F460", "F461", "H4684", "MH200", "MH201", "MH202", "MYHOMESERVER1"}
-)  # *#4*0## (trace-corpus.tsv); F453, F453AV and MH200N forward it. The MH201 is not in the
-# oracle: a physical MH201 3.3.6 sent *#4*0## and got no zone frame back although zones 2, 3
-# and 4 report on that plant (tests/fixtures/traces/issue_466, sweep 19-11-35 frame 11 against
-# trace 19-05-42 frames 0-10). The F455 is not in the oracle either: a physical F455 1.0.76
-# ACKed *#4*0## after 9.1 s with no frame on either session, on a plant whose zones answer
-# every single read (tests/fixtures/traces/issue_466/F455_direct_requests_2026-11-06.jsonl),
+    {
+        "3488", "F450", "F453", "F453AV", "F454", "F455", "F459",
+        "F460", "F461", "H4684", "MH200", "MH200N", "MH201", "MH202", "MYHOMESERVER1",
+    }
+)  # *#4*0## (trace-corpus.tsv); Gen B (F453, F453AV, MH200N) forwards *#4*0## only because
+# its zone check omits zone > 0, emitting point-to-point $04 99 00 30 {00,12,0E,0D} to
+# non-existent zone 0 (thermo-four-zone-central.tsv:41, findings/bt-termo.md QUIRK-15) and
+# stalling 1.3-8.8 s with 0 replies on physical plants (discussion_856, issue_466, issue_619).
+# The MH201 is not in the oracle: a physical MH201 3.3.6 sent *#4*0## and got no zone frame
+# back although zones 2, 3 and 4 report on that plant (tests/fixtures/traces/issue_466,
+# sweep 19-11-35 frame 11 against trace 19-05-42 frames 0-10). The F455 is not in the oracle
+# either: a physical F455 1.0.76 ACKed *#4*0## after 9.1 s with no frame on either session, on
+# a plant whose zones answer every single read (tests/fixtures/traces/issue_466/F455_direct_requests_2026-11-06.jsonl),
 # and again after about 9 s with no frame at every start on 2026-11-17 (#932); the request
 # holds a command session for those 9 s.
 SOUND_STATUS_REQUEST_REFUSED = frozenset(
-    {"F450", "F459", "F460", "F461", "MH202", "MYHOMESERVER1"}
+    {"3488", "F450", "F459", "F460", "F461", "MH202", "MYHOMESERVER1"}
 )  # *#16*0*5## (sound-who16-source.tsv)
 # Zones of these SCS-only gateways report nothing after the startup sweep, so each zone asks
 # for its temperature (*#4*Z*0##, one bus query answered in ~120 ms on a populated zone): the
 # single-session or uncaptured models refusing *#4*0## whose *#4*Z## is expanded into four bus
-# queries ($0499ZZ3000 / 12 / 0E / 0D in trace-corpus.tsv), and the MH201, whose standalone
-# thermostats stayed unknown after every restart (#185; its *#4*0## refusal is the issue_466
-# sweep trace, the MH201 is not in the oracle). F454, MH202, F460, F461 and MyHomeServer1 refuse
+# queries ($0499ZZ3000 / 12 / 0E / 0D in trace-corpus.tsv), Gen B models whose *#4*0## polls
+# non-existent zone 0 (F453, F453AV, MH200N), and the MH201, whose standalone thermostats
+# stayed unknown after every restart (#185; its *#4*0## refusal is the issue_466 sweep trace,
+# the MH201 is not in the oracle). F454, MH202, 3488, F460, F461 and MyHomeServer1 refuse
 # *#4*0## too but answer *#4*Z## themselves (F454 supports up to 4 command sessions and answers
 # all five frames in ~1.3 s on both central-unit #629 and standalone #866 plants; MH202 answers
-# all five frames in ~160-250 ms, #866; F460, F461 and MyHomeServer1 expand it into $0499013000 in
-# trace-corpus.tsv and answer all five frames on the SCS bus in ~1.3-1.9 s, #649 / #714 / #886),
-# so their zones keep the zone status poll and are not listed here.
-ZONE_TEMPERATURE_POLL = frozenset({"F450", "F459", "H4684", "MH200", "MH201"})
+# all five frames in ~160-250 ms, #866; 3488, F460, F461 and MyHomeServer1 expand it into
+# $0499013000 in trace-corpus.tsv and answer all five frames on the SCS bus in ~1.3-1.9 s,
+# #649 / #714 / #886), so their zones keep the zone status poll and are not listed here.
+ZONE_TEMPERATURE_POLL = frozenset(
+    {"F450", "F453", "F453AV", "F459", "H4684", "MH200", "MH200N", "MH201"}
+)
 # The silent-zone poll (#466, #932), on every gateway. Whether a gateway answers the general
 # request (*#4*0##) or the zone status request (*#4*Z##) with the state of a zone is known for
 # the models in the tables above and unknown for any other, and a zone whose thermostat nobody
@@ -349,9 +358,10 @@ ZONE_ACTUATOR_REQUEST_REFUSED = frozenset({"F455"})
 # and the live F461 2.0.11 answered it in 2.13 s (f461_live_2026-10-23).
 ALL_ACTUATORS_REQUEST = "*#4*0#0*20##"
 ALL_ZONE_REQUESTS: dict[str, dict[int, str]] = {
+    "3488": {20: ALL_ACTUATORS_REQUEST, 60: "*#4*0*60##"},
     "F455": {20: ALL_ACTUATORS_REQUEST},
     "F459": {60: "*#4*0*60##"},
-    "F460": {60: "*#4*0*60##"},
+    "F460": {20: ALL_ACTUATORS_REQUEST, 60: "*#4*0*60##"},
     "F461": {20: ALL_ACTUATORS_REQUEST, 60: "*#4*0*60##"},
     "MYHOMESERVER1": {20: ALL_ACTUATORS_REQUEST, 60: "*#4*0*60##"},
 }
@@ -374,7 +384,9 @@ ALL_ZONE_REQUESTS: dict[str, dict[int, str]] = {
 #   8.95 s), the reason ``*#4*0##`` is not sent there. Not in the sweep of the models nobody
 #   tried it on. On every model the same request is sent once later, when a report about a
 #   zone shows that a central unit is there to answer it (``request_central_status``).
-STARTUP_ALL_ACTUATORS_REQUEST = frozenset({"F450", "F454", "F455", "F459", "F460", "F461", "MYHOMESERVER1"})
+STARTUP_ALL_ACTUATORS_REQUEST = frozenset(
+    {"3488", "F450", "F454", "F455", "F459", "F460", "F461", "MYHOMESERVER1"}
+)
 STARTUP_CENTRAL_STATUS_REQUEST = frozenset({"F461", "MYHOMESERVER1"})
 # A zone created from the answers to the sweep's all-actuator request asks for its actuators as
 # it is added (``watch_zone_actuators``). For this long after the sweep sent that request the
@@ -398,7 +410,7 @@ HUMIDITY_REQUEST_REFUSED = frozenset({"F450", "F453", "F453AV", "F454", "F455", 
 # and not left as the whole string. The same key on every table of #792 / #793 / #794.
 KNOWN_GATEWAY_MODELS = frozenset(
     {
-        "F450", "F452", "F452V", "F453", "F453AV", "F454", "F455", "F459", "F460", "F461",
+        "3488", "F450", "F452", "F452V", "F453", "F453AV", "F454", "F455", "F459", "F460", "F461",
         "H4684", "H4890", "MH200", "MH200N", "MH201", "MH202", "MYHOMESERVER1",
     }
 )
@@ -1585,6 +1597,10 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                     written.done() and not written.cancelled() and written.exception() is None
                 ):
                     delivered.append(frame)
+                # Wait for the bus to go quiet before the next request. This also drains
+                # late replies 9..N after bt_termo's 8-reply cap (findings/bt-termo.md
+                # QUIRK-08: *#4*0#0*20## and *#4*0*60## return *#*1## after reply #8
+                # while replies 9..N continue arriving on the event session).
                 await self._wait_for_bus_quiet(time.monotonic())
                 if getattr(cmd, "who", None) == 4:
                     await self._wait_for_who4_recovery(written)

@@ -434,7 +434,7 @@ WHO13_OFFICIAL_DEVICE_TYPES = {
 WHO13_OBSERVED_DEVICE_TYPES: dict[str, tuple[str, ...]] = {
     "16": ("F453",),
     "23": ("H4684", "H/L4684", "L4684"),
-    "200": ("F454", "MyHomeServer1", "MH202", "F461", "H4890", "MH201"),
+    "200": ("F454", "MyHomeServer1", "MH202", "F461", "H4890", "MH201", "3488"),
 }
 # Codes from an independent implementation: the `device` table of Nmap's
 # openwebnet-discovery.nse, whose `device_dimension["Device Type"] = "15"` is this
@@ -536,8 +536,13 @@ WHO1013_OBJECT_MODELS: dict[str, tuple[str, ...]] = {
 #        `*#1013*0*1##` answered `*#1013**1*16*0*1*0##`, echoing its WHO=13
 #        device type `16` with N_CONF `0`, BRAND `1` (BTicino), LINE `0`
 #        rather than MHCatalogue.db's `42`.
+#   128: Confirmed on physical BTicino 3488 firmware 3.2.5 (live bus 2 capture,
+#        2026-11-27): `*#13**15##` answered `*#13**15*200##`, `*#13**27##`
+#        answered `*#13**27*51#52#56#56##` (ASCII "3488"), and `*#1013**1##`
+#        answered `*#1013**1*128*15*1*0##` (N_CONF 15, BRAND 1 = BTicino, LINE 0).
 WHO1013_OBSERVED_OBJECT_MODELS: dict[str, tuple[str, ...]] = {
     "16": ("F453",),
+    "128": ("3488", "067259"),
 }
 # WHO=1013 dimension 1, third value: BRAND (MHCatalogue.db EN_BRAND.brand_modobj).
 # Only values observed on real hardware are listed:

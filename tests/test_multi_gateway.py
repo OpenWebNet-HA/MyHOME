@@ -1327,11 +1327,11 @@ async def test_standby_connected_creates_no_cen_devices(hass: HomeAssistant) -> 
 @pytest.mark.asyncio
 async def test_secondary_initial_discovery_delegated_who4(hass: HomeAssistant) -> None:
     """Test that a secondary gateway with delegated WHO=4 sweeps *#4*0## on initial discovery (#459)."""
-    # An MH200N: its firmware forwards *#4*0## (the default MH201 of this module drops it).
+    # An H4890: its profile leaves general heating status enabled (unmeasured), so *#4*0## is swept.
     _, gw_sec = _create_mock_gateway(
         hass,
         "00:03:50:aa:bb:02",
-        name="MH200N",
+        name="H4890",
         topology=TOPOLOGY_SHARED,
         role=ROLE_SECONDARY,
         primary_gateway="00:03:50:aa:bb:01",

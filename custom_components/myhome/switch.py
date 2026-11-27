@@ -1177,6 +1177,7 @@ class MyHOMEThermoSwitch(MyHOMEEntity, SwitchEntity):
             isinstance(message, OWNHeatingEvent)
             and self._actuator is None
             and (dim19 := thermo_dim19_status(message)) is not None
+            and dim19[2] is not None
         ):
             is_active = dim19[2]
             self._zone_active = is_active

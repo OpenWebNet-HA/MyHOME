@@ -221,8 +221,8 @@ GATEWAY_DISCOVERY_METADATA: list[dict[str, object]] = [
         "model": "**F452 / F453 / F453AV**",
         "profile_name": "F453AV",
         "pinned_whos": [1, 2, 4, 16, 18],
-        "sweep_omits": [],
-        "notes": "Lighting, cover, climate, sound (`bt_difson` firmware-verified on F453/F453AV), and energy meter 51 queries. Alarm query omitted.",
+        "sweep_omits": [GENERAL_ZONE_STATUS],
+        "notes": "Lighting, cover, climate, sound (`bt_difson` firmware-verified on F453/F453AV), and energy meter 51 queries. On Gen B (`F453`/`F453AV`), `*#4*0##` polls non-existent zone 0 point-to-point (own-firmware-oracle `findings/bt-termo.md` QUIRK-15) and stalls with 0 replies on physical plants, so the sweep leaves it out and each climate zone asks `*#4*<WHERE>*0##` itself. Alarm query omitted.",
     },
     {
         "model": "**F461**",
@@ -268,8 +268,8 @@ GATEWAY_DISCOVERY_METADATA: list[dict[str, object]] = [
         "model": "**MH200N**",
         "profile_name": "MH200N",
         "pinned_whos": [1, 2, 4, 16, 18],
-        "sweep_omits": [],
-        "notes": "Lighting, cover, climate, sound (`bt_difson` hardware and firmware-verified), and energy meter 51 queries (`bt_supervisione` in the `010108` image; a physical MH200N 1.1.8 answers `*#18*51*51##`, `tests/fixtures/traces/issue_466`). The `010108` firmware forwards `*#4*0##` (own-firmware-oracle), unlike the MH200. Alarm query omitted.",
+        "sweep_omits": [GENERAL_ZONE_STATUS],
+        "notes": "Lighting, cover, climate, sound (`bt_difson` hardware and firmware-verified), and energy meter 51 queries (`bt_supervisione` in the `010108` image; a physical MH200N 1.1.8 answers `*#18*51*51##`, `tests/fixtures/traces/issue_466`). On Gen B (`MH200N`), `*#4*0##` polls non-existent zone 0 point-to-point (own-firmware-oracle `findings/bt-termo.md` QUIRK-15) and stalls with 0 replies on physical plants, so the sweep leaves it out and each climate zone asks `*#4*<WHERE>*0##` itself. Alarm query omitted.",
     },
     {
         "model": "**H4684 / H/L4684**",

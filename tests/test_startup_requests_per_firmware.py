@@ -79,11 +79,11 @@ def _zone(hass, handler, where="3", fan=False, **kwargs) -> MyHOMEClimate:
 @pytest.mark.parametrize(
     ("model", "zone_sweep", "sound"),
     [
-        ("F461", False, False), ("MyHomeServer1", False, False), ("MH202", False, False),
+        ("F461", False, False), ("MyHomeServer1", False, False), ("3488", False, False), ("MH202", False, False),
         ("F459", False, False), ("F460", False, False), ("F450", False, False),
         ("F454", False, True), ("MH200", False, True), ("MH201", False, True),
         ("H4684", False, True), ("HL4684", False, True), ("H/L4684", False, True),
-        ("F453", True, True), ("F453AV", True, True), ("MH200N", True, True), ("Generic", True, True),
+        ("F453", False, True), ("F453AV", False, True), ("MH200N", False, True), ("Generic", True, True),
     ],
 )
 def test_sweep_skips_requests_the_gateway_refuses(hass, model, zone_sweep, sound):
@@ -210,8 +210,9 @@ def test_profile_without_who_16_skips_the_sound_request(hass):
     [
         ("MH201", True), ("F450", True), ("MH200", True), ("H4684", True),
         ("HL4684", True), ("H/L4684", True), ("F459", True),
-        ("F455", False), ("F453", False), ("MH200N", False),  # unknown, or the sweep answers
-        ("F454", False), ("MH202", False), ("F460", False), ("F461", False), ("MyHomeServer1", False), ("Generic", False),  # polled with *#4*Z##
+        ("F453", True), ("F453AV", True), ("MH200N", True),
+        ("F455", False),  # F455 defers to silent-zone poll
+        ("3488", False), ("F454", False), ("MH202", False), ("F460", False), ("F461", False), ("MyHomeServer1", False), ("Generic", False),  # polled with *#4*Z##
     ],
 )
 def test_which_gateways_need_a_zone_temperature_poll(hass, model, expected):

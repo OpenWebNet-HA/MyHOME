@@ -543,18 +543,16 @@ class GatewayEventDispatcher:
                 )
         elif (
             isinstance(message, OWNHeatingCommand)
-            and message.dimension is not None
-            and message.dimension == 14
-            # A setpoint WRITE seen on the bus (``*#4*2*#14*0200*2##``, ``*#4*#2*#14*0280*1##``:
-            # central_restore_3100_live_2026-11-12, plants/issue_333_myhomeserver1) is followed
-            # by a read of the zone. The REQUEST of the same dimension (``*#4*2*14##``, the
-            # silent-zone poll's own read; ``*#4*#2*14##``) parses to the same class and
-            # dimension and changes nothing: it must not start a zone status read.
+            and message.dimension in (11, 14)
+            # A setpoint WRITE (``*#4*2*#14*0200*2##``, ``*#4*#2*#14*0280*1##``:
+            # central_restore_3100_live_2026-11-12, plants/issue_333_myhomeserver1) or
+            # fan-speed WRITE (``*#4*2*#11*1##``, Gen C/D ``D1 02 0B`` echo) seen on the
+            # bus is followed by a read of the zone. The REQUEST of the same dimension
+            # (``*#4*2*14##``, ``*#4*2*11##``) parses to the same class and dimension and
+            # changes nothing: it must not start a read.
             and bool(getattr(message, "is_dimension_writing", False))
             and self._is_active_for_who(4)
         ):
-            if not getattr(self.handler, "supports_zone_status", True):
-                return
             iface = getattr(message, "interface", None)
             raw_tail = where_param(message)
             tail = raw_tail if isinstance(raw_tail, list) else []
@@ -564,25 +562,55 @@ class GatewayEventDispatcher:
             if has_interface:
                 if getattr(self.handler, "interface_zone_request_refused", False):
                     return
-                iface_str: str | None = (iface if isinstance(iface, str) and iface else str(tail[1])).zfill(2)
+                raw_iface = iface if isinstance(iface, str) and iface else str(tail[1])
+                if not raw_iface.isascii() or not raw_iface.isdigit() or len(raw_iface) > 2:
+                    return
+                iface_str: str | None = raw_iface.zfill(2)
                 base_tail = tail[:-2] if len(tail) >= 2 and tail[-2] == "4" else []
             else:
                 iface_str = None
                 base_tail = tail
             where_str = cast(str, message.where)
             where = where_str[1:] if where_str.startswith("#") else where_str
-            if where == "0" or is_probe(where) or base_tail:
+            if (
+                not where
+                or not where.isascii()
+                or not where.isdigit()
+                or len(where) > 2
+                or int(where) == 0
+                or is_probe(where)
+                or base_tail
+            ):
                 return
             if iface_str is not None:
                 where = f"{where}{BUS_ROUTING}{iface_str}"
-            self._logger.debug(
-                "%s Received heating command, sending query to zone %s",
-                self.handler.log_id,
-                where,
-            )
-            from OWNd.message import OWNHeatingCommand as OWNHCmd
+            if message.dimension == 14:
+                if getattr(self.handler, "supports_zone_status", True):
+                    self._logger.debug(
+                        "%s Received heating command, sending query to zone %s",
+                        self.handler.log_id,
+                        where,
+                    )
+                    from OWNd.message import OWNHeatingCommand as OWNHCmd
 
-            await self.handler.send_status_request(OWNHCmd.status(where))
+                    await self.handler.send_status_request(OWNHCmd.status(where))
+                elif callable(getattr(self.handler, "request_zone_dimension", None)):
+                    # Gateways where *#4*Z## is unsupported or stalls ~9 s (e.g. F455, #674)
+                    # still answer single-dimension *#4*Z*14## in ~0.1 s (issue_466).
+                    self._logger.debug(
+                        "%s Received heating setpoint write echo, requesting dimension 14 for zone %s",
+                        self.handler.log_id,
+                        where,
+                    )
+                    self.handler.request_zone_dimension(where, 14)
+            elif message.dimension == 11:
+                if callable(getattr(self.handler, "request_zone_dimension", None)):
+                    self._logger.debug(
+                        "%s Received heating fan speed write echo, requesting dimension 11 for zone %s",
+                        self.handler.log_id,
+                        where,
+                    )
+                    self.handler.request_zone_dimension(where, 11)
         elif isinstance(message, OWNCENPlusEvent):
             event = None
             if message.is_short_pressed:

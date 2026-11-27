@@ -1,0 +1,540 @@
+"""Regression tests for bt_termo P0 and P1 refinements in MyHOME."""
+
+from __future__ import annotations
+
+import asyncio
+import time
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+from homeassistant.components.climate import HVACAction, HVACMode
+from homeassistant.core import HomeAssistant
+from OWNd.message import OWNHeatingEvent, OWNMessage
+
+from custom_components.myhome.climate import MyHOMEClimate
+from custom_components.myhome.gateway import (
+    ALL_ACTUATORS_REQUEST,
+    ALL_ZONE_REQUESTS,
+    GENERAL_ZONE_REQUEST_REFUSED,
+    KNOWN_GATEWAY_MODELS,
+    SOUND_STATUS_REQUEST_REFUSED,
+    STARTUP_ALL_ACTUATORS_REQUEST,
+    ZONE_TEMPERATURE_POLL,
+)
+from custom_components.myhome.gateway_events import GatewayEventDispatcher
+from custom_components.myhome.sensor import MyHOMEActuatorOutputSensor
+from custom_components.myhome.switch import MyHOMEThermoSwitch
+from custom_components.myhome.where_grammar import validate_thermo_trigger_command
+from tests.test_f455_zone_polling import _handler
+
+
+def _make_zone(
+    hass: HomeAssistant,
+    where: str = "2",
+    *,
+    heating: bool = True,
+    cooling: bool = True,
+    fan: bool = False,
+    standalone: bool = True,
+) -> MyHOMEClimate:
+    gw = MagicMock()
+    gw.mac = "00:03:50:00:b7:00"
+    gw.log_id = "[bt_termo]"
+    gw.send = AsyncMock()
+    gw.send_status_request = AsyncMock()
+    gw.request_zone_dimension = MagicMock()
+    gw.has_central_unit = not standalone
+    gw.supports_zone_status = True
+    zone = MyHOMEClimate(
+        hass=hass,
+        name=f"Zone {where}",
+        device_id=f"4-{where}",
+        who="4",
+        where=where,
+        heating=heating,
+        cooling=cooling,
+        fan=fan,
+        standalone=standalone,
+        central=False,
+        manufacturer="BTicino",
+        model="Heating Zone",
+        gateway=gw,
+    )
+    zone.hass = hass
+    zone.entity_id = f"climate.zone_{where}"
+    zone.async_write_ha_state = MagicMock()
+    zone.async_schedule_update_ha_state = MagicMock()
+    return zone
+
+
+# ── P0-1 & P0-5: Comfort/Eco, CU timed manual, extended 4xx/5xx, DIM 7 manual ──
+
+
+@pytest.mark.parametrize(
+    ("frame", "expected_mode", "expected_op"),
+    [
+        ("*4*108*2##", HVACMode.HEAT, "comfort"),
+        ("*4*107*2##", HVACMode.HEAT, "eco"),
+        ("*4*104*#2##", HVACMode.HEAT, "timed_manual"),
+        ("*4*208*2##", HVACMode.COOL, "comfort"),
+        ("*4*207*2##", HVACMode.COOL, "eco"),
+        ("*4*204*#2##", HVACMode.COOL, "timed_manual"),
+        ("*4*304*#2##", HVACMode.AUTO, "timed_manual"),
+        ("*4*402*2##", HVACMode.OFF, "protection"),
+        ("*4*502*2##", HVACMode.OFF, "protection"),
+        ("*4*407*2##", HVACMode.AUTO, "eco"),
+        ("*4*408*2##", HVACMode.AUTO, "comfort"),
+        ("*4*410*2##", HVACMode.AUTO, "manual"),
+        ("*4*507*2##", HVACMode.AUTO, "eco"),
+        ("*4*508*2##", HVACMode.AUTO, "comfort"),
+        ("*4*510*2##", HVACMode.AUTO, "manual"),
+        ("*#4*2*7*1*0##", HVACMode.HEAT, "manual"),
+        ("*#4*2*7*2*0##", HVACMode.COOL, "manual"),
+        ("*#4*2*7*1*3##", HVACMode.HEAT, "comfort"),
+        ("*#4*2*7*1*4##", HVACMode.HEAT, "eco"),
+    ],
+)
+def test_p0_1_and_p0_5_zone_modes_and_operations(
+    hass: HomeAssistant,
+    frame: str,
+    expected_mode: HVACMode,
+    expected_op: str,
+) -> None:
+    zone = _make_zone(hass, "2", standalone=False)
+    zone.handle_event(OWNHeatingEvent(frame))
+    assert zone.hvac_mode == expected_mode
+    assert zone.extra_state_attributes["zone_operation"] == expected_op
+
+
+def test_p0_1_dim7_and_what_comfort_eco_never_fight(hass: HomeAssistant) -> None:
+    """F461 emits *#4*2*7*1*3## followed by *4*108*2##; both agree on zone_operation='comfort'.
+
+    Returning to a normal setpoint emits the season frame (*4*1*2##) in place of 107/108
+    (f461_presets_live_2026-10-24 run 2), which must clear the stale eco/comfort operation.
+    """
+    zone = _make_zone(hass, "2")
+    zone.handle_event(OWNHeatingEvent("*#4*2*7*1*3##"))
+    assert zone.extra_state_attributes["zone_operation"] == "comfort"
+    zone.handle_event(OWNHeatingEvent("*4*108*2##"))
+    assert zone.extra_state_attributes["zone_operation"] == "comfort"
+    zone.handle_event(OWNHeatingEvent("*#4*2*7*1*4##"))
+    assert zone.extra_state_attributes["zone_operation"] == "eco"
+    zone.handle_event(OWNHeatingEvent("*4*107*2##"))
+    assert zone.extra_state_attributes["zone_operation"] == "eco"
+    zone.handle_event(OWNHeatingEvent("*4*1*2##"))
+    assert "zone_operation" not in zone.extra_state_attributes
+
+
+# ── P0-3: DIM 19 single-side empty field across climate, sensor, and switch ──
+
+
+def test_p0_3_dim19_single_side_empty_never_forces_idle_or_retracts_fan(
+    hass: HomeAssistant,
+) -> None:
+    zone = _make_zone(hass, "2", fan=False)
+    zone.handle_event(OWNHeatingEvent("*4*1*2##"))
+    # Heating active with unmapped cooling side -> HEATING
+    zone.handle_event(OWNHeatingEvent("*#4*2*19**1##"))
+    assert zone.hvac_action == HVACAction.HEATING
+
+    # Cooling off with unmapped heating side -> must NOT force IDLE!
+    zone.handle_event(OWNHeatingEvent("*#4*2*19*0*##"))
+    assert zone.hvac_action == HVACAction.HEATING
+
+    # Unmapped cooling + heating fan off (code 5) enables fan mode and does not retract it
+    zone.handle_event(OWNHeatingEvent("*#4*2*19**5##"))
+    assert zone._fan is True
+    assert zone.hvac_action == HVACAction.HEATING
+
+    # Cooling valve off + unmapped heating side does NOT retract fan mode while heating side is known fan
+    zone2 = _make_zone(hass, "3", fan=False)
+    zone2.handle_event(OWNHeatingEvent("*#4*3#1*20*5##"))  # tentative fan mode from dim 20
+    assert zone2._fan is True
+    zone2.handle_event(OWNHeatingEvent("*#4*3*19*0*##"))  # only cooling side known non-fan
+    assert zone2._fan is True
+    zone2.handle_event(OWNHeatingEvent("*#4*3*19*0*0##"))  # both sides known non-fan -> retract
+    assert zone2._fan is False
+
+
+def test_p0_3_dim19_single_side_empty_sensor_and_switch_guards(hass: HomeAssistant) -> None:
+    gw = MagicMock()
+    gw.mac = "00:03:50:00:b7:01"
+    gw.log_id = "[dim19]"
+    gw.standalone_detected_zones = set()
+
+    sensor = MyHOMEActuatorOutputSensor(
+        hass=hass,
+        name="Zone 2 Valve",
+        device_id="4-2#1",
+        where="2#1",
+        zone="2",
+        actuator="1",
+        interface=None,
+        standalone=True,
+        manufacturer="BTicino",
+        model="Valve",
+        gateway=gw,
+    )
+    sensor.hass = hass
+    sensor.async_schedule_update_ha_state = MagicMock()
+    sensor.handle_event(OWNHeatingEvent("*#4*2#1*20*150##"))
+    assert sensor.native_value == 50
+    # Single-side empty with inactive known side -> zone_active is None -> must NOT zero out 50%!
+    sensor.handle_event(OWNHeatingEvent("*#4*2*19*0*##"))
+    assert sensor.native_value == 50
+    # Full both-sides-off -> zeroes out 50% -> 0%
+    sensor.handle_event(OWNHeatingEvent("*#4*2*19*0*0##"))
+    assert sensor.native_value == 0
+
+    sw = MyHOMEThermoSwitch(
+        hass=hass,
+        name="Zone 2 Actuator",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="4-2",
+        where="2",
+        zone="2",
+        actuator=None,
+        interface=None,
+        device_class=None,
+        manufacturer="BTicino",
+        model="Valve",
+        turn_on_command=None,
+        turn_off_command=None,
+        gateway=gw,
+    )
+    sw.hass = hass
+    sw.async_schedule_update_ha_state = MagicMock()
+    sw._publish_state = MagicMock()
+    sw.handle_event(OWNHeatingEvent("*#4*2*19**1##"))
+    assert sw.is_on is True
+    # Single-side empty with inactive known side -> must NOT flip switch OFF!
+    sw.handle_event(OWNHeatingEvent("*#4*2*19*0*##"))
+    assert sw.is_on is True
+    sw.handle_event(OWNHeatingEvent("*#4*2*19*0*0##"))
+    assert sw.is_on is False
+
+
+# ── P0-4: Inbound #14 (on !supports_zone_status) and #11 write echoes ──
+
+
+@pytest.mark.asyncio
+async def test_p0_4_inbound_dim14_on_f455_and_dim11_write_echoes(hass: HomeAssistant) -> None:
+    handler = MagicMock()
+    handler.hass = hass
+    handler.mac = "00:03:50:00:b7:04"
+    handler.log_id = "[f455]"
+    handler.generate_events = False
+    handler.supports_zone_status = False
+    handler.interface_zone_request_refused = True
+    handler.send_status_request = AsyncMock()
+    handler.request_zone_dimension = MagicMock()
+    dispatcher = GatewayEventDispatcher(handler)
+    dispatcher._is_active_for_who = lambda who: True  # type: ignore[method-assign]
+
+    # Setpoint write echo on !supports_zone_status -> coalesced dimension 14 read, never *#4*Z##
+    await dispatcher.process_message(OWNMessage.parse("*#4*2*#14*0215*3##"))
+    handler.send_status_request.assert_not_awaited()
+    handler.request_zone_dimension.assert_called_once_with("2", 14)
+
+    # Fan-speed write echo -> coalesced dimension 11 read
+    handler.request_zone_dimension.reset_mock()
+    await dispatcher.process_message(OWNMessage.parse("*#4*2*#11*2##"))
+    handler.request_zone_dimension.assert_called_once_with("2", 11)
+
+    # Fan-speed READ request (*#4*2*11##) must NOT trigger a loop!
+    handler.request_zone_dimension.reset_mock()
+    await dispatcher.process_message(OWNMessage.parse("*#4*2*11##"))
+    handler.request_zone_dimension.assert_not_called()
+
+
+# ── P1-9: validate_thermo_trigger_command blocks bt_termo crash frames ──
+
+
+@pytest.mark.parametrize(
+    "bad_frame",
+    [
+        "*#4*#*#14*0215*1##",
+        "*#4*1*#14*0200##",
+        "*#4*1*#14*00215*1##",
+        "*#4*1*#7*1*1##",
+        "*#4*1234567890*#11*1##",
+    ],
+)
+def test_p1_9_trigger_validator_refuses_bt_termo_crash_frames(bad_frame: str) -> None:
+    with pytest.raises(ValueError, match="Refusing destructive OpenWebNet frame"):
+        validate_thermo_trigger_command(bad_frame)
+
+
+# ── P1-10 & P0-2: 3488, F460, and Gen B capability tables ──
+
+
+def test_p1_10_and_p0_2_gateway_capability_tables(hass: HomeAssistant) -> None:
+    assert "3488" in KNOWN_GATEWAY_MODELS
+    assert "3488" in GENERAL_ZONE_REQUEST_REFUSED
+    assert "3488" in SOUND_STATUS_REQUEST_REFUSED
+    assert "3488" in STARTUP_ALL_ACTUATORS_REQUEST
+    assert ALL_ZONE_REQUESTS["3488"] == {20: ALL_ACTUATORS_REQUEST, 60: "*#4*0*60##"}
+    assert ALL_ZONE_REQUESTS["F460"] == {20: ALL_ACTUATORS_REQUEST, 60: "*#4*0*60##"}
+
+    h3488 = _handler(hass, "3488")
+    assert h3488.general_zone_request_refused is True
+    assert h3488.supports_zone_status is True
+    assert h3488.humidity_request_refused is False
+    assert h3488.sound_status_request_refused is True
+
+    for gen_b in ("F453", "F453AV", "MH200N"):
+        assert gen_b in GENERAL_ZONE_REQUEST_REFUSED
+        assert gen_b in ZONE_TEMPERATURE_POLL
+        hb = _handler(hass, gen_b)
+        assert hb.general_zone_request_refused is True
+        assert hb.zone_temperature_poll_needed is True
+
+
+# ── P1-12: send_paced waits for late replies 9..12 after 8-reply ACK cap ──
+
+
+@pytest.mark.asyncio
+async def test_p1_12_send_paced_drains_late_replies_past_8_reply_cap(
+    hass: HomeAssistant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """QUIRK-08: *#4*0#0*20## ACKs after reply #8 while replies 9..12 arrive on the event session.
+
+    send_paced resets its bus-quiet timer whenever late frames arrive, so the next command
+    does not enter bt_termo's 0x63a0 wait loop until late replies have drained.
+    """
+    monkeypatch.setattr("custom_components.myhome.gateway.BUS_QUIET_PERIOD", 0.05)
+    monkeypatch.setattr("custom_components.myhome.gateway.BUS_QUIET_CAP", 1.0)
+    handler = _handler(hass, "F461")
+    sent_times: list[tuple[str, float]] = []
+    late_reply_times: list[float] = []
+
+    async def _send_status(cmd):
+        frame = str(cmd)
+        now = time.monotonic()
+        sent_times.append((frame, now))
+        fut: asyncio.Future[float] = asyncio.get_running_loop().create_future()
+        fut.set_result(now)
+        if frame == ALL_ACTUATORS_REQUEST:
+            # Simulate replies 9..11 arriving on the event session 20 ms, 40 ms, 60 ms AFTER ACK.
+            async def _late_replies() -> None:
+                for delay in (0.02, 0.02, 0.02):
+                    await asyncio.sleep(delay)
+                    ts = time.monotonic()
+                    handler._last_event_frame_at = ts
+                    late_reply_times.append(ts)
+
+            asyncio.create_task(_late_replies())
+        return fut
+
+    handler.send_status_request = AsyncMock(side_effect=_send_status)
+    delivered = await handler.send_paced([ALL_ACTUATORS_REQUEST, "*#4*0*60##"])
+    assert delivered == [ALL_ACTUATORS_REQUEST, "*#4*0*60##"]
+    assert len(late_reply_times) == 3
+    # The second command must not be sent until after the last late reply + quiet settle!
+    assert sent_times[1][1] >= late_reply_times[-1] + 0.04
+
+
+# ── Pre-commit audit regression tests (Bugs #1-#7 & Hardening #1-#2) ──
+
+
+def test_audit_bug1_104_204_recognized_as_central_zone_status(hass: HomeAssistant) -> None:
+    """*4*104*#Z## and *4*204*#Z## must register central-unit ownership and cooling."""
+    from custom_components.myhome.where_grammar import (
+        central_report_zone,
+        is_central_unit_report,
+    )
+
+    assert is_central_unit_report(OWNMessage.parse("*4*104*#2##")) is True
+    assert is_central_unit_report(OWNMessage.parse("*4*204*#2##")) is True
+    assert is_central_unit_report(OWNMessage.parse("*4*304*#2##")) is False
+    assert central_report_zone(OWNMessage.parse("*4*204*#2##")) == "2"
+
+    # Zero-config zone (standalone=None, cooling=False, has_central_unit=False):
+    gw = MagicMock()
+    gw.mac = "00:03:50:00:b7:00"
+    gw.log_id = "[bt_termo]"
+    gw.send = AsyncMock()
+    gw.send_status_request = AsyncMock()
+    gw.request_zone_dimension = MagicMock()
+    gw.has_central_unit = False
+    gw.supports_zone_status = True
+    zone = MyHOMEClimate(
+        hass=hass,
+        name="Zone 2",
+        device_id="4-2",
+        who="4",
+        where="2",
+        heating=True,
+        cooling=None,
+        fan=False,
+        standalone=None,
+        central=False,
+        manufacturer="BTicino",
+        model="Heating Zone",
+        gateway=gw,
+    )
+    zone.hass = hass
+    zone.entity_id = "climate.zone_2"
+    zone.async_write_ha_state = MagicMock()
+
+    zone.handle_event(OWNMessage.parse("*4*204*#2##"))
+    assert zone._standalone is False
+    assert zone._cooling is True
+    assert zone.hvac_mode == HVACMode.COOL
+    assert zone.extra_state_attributes.get("zone_operation") == "timed_manual"
+
+
+def test_audit_bug2_seasonless_4xx_5xx_on_standalone_with_and_without_central(
+    hass: HomeAssistant,
+) -> None:
+    """Seasonless 407/408/410/507/508/510 must never leave standalone stuck OFF or trapped in AUTO."""
+    # Case A: standalone zone on a plant WITH a central unit (AUTO is not advertised)
+    zone_a = _make_zone(hass, where="2", standalone=True)
+    zone_a._gateway_handler.has_central_unit = True
+    zone_a._refresh_hvac_modes()
+    assert HVACMode.AUTO not in zone_a.hvac_modes
+    zone_a._handle_event(OWNMessage.parse("*4*1*2##"))
+    zone_a._handle_event(OWNMessage.parse("*4*303*2##"))
+    assert zone_a.hvac_mode == HVACMode.OFF
+    zone_a._handle_event(OWNMessage.parse("*4*408*2##"))
+    assert zone_a.hvac_mode == HVACMode.HEAT
+    assert zone_a.hvac_action != HVACAction.OFF
+    assert zone_a.extra_state_attributes.get("zone_operation") == "comfort"
+
+    # Case B: standalone zone on a plant WITHOUT a central unit (AUTO is advertised)
+    zone_b = _make_zone(hass, where="2", standalone=True)
+    zone_b._gateway_handler.has_central_unit = False
+    zone_b._refresh_hvac_modes()
+    zone_b._handle_event(OWNMessage.parse("*4*1*2##"))
+    assert zone_b.hvac_mode == HVACMode.HEAT
+    zone_b._handle_event(OWNMessage.parse("*4*408*2##"))
+    assert zone_b.hvac_mode == HVACMode.HEAT
+    assert zone_b.extra_state_attributes.get("zone_operation") == "comfort"
+    zone_b._handle_event(OWNMessage.parse("*4*1*2##"))
+    assert zone_b.hvac_mode == HVACMode.HEAT
+    assert zone_b.extra_state_attributes.get("zone_operation") is None
+
+    # Even if 408 arrived before season was known (setting AUTO), returning *4*1*2## exits AUTO:
+    zone_c = _make_zone(hass, where="2", standalone=True)
+    zone_c._gateway_handler.has_central_unit = False
+    zone_c._refresh_hvac_modes()
+    zone_c._handle_event(OWNMessage.parse("*4*408*2##"))
+    assert zone_c.hvac_mode == HVACMode.AUTO
+    zone_c._handle_event(OWNMessage.parse("*4*1*2##"))
+    assert zone_c.hvac_mode == HVACMode.HEAT
+    assert zone_c.extra_state_attributes.get("zone_operation") is None
+
+
+def test_audit_bug3_bug5_bug6_single_empty_dim19_publishes_and_polls_once(
+    hass: HomeAssistant,
+) -> None:
+    """Single-empty inactive DIM 19 must publish state, poll dim 11 only once, and treat unknown side as unknown."""
+    zone = _make_zone(hass, where="2", fan=False)
+    zone.platform = MagicMock()
+    zone.async_schedule_update_ha_state = MagicMock()
+    zone._handle_event(OWNMessage.parse("*4*1*2##"))
+    zone.async_schedule_update_ha_state.reset_mock()
+    zone._gateway_handler.request_zone_dimension.reset_mock()
+
+    # First *#4*2*19**5## (cooling unknown, heating fan coil off -> is_active is None)
+    zone._handle_event(OWNMessage.parse("*#4*2*19**5##"))
+    assert zone._fan is True
+    assert zone.async_schedule_update_ha_state.call_count >= 1
+    assert zone._gateway_handler.request_zone_dimension.call_count == 1
+    assert zone._gateway_handler.request_zone_dimension.call_args[0] == ("2", 11)
+
+    # Repeated *#4*2*19**5## frames must NOT re-poll dim 11 every time
+    zone._handle_event(OWNMessage.parse("*#4*2*19**5##"))
+    zone._handle_event(OWNMessage.parse("*#4*2*19**5##"))
+    assert zone._gateway_handler.request_zone_dimension.call_count == 1
+
+    # Bug #5: unknown side in _fan_coil_sides is not False
+    zone2 = _make_zone(hass, where="3", fan=True)
+    zone2._handle_event(OWNMessage.parse("*4*1*3##"))  # heating season
+    zone2._handle_event(OWNMessage.parse("*#4*3*19*0*##"))  # cooling=False, heating unknown
+    assert zone2._fan_coil_sides == {"cooling": False}
+    assert zone2._season_has_fan_coil() is True
+
+
+@pytest.mark.asyncio
+async def test_audit_bug4_single_side_fan_coil_survives_restore(hass: HomeAssistant) -> None:
+    """Single-side _fan_coil_sides must only emit/restore the known side, not False for unknown."""
+    from homeassistant.core import State
+
+    zone = _make_zone(hass, where="2", fan=False)
+    zone._handle_event(OWNMessage.parse("*#4*2#1*20*5##"))  # fan coil detected on heating
+    zone._handle_event(OWNMessage.parse("*#4*2*19*0*##"))  # cooling valve only, heating unknown
+    attrs = zone.extra_state_attributes
+    assert attrs.get("fan_coil_cooling") is False
+    assert "fan_coil_heating" not in attrs
+
+    # Simulate HA restart restoring those exact attributes
+    restored = _make_zone(hass, where="2", fan=False)
+    saved_attrs = dict(attrs)
+    saved_attrs["supported_features"] = zone.supported_features
+    saved_attrs["fan_mode"] = zone.fan_mode
+    await restored.async_restore_last_state(State("climate.zone_2", "heat", saved_attrs))
+    assert restored._fan_coil_sides == {"cooling": False}
+    assert restored._has_no_fan_coil_sides() is False
+    assert restored._fan is True
+
+
+def test_audit_hardening1_single_empty_active_valve_keeps_running_fan_speed(
+    hass: HomeAssistant,
+) -> None:
+    """Single-empty active valve DIM 19 must not zero running_fan_speed on the unmapped side."""
+    zone = _make_zone(hass, where="2", fan=True)
+    zone._handle_event(OWNMessage.parse("*#4*2#2*20*6##"))  # cooling fan speed 1 (low)
+    assert zone._running_fan_speed == "low"
+    # Cooling side unmapped (""), heating valve ON (1): fan side state is unknown!
+    zone._handle_event(OWNMessage.parse("*#4*2*19**1##"))
+    assert zone._running_fan_speed == "low"
+
+
+@pytest.mark.asyncio
+async def test_audit_bug7_gateway_events_rejects_malformed_where_and_zone_00(
+    hass: HomeAssistant,
+) -> None:
+    """3-digit leading-zero where (001) and zone 00 must not crash or queue invalid reads."""
+    handler = MagicMock()
+    handler.hass = hass
+    handler.mac = "00:03:50:8a:06:1d"
+    handler.log_id = "[f455]"
+    handler.supports_zone_status = False
+    handler.interface_zone_request_refused = False
+    handler.send_status_request = AsyncMock()
+    handler.request_zone_dimension = MagicMock()
+    handler.owned_whos = None
+    dispatcher = GatewayEventDispatcher(handler)
+
+    for bad_frame in (
+        "*#4*001*#14*0215*3##",
+        "*#4*001*#11*1##",
+        "*#4*00*#14*0215*3##",
+        "*#4*00*#11*1##",
+        "*#4*2#4#123*#14*0215*3##",
+    ):
+        await dispatcher.process_message(OWNMessage.parse(bad_frame))
+    handler.request_zone_dimension.assert_not_called()
+    handler.send_status_request.assert_not_called()
+
+
+def test_live_bus2_3488_who1013_model_128_resolved() -> None:
+    """Live BTicino 3488 fw 3.2.5 reports WHO 13=200 + WHO 1013=128 without unknown_model repair."""
+    from custom_components.myhome.identity import (
+        GatewayIdentityEvidence,
+        resolve_gateway_identity,
+    )
+
+    res = resolve_gateway_identity(
+        GatewayIdentityEvidence(who13_code="200", who1013_code="128")
+    )
+    assert res.model == "3488"
+    assert res.unknown_code is None
+
+    res_manual = resolve_gateway_identity(
+        GatewayIdentityEvidence(manual="MyHomeServer1", who13_code="200", who1013_code="128")
+    )
+    assert res_manual.unknown_code is None

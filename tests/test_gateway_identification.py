@@ -91,16 +91,21 @@ def test_official_table_is_the_2006_document_verbatim():
     assert "MH200N" not in {GATEWAY_DEVICE_TYPE_MAP[c] for c in WHO13_OFFICIAL_DEVICE_TYPES}
     assert GATEWAY_DEVICE_TYPE_MAP["44"] == "MH200N"
     # code 200: observed on F454 (#370, #420), MyHOMEServer1 (#292 / #297, #420), MH202 (#420);
-    # reported for F461 (#370), observed on H4890 (#466), observed on MH201 (OWNd#116)
+    # reported for F461 (#370), observed on H4890 (#466), MH201 (OWNd#116), and 3488 (fw 3.2.5 live)
     assert WHO13_OBSERVED_DEVICE_TYPES == {
         "16": ("F453",),
         "23": ("H4684", "H/L4684", "L4684"),
-        "200": ("F454", "MyHomeServer1", "MH202", "F461", "H4890", "MH201"),
+        "200": ("F454", "MyHomeServer1", "MH202", "F461", "H4890", "MH201", "3488"),
     }
     assert WHO13_SHARED_DEVICE_TYPES == {"200"}
     assert WHO13_SHARED_DEVICE_TYPES <= set(WHO13_OBSERVED_DEVICE_TYPES)
     # every model a shared WHO=13 code may stand for has a WHO=1013 code that settles it
-    who1013_families = {gateway_model_family(m) for models in WHO1013_OBJECT_MODELS.values() for m in models}
+    who1013_families = {
+        gateway_model_family(m)
+        for table in (WHO1013_OBJECT_MODELS, WHO1013_OBSERVED_OBJECT_MODELS)
+        for models in table.values()
+        for m in models
+    }
     for code in WHO13_SHARED_DEVICE_TYPES:
         for model in WHO13_OBSERVED_DEVICE_TYPES[code]:
             assert gateway_model_family(model) in who1013_families, (code, model)
@@ -111,7 +116,10 @@ def test_official_table_is_the_2006_document_verbatim():
             assert model not in seen, (model, seen.get(model), code)
             seen[model] = code
     assert not set(WHO1013_OBSERVED_OBJECT_MODELS) & set(WHO1013_OBJECT_MODELS)
-    assert WHO1013_OBSERVED_OBJECT_MODELS == {"16": ("F453",)}
+    assert WHO1013_OBSERVED_OBJECT_MODELS == {
+        "16": ("F453",),
+        "128": ("3488", "067259"),
+    }
 
 
 # ── reading a code ───────────────────────────────────────────────────────
@@ -519,7 +527,7 @@ def test_ssdp_model_never_relabelled_and_conflict_raises_repair(dev_reg, issues)
     ident = h.identification()
     assert ident["who13_code"] == "200"
     assert ident["who13_model_official"] is None
-    assert ident["who13_model_observed"] == "F454 / MyHomeServer1 / MH202 / F461 / H4890 / MH201"
+    assert ident["who13_model_observed"] == "F454 / MyHomeServer1 / MH202 / F461 / H4890 / MH201 / 3488"
     assert ident["conflict"] is None
     # ...and, the code being shared, WHO=1013 is asked to cross-check the announcement
     assert str(h._command_pool.send_buffer.get_nowait()["message"]) == "*#1013**1##"
@@ -548,7 +556,7 @@ def test_f454_and_mhs1_with_code_200_have_no_conflict(dev_reg, issues):
         corrected.assert_not_called()
         ident = h.identification()
         assert ident["who13_code"] == "200"
-        assert ident["who13_model_observed"] == "F454 / MyHomeServer1 / MH202 / F461 / H4890 / MH201"
+        assert ident["who13_model_observed"] == "F454 / MyHomeServer1 / MH202 / F461 / H4890 / MH201 / 3488"
         assert ident["conflict"] is None
 
 
@@ -583,7 +591,7 @@ def test_manual_model_with_unverified_observed_code_keeps_model_without_conflict
     create.assert_not_called()
     assert h._identity_conflict is None
     ident = h.identification()
-    assert ident["who13_model_official"] is None and ident["who13_model_observed"] == "F454 / MyHomeServer1 / MH202 / F461 / H4890 / MH201"
+    assert ident["who13_model_official"] is None and ident["who13_model_observed"] == "F454 / MyHomeServer1 / MH202 / F461 / H4890 / MH201 / 3488"
     assert ident["conflict"] is None
     assert ident["who1013_code"] is None and ident["who1013_model"] is None
     # the shared code is the cue to ask WHO=1013, whatever the source
@@ -643,7 +651,7 @@ def test_ssdp_model_with_unverified_observed_code_keeps_model_without_conflict(d
     create.assert_not_called()
     corrected.assert_not_called()
     ident = h.identification()
-    assert ident["who13_model_observed"] == "F454 / MyHomeServer1 / MH202 / F461 / H4890 / MH201"
+    assert ident["who13_model_observed"] == "F454 / MyHomeServer1 / MH202 / F461 / H4890 / MH201 / 3488"
     assert ident["conflict"] is None
     assert str(h._command_pool.send_buffer.get_nowait()["message"]) == "*#1013**1##"
 
