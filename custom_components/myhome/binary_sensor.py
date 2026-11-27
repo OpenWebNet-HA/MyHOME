@@ -412,6 +412,9 @@ def _contact_peer_spellings(unique_id: str) -> list[str]:
 
 def _motion_spellings(where: str) -> list[str]:
     """Spellings of a WHO 1 motion address, unifying Area-00 ``0001..0009`` with ``01..09``."""
+    head, sep, _tail = where.rpartition("-")
+    if sep and head != "1":
+        return [where]
     keys = _spellings(where)
     extra: list[str] = []
     for key in keys:

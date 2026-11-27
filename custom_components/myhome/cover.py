@@ -178,6 +178,7 @@ from .discovery import (
     config_for,
     default_known_keys,
     parse_unique_id,
+    prune_entity,
 )
 from .gateway import (
     FrameScheduler,
@@ -2247,11 +2248,13 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             return
         options = dict(getattr(entry, "options", None) or {})
         key = str(self._device_id)
+        dev_str = key[2:] if key.startswith("2-") else key
+        keys_to_drop = {key, dev_str}
         changed = False
         for option_key in (CONF_ADVANCED_COVERS, CONF_COVER_MIN_POSITION_DELTAS):
             stored = options.get(option_key)
-            if isinstance(stored, Mapping) and key in stored:
-                updated = {k: v for k, v in stored.items() if k != key}
+            if isinstance(stored, Mapping) and any(k in stored for k in keys_to_drop):
+                updated = {k: v for k, v in stored.items() if k not in keys_to_drop}
                 if updated:
                     options[option_key] = updated
                 else:
@@ -2264,10 +2267,15 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             entry_mac = str((getattr(entry, "data", None) or {}).get(CONF_MAC, "") or "")
             prefixes = {p for p in (self._gateway_handler.mac, entry_mac) if p}
             for prefix_mac in prefixes:
-                if old_entity_id := reg.async_get_entity_id(
-                    "number", DOMAIN, f"{prefix_mac}-2-{key}-min_position_delta"
+                if (
+                    (
+                        old_entity_id := reg.async_get_entity_id(
+                            "number", DOMAIN, f"{prefix_mac}-2-{dev_str}-min_position_delta"
+                        )
+                    )
+                    and (reg_ent := reg.async_get(old_entity_id)) is not None
                 ):
-                    reg.async_remove(old_entity_id)
+                    prune_entity(hass, reg, reg_ent, entry.entry_id)
         except Exception:  # pragma: no cover - registry unavailable in minimal mocks
             pass
 

@@ -575,6 +575,59 @@ def _prune_climate_companions(
     config_entry_id: str,
 ) -> tuple[set[str], set[str]]:
     """Remove WHO=4 companion sensors of a pruned climate entry unless kept by YAML, sibling, or ``#0#N``."""
+    return _prune_climate_companions_by_id(
+        hass,
+        registry,
+        entry.unique_id,
+        entry.device_id,
+        config_entry_id,
+        removed_entity_id=entry.entity_id,
+    )
+
+
+@callback
+def prune_climate_companions_for_removed(
+    hass: HomeAssistant,
+    registry: er.EntityRegistry,
+    unique_id: str | None,
+    device_id: str | None,
+    config_entry_id: str,
+    *,
+    removed_entity_id: str | None = None,
+) -> None:
+    """Remove WHO=4 companion sensors and empty devices after a manual climate entity deletion."""
+    extra_devices, protected_devices = _prune_climate_companions_by_id(
+        hass,
+        registry,
+        unique_id,
+        device_id,
+        config_entry_id,
+        removed_entity_id=removed_entity_id,
+    )
+    devices_to_check = set(extra_devices)
+    if device_id:
+        devices_to_check.add(device_id)
+    devices_to_check -= protected_devices
+    if devices_to_check:
+        dev_reg = dr.async_get(hass)
+        for dev_id in devices_to_check:
+            if dev_reg.async_get(dev_id) is not None and not er.async_entries_for_device(
+                registry, dev_id, include_disabled_entities=True
+            ):
+                dev_reg.async_remove_device(dev_id)
+
+
+@callback
+def _prune_climate_companions_by_id(
+    hass: HomeAssistant,
+    registry: er.EntityRegistry,
+    unique_id: str | None,
+    device_id: str | None,
+    config_entry_id: str,
+    *,
+    removed_entity_id: str | None = None,
+) -> tuple[set[str], set[str]]:
+    """Remove WHO=4 companion sensors of a climate entity unless kept by YAML, sibling, or ``#0#N``."""
     touched_devices: set[str] = set()
     cfg_entry = hass.config_entries.async_get_entry(config_entry_id)
     runtime = get_runtime_data(cfg_entry) if cfg_entry is not None else None
@@ -586,7 +639,7 @@ def _prune_climate_companions(
         else ""
     )
     zone, iface, macs = _climate_zone_from_unique_id(
-        entry.unique_id, gw_mac, entry_mac, runtime_mac
+        unique_id, gw_mac, entry_mac, runtime_mac
     )
     if runtime_mac:
         macs.add(runtime_mac)
@@ -594,7 +647,11 @@ def _prune_climate_companions(
     sibling_climate = False
     if zone is not None:
         for other in er.async_entries_for_config_entry(registry, config_entry_id):
-            if other.domain != "climate" or not other.unique_id:
+            if (
+                other.domain != "climate"
+                or not other.unique_id
+                or (removed_entity_id is not None and other.entity_id == removed_entity_id)
+            ):
                 continue
             o_zone, o_iface, _ = _climate_zone_from_unique_id(
                 other.unique_id, gw_mac, entry_mac, runtime_mac
@@ -635,7 +692,7 @@ def _prune_climate_companions(
         registry.async_remove(entity_id)
 
     if not sibling_climate:
-        stems: set[str] = {entry.unique_id} if entry.unique_id else set()
+        stems: set[str] = {unique_id} if unique_id else set()
         if zone is not None:
             zkey = f"{zone}{BUS_ROUTING}{iface}" if iface else zone
             stems.update(f"{m}-4-{zkey}" for m in macs if m)
@@ -665,10 +722,12 @@ def _prune_climate_companions(
                     if (m_zone, norm_iface) == (zone, iface):
                         _remove_sensor(cand.entity_id)
 
-    if entry.device_id and not sibling_climate:
-        remaining = er.async_entries_for_device(registry, entry.device_id, include_disabled_entities=True)
+    if device_id and not sibling_climate:
+        remaining = er.async_entries_for_device(registry, device_id, include_disabled_entities=True)
         if not any(
-            e.domain == "climate" and e.config_entry_id == config_entry_id
+            e.domain == "climate"
+            and e.config_entry_id == config_entry_id
+            and (removed_entity_id is None or e.entity_id != removed_entity_id)
             for e in remaining
         ):
             for e in list(remaining):

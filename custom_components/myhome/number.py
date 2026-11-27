@@ -59,6 +59,7 @@ from .discovery import (
     actuator_only_on_primary,
     config_for,
     parse_unique_id,
+    prune_entity,
     prune_orphaned_companions,
 )
 from .expose import is_exposed_on_bus
@@ -282,7 +283,7 @@ async def async_setup_entry(
                     if reg_entry.unique_id.startswith(prefix):
                         dev_str = reg_entry.unique_id[len(prefix) : -len(suffix)]
                         if dev_str and dev_str not in known_cover_delta_numbers:
-                            registry.async_remove(reg_entry.entity_id)
+                            prune_entity(hass, registry, reg_entry, config_entry.entry_id)
                         break
         except Exception as err:  # pragma: no cover - registry unavailable in minimal mocks
             LOGGER.debug("Could not prune orphaned min_position_delta numbers: %s", err)

@@ -42,7 +42,11 @@ def _normalize_parsed_where(who: int, raw_where: str) -> str | None:
     where = raw_where.strip()
     if not where or not where.isascii():
         return None
-    base, iface, ok = _split_f422_suffix(where)
+    if who == 22:
+        # WHO=22 speaker addresses use ``3#<area>#<point>`` (e.g. ``3#4#1``), never F422 ``#4#II`` routing.
+        base, iface, ok = where, None, True
+    else:
+        base, iface, ok = _split_f422_suffix(where)
     if not ok:
         return None
 
@@ -240,9 +244,16 @@ class IgnoredAddresses:
     @staticmethod
     def _norm_where(where: str, who: int | None = None) -> str:
         """Normalize WHERE, preserving canonical A/PL, group ``#G``, and WHO=4 ``#0#N`` / ``Z#A`` forms."""
-        base, sep, iface = where.rpartition("#4#")
-        if not sep or not base:
+        if who == 22:
+            # WHO=22 speaker addresses use ``3#<area>#<point>`` (e.g. ``3#4#1``), never F422 ``#4#II`` routing.
             base, sep, iface = where, "", ""
+        else:
+            base, sep, iface = where.rpartition("#4#")
+            if not sep or not base:
+                base, sep, iface = where, "", ""
+        if who == 18 and base.endswith("#0") and _is_ascii_digits(base[:-2]):
+            # F522/F523 meter frames (*#18*71#0*...) strip #0 in sensor discovery (sensor.py:_sensor_address).
+            base = base[:-2]
         if _is_ascii_digits(base):
             if who in (0, 1, 2, 14, 15):
                 if is_apl_address(base):

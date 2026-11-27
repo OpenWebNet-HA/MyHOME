@@ -317,3 +317,198 @@ async def test_group3d_manual_delete_and_reload_prune_climate_and_cover_orphans(
     cov.entity_id = "cover.cover_32"
     await cov.async_removed_from_registry()
     assert ent_reg.async_get(cov_num.entity_id) is None
+
+    # 5. Legacy "2-" prefixed cover device_id also removes -min_position_delta and empty device
+    from homeassistant.helpers import device_registry as dr
+
+    dev_reg = dr.async_get(hass)
+    cov33_dev = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, f"{MAC}-2-33")},
+        name="Cover 33",
+    )
+    cov33_num = ent_reg.async_get_or_create(
+        "number",
+        DOMAIN,
+        f"{MAC}-2-33-min_position_delta",
+        config_entry=entry,
+        device_id=cov33_dev.id,
+    )
+    cov33 = MyHOMECover(
+        hass=hass,
+        name="Cover 33",
+        entity_name=None,
+        device_id="2-33",
+        who="2",
+        where="33",
+        interface=None,
+        device_class=None,
+        manufacturer="BTicino",
+        model="F401",
+        gateway=handler,
+        advanced=True,
+    )
+    cov33.entity_id = "cover.cover_33"
+    await cov33.async_removed_from_registry()
+    assert ent_reg.async_get(cov33_num.entity_id) is None
+    assert dev_reg.async_get(cov33_dev.id) is None
+
+
+async def test_group3_audit_fixes_who22_who18_motion_and_climate_safeguards(
+    hass: HomeAssistant,
+) -> None:
+    """Verify WHO=22 Area-4 speakers, WHO=18 #0 meters, hyphenated motion keys, and climate companion safeguards."""
+    from custom_components.myhome.binary_sensor import _motion_spellings
+    from custom_components.myhome.ignored import IgnoredAddresses, parse_ignored_address
+
+    # 1. WHO=22 Area-4 speakers (3#4#1, 3#4#16) must not be misparsed as F422 #4#II routing
+    assert parse_ignored_address("22/3#4#1") == (22, "3#4#1")
+    assert parse_ignored_address("22/3#4#16") == (22, "3#4#16")
+    ign22 = IgnoredAddresses(["22/3#4#1", "22/3#4#16"])
+    assert ign22.is_ignored(22, "3#4#1") is True
+    assert ign22.is_ignored(22, "3#4#16") is True
+    assert ign22.is_ignored(22, "3", interface="01") is False
+
+    # 2. WHO=18 F522/F523 meter 18/71#0 matches discovered address 71 symmetrically
+    assert IgnoredAddresses(["18/71#0"]).is_ignored(18, "71") is True
+    assert IgnoredAddresses(["18/71"]).is_ignored(18, "71#0") is True
+
+    # 3. Hyphenated YAML motion sensor keys must not leak numeric suffix into Area-00 spellings
+    assert _motion_spellings("hall-04") == ["hall-04"]
+    assert _motion_spellings("1-04") == ["1-04", "04", "0004"]
+
+    # 4. Climate manual delete: sibling climate preserves companions; non-temp YAML sensor does not orphan -temperature;
+    #    -output-level companion is pruned when the last climate entity for the zone is deleted.
+    entry, handler = _make_gateway(hass, model="F461")
+    assert entry.runtime_data is not None
+    ent_reg = er.async_get(hass)
+
+    # 4a. Sibling climate on zone 5 (e.g. zero-padded legacy unique_id) keeps all companions intact
+    ent_reg.async_get_or_create("climate", DOMAIN, f"{MAC}-4-05", config_entry=entry)
+    z5_temp = ent_reg.async_get_or_create("sensor", DOMAIN, f"{MAC}-4-5-temperature", config_entry=entry)
+    z5_hum = ent_reg.async_get_or_create("sensor", DOMAIN, f"{MAC}-4-5-humidity", config_entry=entry)
+    z5_out = ent_reg.async_get_or_create("sensor", DOMAIN, f"{MAC}-4-5#1-output-level", config_entry=entry)
+    clim5 = MyHOMEClimate(
+        hass=hass,
+        name="Zone 5",
+        device_id="5",
+        who="4",
+        where="5",
+        heating=True,
+        cooling=False,
+        fan=False,
+        standalone=False,
+        central=False,
+        manufacturer="BTicino",
+        model="Thermostat",
+        gateway=handler,
+    )
+    clim5.entity_id = "climate.zone_5"
+    await clim5.async_removed_from_registry()
+    assert ent_reg.async_get(z5_temp.entity_id) is not None
+    assert ent_reg.async_get(z5_hum.entity_id) is not None
+    assert ent_reg.async_get(z5_out.entity_id) is not None
+
+    # 4b. Non-temperature WHO=4 YAML sensor on zone 6 does not block -temperature or -output-level pruning
+    entry.runtime_data.platforms["sensor"] = {
+        "zone6_hum": {"who": "4", "where": "6", "device_class": "humidity", "name": "Zone 6 Hum"},
+    }
+    z6_temp = ent_reg.async_get_or_create("sensor", DOMAIN, f"{MAC}-4-6-temperature", config_entry=entry)
+    z6_out = ent_reg.async_get_or_create("sensor", DOMAIN, f"{MAC}-4-6#1-output-level", config_entry=entry)
+    clim6 = MyHOMEClimate(
+        hass=hass,
+        name="Zone 6",
+        device_id="6",
+        who="4",
+        where="6",
+        heating=True,
+        cooling=False,
+        fan=False,
+        standalone=False,
+        central=False,
+        manufacturer="BTicino",
+        model="Thermostat",
+        gateway=handler,
+    )
+    clim6.entity_id = "climate.zone_6"
+    await clim6.async_removed_from_registry()
+    assert ent_reg.async_get(z6_temp.entity_id) is None
+    assert ent_reg.async_get(z6_out.entity_id) is None
+
+    # 4c. Early-return guards in async_removed_from_registry: central, non-zone where, missing entry
+    central = MyHOMEClimate(
+        hass=hass,
+        name="Central 0",
+        device_id="#0",
+        who="4",
+        where="#0",
+        heating=True,
+        cooling=True,
+        fan=False,
+        standalone=False,
+        central=True,
+        manufacturer="BTicino",
+        model="3550",
+        gateway=handler,
+    )
+    await central.async_removed_from_registry()
+
+    bad_where = MyHOMEClimate(
+        hass=hass,
+        name="Zone bad",
+        device_id="bad",
+        who="4",
+        where="bad",
+        heating=True,
+        cooling=False,
+        fan=False,
+        standalone=True,
+        central=False,
+        manufacturer="BTicino",
+        model="Thermostat",
+        gateway=handler,
+    )
+    await bad_where.async_removed_from_registry()
+
+    handler_no_entry = MyHOMEGatewayHandler(hass, entry)
+    handler_no_entry.config_entry = None  # type: ignore[assignment]
+    no_entry_clim = MyHOMEClimate(
+        hass=hass,
+        name="Zone 7",
+        device_id="7",
+        who="4",
+        where="7",
+        heating=True,
+        cooling=False,
+        fan=False,
+        standalone=True,
+        central=False,
+        manufacturer="BTicino",
+        model="Thermostat",
+        gateway=handler_no_entry,
+    )
+    await no_entry_clim.async_removed_from_registry()
+
+    # 4d. Non-numeric restored tilt on an advanced Venetian cover is ignored cleanly
+    cov_bad_tilt = MyHOMECover(
+        hass=hass,
+        name="Venetian 22",
+        entity_name=None,
+        device_id="22",
+        who="2",
+        where="22",
+        interface=None,
+        device_class=None,
+        manufacturer="BTicino",
+        model="F401",
+        gateway=handler,
+        advanced=True,
+        slat_tilt=True,
+        slat_time=2.0,
+    )
+    cov_bad_tilt.async_get_last_extra_data = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    await cov_bad_tilt.async_restore_last_state(
+        State("cover.venetian_22", "open", {"current_position": 50, "current_tilt_position": "not-a-number"})
+    )
+    assert cov_bad_tilt.current_cover_tilt_position is None
+
