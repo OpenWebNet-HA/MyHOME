@@ -101,3 +101,17 @@
   mcp_valid: true
   mcp_notes: "Lighting/Automation Diagnostic (WHO 1001): Point-to-point Dimension 1 device identification reply (modobj=43, K4659 / OWN-DEV-0016; F461 2.0.11 capture, MyHOME#941)"
   roundtrip: true
+
+- id: lighting_diag.capture.dim11.bitmask.bus.0614
+  frame: "*#1001*0614#4#01*11*111110111111111101100111##"
+  direction: dimension_response
+  who: 1001
+  what: null
+  where: "0614"
+  interface: "01"
+  dimension: 11
+  dimension_values: ["111110111111111101100111"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Lighting/Automation Diagnostic (WHO 1001): 4-digit address 0614 routed through F422 private-bus interface 01 (#4#01) Dimension 11 24-bit diagnostic bitmask reply received on BTicino F459 FW 2.1.5 (MyHOME#466, tests/fixtures/traces/f459_full_debug_log_2026-11-26/F459_full_debug_log_2026-11-26T15-46-40.log, line 529)"
+  roundtrip: true

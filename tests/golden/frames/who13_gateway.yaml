@@ -510,3 +510,16 @@
     class: OWNGatewayCommand
     method: set_date
     args: ["2026-11-14"]
+
+- id: gateway.capture.resp.diagnostic_bitmask.dim11.260
+  frame: "*#1013*260*11*111111111111111101101111##"
+  direction: dimension_response
+  who: 1013
+  what: null
+  where: "260"
+  dimension: 11
+  dimension_values: ["111111111111111101101111"]
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Gateway/Integration Diagnostic (WHO 1013): Point-addressed WHERE=260 Dimension 11 24-bit diagnostic bitmask reply received on the event monitor on BTicino F459 FW 2.1.5 (MyHOME#466, tests/fixtures/traces/f459_full_debug_log_2026-11-26/F459_full_debug_log_2026-11-26T15-46-40.log, line 1754)"
+  roundtrip: true
