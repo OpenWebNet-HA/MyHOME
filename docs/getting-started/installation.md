@@ -14,11 +14,13 @@ This guide covers installing and updating the **MyHOME** integration in Home Ass
 
 ## Option 1: Home Assistant Marketplace / HACS (Recommended for Stable Releases)
 
+[![Open Marketplace repository on My Home Assistant](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=OpenWebNet-HA&repository=MyHOME&category=integration)
+
 From **Home Assistant 2026.11** on, HACS is integrated directly into Home Assistant Core as the **Home Assistant Marketplace** (**Settings → Marketplace**); existing HACS installations and custom repositories migrate automatically on upgrade. On earlier versions (**Home Assistant 2026.8 – 2026.10**), the same steps apply in **[HACS](https://hacs.xyz)**.
 
 - **Home Assistant 2026.11+ (Marketplace):**
-    1. Open **Settings → Marketplace** in Home Assistant *(accept the community content warning if opening it for the first time)*.
-    2. Search for **MyHOME** in the catalog, or if adding manually before catalog publication, select **Add from link** in the upper-right corner, enter `https://github.com/OpenWebNet-HA/MyHOME`, and select **Add** *(if prompted for **Type**, select **Integration** and select **Add** again)*.
+    1. Click **Open Marketplace repository on My Home Assistant** above to jump directly to `OpenWebNet-HA/MyHOME` in your instance *(accept the community content warning if opening Marketplace for the first time)*, **or** open **Settings → Marketplace** manually.
+    2. If opening manually, search for **MyHOME** in the catalog, or if adding before catalog publication, select **Add from link** in the upper-right corner, enter `https://github.com/OpenWebNet-HA/MyHOME`, and select **Add** *(if prompted for **Type**, select **Integration** and select **Add** again)*.
     3. Select **MyHOME** to open its page, then select **Install** *(to pick a specific release, open `⋮` → **Install another version**)*.
     4. Restart Home Assistant when prompted.
 - **Home Assistant 2026.8 – 2026.10 (HACS):**

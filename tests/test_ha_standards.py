@@ -962,3 +962,17 @@ def test_brand_dir_validation_catches_invalid_dark_and_size_variants(tmp_path):
     assert any("Local brand asset 'logo.png' is 400x64, shortest side must be 128..256 px" in err for err in checker.errors)
     assert any("Dark brand asset 'dark_icon@2x.png' is byte-identical to 'icon@2x.png'" in err for err in checker.errors)
     assert any("Required local brand asset 'dark_icon.png' missing from brand/" in err for err in checker.errors)
+
+
+def test_marketplace_my_redirect_badge_in_readme_and_installation_docs():
+    """Verify README.md and installation.md carry the canonical My Home Assistant Marketplace badge."""
+    repo_root = TESTS_DIR.parent
+    expected_badge_svg = "https://my.home-assistant.io/badges/marketplace_repository.svg"
+    expected_redirect_url = (
+        "https://my.home-assistant.io/redirect/marketplace_repository/"
+        "?owner=OpenWebNet-HA&repository=MyHOME&category=integration"
+    )
+    for rel_doc in ("README.md", "docs/getting-started/installation.md"):
+        content = (repo_root / rel_doc).read_text(encoding="utf-8")
+        assert expected_badge_svg in content, f"{rel_doc} missing My Home Assistant badge SVG"
+        assert expected_redirect_url in content, f"{rel_doc} missing canonical marketplace_repository redirect URL"
