@@ -2703,3 +2703,299 @@ async def test_lock_on_relay_and_pending_dim1_and_who1_scope_polls(
     assert dali_25._poll_targets_self(OWNCommand.parse("*#1*#4#4#02*14##")) is True
     assert dim_06._poll_targets_self(OWNCommand.parse("*#1*#4##")) is True
     assert dali_25._poll_targets_self(OWNCommand.parse("*#1*#9#4#02*14##")) is False
+
+
+# ---------------------------------------------------------------------------
+# Group 2a: Startup poll / stale restore must never clear actuator_locked
+# ---------------------------------------------------------------------------
+
+
+async def test_group2a_startup_poll_and_stale_restore_preserve_actuator_lock(
+    hass: HomeAssistant,
+) -> None:
+    """Reconciling restored state or processing a startup poll never clears actuator_locked."""
+    _, handler = _make_gateway(hass, model="F461")
+
+    # 1a. Relay light restored ON + locked -> startup poll reports OFF -> lock stays True, then live ON self-heals
+    relay = MyHOMELight(
+        hass=hass,
+        name="Relay 05",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="05",
+        who="1",
+        where="05",
+        interface=None,
+        dimmable=False,
+        manufacturer="BTicino",
+        model="F411",
+        gateway=handler,
+    )
+    _attach_live_entity(hass, relay, "light.relay_05")
+    await relay.async_restore_last_state(State("light.relay_05", "on", {"actuator_locked": True}))
+    assert relay.actuator_locked is True
+    sweep_epoch = handler._begin_sweep()
+    ev_off = OWNEvent.parse("*1*0*05##")
+    assert ev_off is not None
+    ev_off._from_status_request = True
+    relay.handle_event(ev_off)
+    handler._end_sweep(sweep_epoch)
+    assert relay.is_on is False
+    assert relay.actuator_locked is True
+    # Subsequent genuine live actuation (OFF -> ON) self-heals lock to False
+    relay.handle_event(OWNEvent.parse("*1*1*05##"))
+    assert relay.is_on is True
+    assert relay.actuator_locked is False
+
+    # 1b. Dimmer restored ON @ 55% + locked -> startup Dim 1 poll reports 60% -> lock stays True, then live 80% self-heals
+    dim = MyHOMELight(
+        hass=hass,
+        name="Dimmer 0010",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="0010",
+        who="1",
+        where="0010",
+        interface=None,
+        dimmable=True,
+        manufacturer="BTicino",
+        model="F418",
+        gateway=handler,
+    )
+    _attach_live_entity(hass, dim, "light.dimmer_0010")
+    await dim.async_restore_last_state(
+        State(
+            "light.dimmer_0010",
+            "on",
+            {"supported_color_modes": ["brightness"], "brightness": 140, "actuator_locked": True},
+        )
+    )
+    ev_dim = OWNEvent.parse("*#1*0010*1*160*0##")
+    assert ev_dim is not None
+    ev_dim._from_status_request = True
+    dim.handle_event(ev_dim)
+    assert dim._attr_brightness_pct == 60
+    assert dim.actuator_locked is True
+    # Re-confirm that a real-hardware Dim 1 refresh reply (_from_status_request=True)
+    # triggered by a LIVE coarse preset (*1*8*0010## -> 60% vs confirmed 60% or *1*9*0010## -> 75%)
+    # STILL self-heals when Dim 1 reports a new level (72% != 60%)!
+    dim._brightness_refresh_after = 0.0
+    dim.handle_event(OWNEvent.parse("*1*9*0010##"))
+    await asyncio.sleep(0)
+    assert dim.actuator_locked is True
+    ev_dim_live_refresh = OWNEvent.parse("*#1*0010*1*172*0##")
+    assert ev_dim_live_refresh is not None
+    ev_dim_live_refresh._from_status_request = True
+    dim.handle_event(ev_dim_live_refresh)
+    assert dim._attr_brightness_pct == 72
+    assert dim.actuator_locked is False
+
+    # Re-lock and verify a direct live Dim 1 event (72% -> 80%) also self-heals
+    handler._actuator_locks.observe(OWNMessage.parse("*14*0*0010##"))
+    assert dim.actuator_locked is True
+    dim.handle_event(OWNEvent.parse("*#1*0010*1*180*0##"))
+    assert dim._attr_brightness_pct == 80
+    assert dim.actuator_locked is False
+
+    # 1c. Live *14*0*06## received on boot before startup sweep reconciles restored ON -> OFF
+    boot_lt = MyHOMELight(
+        hass=hass,
+        name="Boot Light 06",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="06",
+        who="1",
+        where="06",
+        interface=None,
+        dimmable=False,
+        manufacturer="BTicino",
+        model="F411",
+        gateway=handler,
+    )
+    _attach_live_entity(hass, boot_lt, "light.boot_06")
+    await boot_lt.async_restore_last_state(State("light.boot_06", "on", {}))
+    handler._actuator_locks.observe(OWNMessage.parse("*14*0*06##"))
+    assert boot_lt.actuator_locked is True
+    sweep_epoch_2 = handler._begin_sweep()
+    boot_lt.handle_event(OWNEvent.parse("*1*0*06##"))
+    handler._end_sweep(sweep_epoch_2)
+    assert boot_lt.is_on is False
+    assert boot_lt.actuator_locked is True
+
+    # 1d. Restored CT + HS color reconciled by first bus reports preserves lock, then real live change self-heals
+    dali = MyHOMELight(
+        hass=hass,
+        name="DALI 26",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="26",
+        who="1",
+        where="26",
+        interface=None,
+        dimmable=True,
+        color_temp=True,
+        rgb=True,
+        manufacturer="BTicino",
+        model="F429",
+        gateway=handler,
+    )
+    _attach_live_entity(hass, dali, "light.dali_26")
+    await dali.async_restore_last_state(
+        State(
+            "light.dali_26",
+            "on",
+            {
+                "supported_color_modes": ["hs", "color_temp"],
+                "color_temp": 300,
+                "hs_color": [180.0, 100.0],
+                "actuator_locked": True,
+            },
+        )
+    )
+    assert dali.actuator_locked is True
+    # First Dim 14 / Dim 12 reconciling restored values does NOT clear lock
+    dali.handle_event(OWNEvent.parse("*#1*26*14*250##"))
+    dali.handle_event(OWNEvent.parse("*#1*26*12*240*80*50##"))
+    assert dali.color_temp == 250
+    assert dali.hs_color == (240.0, 80.0)
+    assert dali.actuator_locked is True
+    # Subsequent genuine live change self-heals lock to False
+    dali.handle_event(OWNEvent.parse("*#1*26*14*200##"))
+    assert dali.color_temp == 200
+    assert dali.actuator_locked is False
+
+    # 1e. Switch restored ON + locked -> startup poll reports OFF -> lock stays True, then live ON self-heals
+    sw = MyHOMESwitch(
+        hass=hass,
+        name="Switch 07",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="07",
+        who="1",
+        where="07",
+        interface=None,
+        device_class="switch",
+        manufacturer="BTicino",
+        model="F411",
+        gateway=handler,
+    )
+    _attach_live_entity(hass, sw, "switch.relay_07_g2")
+    await sw.async_restore_last_state(State("switch.relay_07_g2", "on", {"actuator_locked": True}))
+    assert sw.actuator_locked is True
+    ev_sw_off = OWNEvent.parse("*1*0*07##")
+    assert ev_sw_off is not None
+    ev_sw_off._from_status_request = True
+    sw.handle_event(ev_sw_off)
+    assert sw.is_on is False
+    assert sw.actuator_locked is True
+    sw.handle_event(OWNEvent.parse("*1*1*07##"))
+    assert sw.is_on is True
+    assert sw.actuator_locked is False
+
+
+# ---------------------------------------------------------------------------
+# Group 2b: Gate & prune WHO=14 Lock/Unlock buttons on F455 and F450
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("model", ["F455", "F450"])
+async def test_group2b_who14_buttons_omitted_and_pruned_on_refusing_gateways(
+    hass: HomeAssistant,
+    model: str,
+) -> None:
+    """F455 and F450 refuse outbound WHO=14: omit Lock/Unlock buttons and prune stale ones."""
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
+    from homeassistant.helpers.dispatcher import async_dispatcher_send
+
+    from custom_components.myhome import button as button_mod
+    from custom_components.myhome.button import (
+        CalibrateCoverButtonEntity,
+        DisableCommandButtonEntity,
+        EnableCommandButtonEntity,
+    )
+    from custom_components.myhome.gateway import WHO14_COMMANDS_REFUSED
+
+    assert model in WHO14_COMMANDS_REFUSED
+    entry, handler = _make_gateway(hass, model=model)
+    mac = GW_MAC
+    assert handler.supports_who14_commands is False
+
+    # Pre-seed registry with an actuator light, a cover, stale lock/unlock buttons, and a calibration button
+    ent_reg = er.async_get(hass)
+    ent_reg.async_get_or_create("light", DOMAIN, f"{mac}-1-05", config_entry=entry)
+    ent_reg.async_get_or_create("cover", DOMAIN, f"{mac}-2-06", config_entry=entry)
+    stale_l_dis = ent_reg.async_get_or_create("button", DOMAIN, f"{mac}-1-05-disable", config_entry=entry)
+    stale_l_en = ent_reg.async_get_or_create("button", DOMAIN, f"{mac}-1-05-enable", config_entry=entry)
+    stale_c_dis = ent_reg.async_get_or_create("button", DOMAIN, f"{mac}-2-06-disable", config_entry=entry)
+    stale_c_en = ent_reg.async_get_or_create("button", DOMAIN, f"{mac}-2-06-enable", config_entry=entry)
+    keep_cal = ent_reg.async_get_or_create("button", DOMAIN, f"{mac}-2-06-calibrate", config_entry=entry)
+
+    entry.runtime_data.platforms["button"] = {
+        "07": {"who": "1", "where": "07", "name": "YAML Light 07"},
+    }
+
+    added: list[Any] = []
+    assert await button_mod.async_setup_entry(hass, entry, added.extend) is True
+
+    # Zero Lock/Unlock buttons created; cover calibration button still created
+    assert not any(isinstance(e, (DisableCommandButtonEntity, EnableCommandButtonEntity)) for e in added)
+    assert any(isinstance(e, CalibrateCoverButtonEntity) for e in added)
+
+    # All 4 stale Lock/Unlock registry entries pruned; calibration button preserved
+    for stale in (stale_l_dis, stale_l_en, stale_c_dis, stale_c_en):
+        assert ent_reg.async_get(stale.entity_id) is None
+    assert ent_reg.async_get(keep_cal.entity_id) is not None
+
+    # Dynamic new-device signal on F455/F450 still creates no Lock/Unlock buttons, but creates cover calibration
+    added.clear()
+    async_dispatcher_send(
+        hass,
+        f"myhome_new_device_{dr.format_mac(mac)}",
+        {"who": "1", "device_id": "08", "where": "08", "name": "Light 08"},
+    )
+    async_dispatcher_send(
+        hass,
+        f"myhome_new_device_{dr.format_mac(mac)}",
+        {"who": "2", "device_id": "09", "where": "09", "name": "Cover 09"},
+    )
+    await hass.async_block_till_done()
+    assert not any(isinstance(e, (DisableCommandButtonEntity, EnableCommandButtonEntity)) for e in added)
+    assert any(isinstance(e, CalibrateCoverButtonEntity) for e in added)
+
+    # Passive incoming *14*0*05## on F455/F450 still updates ActuatorLockManager cleanly
+    assert handler._actuator_locks.observe(OWNMessage.parse("*14*0*05##")) is True
+    assert handler._actuator_locks.is_locked("05") is True
+
+
+async def test_group2b_who14_buttons_created_normally_on_capable_gateways(
+    hass: HomeAssistant,
+) -> None:
+    """Capable gateways (F461, MyHomeServer1, F454, MH201) continue creating Lock/Unlock buttons."""
+    from homeassistant.helpers import entity_registry as er
+
+    from custom_components.myhome import button as button_mod
+    from custom_components.myhome.button import (
+        DisableCommandButtonEntity,
+        EnableCommandButtonEntity,
+    )
+
+    entry, handler = _make_gateway(hass, model="F461")
+    mac = GW_MAC
+    assert handler.supports_who14_commands is True
+    assert entry.runtime_data is not None
+    entry.runtime_data.platforms["button"] = {}
+
+    ent_reg = er.async_get(hass)
+    ent_reg.async_get_or_create("light", DOMAIN, f"{mac}-1-05", config_entry=entry)
+
+    added: list[Any] = []
+    assert await button_mod.async_setup_entry(hass, entry, added.extend) is True
+    assert any(isinstance(e, DisableCommandButtonEntity) for e in added)
+    assert any(isinstance(e, EnableCommandButtonEntity) for e in added)
+

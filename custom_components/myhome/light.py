@@ -646,6 +646,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         self._pending_cmd_brightness_pct: _PendingCmdToken | None = None
         self._pending_cmd_color_temp: _PendingCmdToken | None = None
         self._brightness_restored: bool = False
+        self._color_temp_restored: bool = False
+        self._hs_color_restored: bool = False
         self._brightness_from_coarse_preset: bool = False
         # A fine dimmer has reported an exact level on Dimension 1 / 4 with a normal
         # speed; a coarse-only one (speed 240, #767) is still a coarse dimmer even if
@@ -660,6 +662,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         self._brightness_refresh_next_preset: int | None = None
         self._brightness_refresh_level: int | None = None
         self._brightness_refresh_repeats = 0
+        self._brightness_refresh_from_live = False
         self._exact_level_pct: int | None = None
         self._exact_level_since_refresh = False
         self._last_preset_echo_at: float | None = None
@@ -799,9 +802,11 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         if isinstance(last_kelvin, (int, float)):
             self._attr_color_temp_kelvin = int(last_kelvin)
             self._attr_color_temp = color_temperature_kelvin_to_mired(self._attr_color_temp_kelvin)
+            self._color_temp_restored = True
         elif isinstance(last_mired, (int, float)):
             self._attr_color_temp = int(last_mired)
             self._attr_color_temp_kelvin = color_temperature_mired_to_kelvin(self._attr_color_temp)
+            self._color_temp_restored = True
 
         # 4. Restore HS / RGB color
         last_hs = last_state.attributes.get(ATTR_HS_COLOR)
@@ -809,11 +814,13 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             self._attr_hs_color = (float(last_hs[0]), float(last_hs[1]))
             r, g, b = color_hs_to_RGB(self._attr_hs_color[0], self._attr_hs_color[1])
             self._attr_rgb_color = (r, g, b)
+            self._hs_color_restored = True
         else:
             last_rgb = last_state.attributes.get(ATTR_RGB_COLOR)
             if isinstance(last_rgb, (list, tuple)) and len(last_rgb) == 3:
                 self._attr_rgb_color = (int(last_rgb[0]), int(last_rgb[1]), int(last_rgb[2]))
                 self._attr_hs_color = color_RGB_to_hs(*self._attr_rgb_color)
+                self._hs_color_restored = True
 
         # 5. Restore power state
         if last_state.state == "on":
@@ -1093,6 +1100,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         """Apply WHO=14 lock state, cancelling active fades on lock and polling only if incomplete."""
         lock_state = bool(locked)
         prev_locked = self._actuator_locked
+        self._brightness_refresh_from_live = False
         if lock_state:
             self._fade_engine.cancel_fade_if_active()
             if (
@@ -1687,6 +1695,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         self._brightness_refresh_level = None
         self._brightness_refresh_repeats = 0
         self._brightness_refresh_again = False
+        self._brightness_refresh_from_live = False
         self._last_preset_echo_at = None
 
     def _request_brightness_refresh(self, force: bool = False) -> bool:
@@ -2050,6 +2059,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         prev_hs_color = self._attr_hs_color
         was_restored = self._is_on_restored
         was_brightness_restored = self._brightness_restored
+        was_color_temp_restored = self._color_temp_restored
+        was_hs_color_restored = self._hs_color_restored
         was_coarse_preset = self._brightness_from_coarse_preset
         was_fine = self._is_fine_dimmer(message)
         unknown_state = getattr(message, "unknown_state", None)
@@ -2213,6 +2224,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                     "tuple[int, int, int]", tuple(cast("tuple[int, int, int]", message.rgb))
                 )
                 self._attr_hs_color = color_RGB_to_hs(*self._attr_rgb_color)
+            self._hs_color_restored = False
 
             raw_v = getattr(message, "value", None)
             if isinstance(raw_v, (int, float)) and not isinstance(raw_v, bool):
@@ -2237,6 +2249,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             new_ct = cast(int, message.color_temp)
             self._attr_color_temp = new_ct
             self._attr_color_temp_kelvin = color_temperature_mired_to_kelvin(new_ct)
+            self._color_temp_restored = False
             any_sweep = any(
                 getattr(h, "sweep_active", False) is True
                 for h in self._bus_gateways_for_who1()
@@ -2402,6 +2415,13 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             # Ignored while software_stepped fade is active — including under OWNd >= 2.0.0b12
             # where is_coarse_dimmer=True also populates message.brightness on *1*2..10*WHERE##
             # (86% -> WHAT 10 -> 100% has a 14 pp quantization jump that would self-cancel fades).
+            preset_from_poll = (
+                getattr(message, "_from_status_request", False) is True
+                or any(
+                    getattr(h, "sweep_active", False) is True
+                    for h in self._bus_gateways_for_who1()
+                )
+            )
             mapped = self._coarse_preset_pct(message, cast(int, preset))
             has_dimmer_capability = bool(
                 set(self._attr_supported_color_modes or ())
@@ -2449,6 +2469,14 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                     self._bus_state_complete = False
                     self._brightness_refresh_again = True
                     self._brightness_refresh_next_preset = cast(int, preset)
+                    if not preset_from_poll and (
+                        not was_brightness_restored
+                        or (
+                            self._brightness_refresh_preset is not None
+                            and preset != self._brightness_refresh_preset
+                        )
+                    ):
+                        self._brightness_refresh_from_live = True
                 else:
                     # The same answer reaches every instance on the bus, so a read that
                     # brings nothing new is repeated at most _BRIGHTNESS_REFRESH_REPEATS
@@ -2488,6 +2516,10 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                             )
                             self._brightness_refresh_preset = cast(int, preset)
                             self._brightness_refresh_level = ref_level
+                            self._brightness_refresh_from_live = (
+                                not preset_from_poll
+                                and (not was_brightness_restored or changed_preset)
+                            )
 
         if self._fade_engine.is_fading and self._is_own_point_event(message):
             fading_down = (
@@ -2533,32 +2565,58 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             if step1_confirmed_by_event:
                 self._fade_engine.notify_bus_echo()
 
+        msg_dim = getattr(message, "dimension", None)
+        any_who1_sweep = any(
+            getattr(h, "sweep_active", False) is True
+            for h in self._bus_gateways_for_who1()
+        )
+        from_status_poll = (
+            getattr(message, "_from_status_request", False) is True
+            or any_who1_sweep
+            or (isinstance(msg_dim, int) and self._is_from_poll(message, msg_dim))
+        )
+        live_refresh_dim1 = (
+            msg_dim in (1, 4)
+            and self._brightness_refresh_from_live
+            and not any_who1_sweep
+            and (
+                self._brightness_refresh_out
+                or time.monotonic() < self._brightness_refresh_after
+            )
+        )
+        if msg_dim in (1, 4) or any_who1_sweep:
+            self._brightness_refresh_from_live = False
         if (
             self._actuator_locked is True
+            and (not from_status_poll or live_refresh_dim1)
             and not is_no_load
             and not isinstance(unknown_state, int)
             and getattr(message, "what", None) not in (30, 31, "30", "31")
             and self._is_own_point_event(message)
         ):
             is_on_changed = (
-                prev_is_on is not None
+                not was_restored
+                and prev_is_on is not None
                 and self._attr_is_on is not None
                 and self._attr_is_on != prev_is_on
             )
             brightness_changed = (
-                not coarse_dim1_refinement
+                (not was_brightness_restored or live_refresh_dim1)
+                and not coarse_dim1_refinement
                 and prev_brightness_pct is not None
                 and self._attr_brightness_pct is not None
                 and self._attr_is_on is True
                 and self._attr_brightness_pct != prev_brightness_pct
             )
             ct_changed = (
-                prev_color_temp is not None
+                not was_color_temp_restored
+                and prev_color_temp is not None
                 and self._attr_color_temp is not None
                 and self._attr_color_temp != prev_color_temp
             )
             hs_changed = (
-                prev_hs_color is not None
+                not was_hs_color_restored
+                and prev_hs_color is not None
                 and self._attr_hs_color is not None
                 and self._attr_hs_color != prev_hs_color
             )

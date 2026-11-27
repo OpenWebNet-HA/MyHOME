@@ -719,11 +719,18 @@ class MyHOMESwitch(MyHOMEEntity, SwitchEntity):
                 message.human_readable_log,
             )
         prev_is_on = self._attr_is_on
+        was_bus_confirmed = self._bus_state_complete
         if message.is_on is not None:
             self._attr_is_on = message.is_on
             self._bus_state_complete = True
+        from_status_poll = (
+            getattr(message, "_from_status_request", False) is True
+            or getattr(self._gateway_handler, "sweep_active", False) is True
+        )
         if (
             self._actuator_locked is True
+            and was_bus_confirmed
+            and not from_status_poll
             and self._is_own_point_event(message)
             and prev_is_on is not None
             and self._attr_is_on is not None

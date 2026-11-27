@@ -172,8 +172,12 @@ async def async_setup_entry(
                         )
                     )
 
+    supports_who14 = getattr(gateway, "supports_who14_commands", True) is not False
+
     def _create_buttons_for_device(dev_id: str | int, cfg: dict[str, Any]) -> list[ButtonEntity]:
         """Lock and unlock buttons for one actuator (a yaml entry or an announcement)."""
+        if not supports_who14:
+            return []
         who = str(cfg.get(CONF_WHO, "1"))
         if who not in ("1", "2"):
             return []
@@ -240,6 +244,18 @@ async def async_setup_entry(
                 if registered.unique_id.startswith(prefix):
                     return registered.unique_id[len(prefix):]
         return ""
+
+    if not supports_who14:
+        for registered in list(registered_entries):
+            if registered.domain != "button":
+                continue
+            reg_id = _registered_id(registered)
+            if (
+                (reg_id.startswith(("1-", "2-")))
+                and reg_id.endswith(("-disable", "-enable"))
+            ):
+                registry.async_remove(registered.entity_id)
+        registered_entries = er.async_entries_for_config_entry(registry, config_entry.entry_id)
 
     # Platform setup order is not guaranteed. Determine sensor/switch ownership
     # before restoring any lights, rather than waiting for light.py's cleanup.

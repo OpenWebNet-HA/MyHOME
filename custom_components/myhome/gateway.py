@@ -413,6 +413,14 @@ COVER_PRE_MOVE_STOP_EMITTED = frozenset(
     {"3488", "F453", "F453AV", "F454", "F455", "F459", "F460", "F461", "H4684", "MH200", "MH200N", "MYHOMESERVER1"}
 )
 COVER_PRE_MOVE_STOP_OMITTED = frozenset({"MH201", "MH202"})
+# Gateways confirmed to reject outbound WHO=14 actuator lock/unlock commands (*14*0/1*W##)
+# before the bus:
+# - F450 (020010): nack silent on *14*0*32##, *14*1*32##, *14*0*31#4#01##, *14*0*31#4#02##
+#   (own-firmware-oracle results/F450/020010/oracle/full/trace-corpus.tsv:67-68 and
+#   interface-routing.tsv:18-19; the other 12 emulated gateways forward WHO 14 onto the bus).
+# - F455 (1.0.76): NACK (*#*0## in 4 ms) on live *14*0*05## and *14*1*05## (2026-11-27),
+#   while still receiving *14*0/1*W## passively on the event session.
+WHO14_COMMANDS_REFUSED = frozenset({"F450", "F455"})
 # The models the tables know, longest first so ``MH200N`` is not read as ``MH200``.
 _ZONE_REQUEST_MODELS = sorted(
     KNOWN_GATEWAY_MODELS | ACTUATOR_REQUEST_REFUSED | HUMIDITY_REQUEST_REFUSED | set(ALL_ZONE_REQUESTS)
@@ -1134,6 +1142,15 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         if not self._profile_supports_who(16):
             return True
         return self._model_key in SOUND_STATUS_REQUEST_REFUSED
+
+    @property
+    def supports_who14_commands(self) -> bool:
+        """Whether this gateway (or its WHO=14 secondary) accepts outbound WHO=14 lock/unlock commands."""
+        if 14 in self.delegated_away_whos:
+            sec = self._get_secondary_for_who(14)
+            if sec is not None and sec is not self:
+                return sec.supports_who14_commands
+        return self._model_key not in WHO14_COMMANDS_REFUSED
 
     @property
     def zone_actuator_request_refused(self) -> bool:
