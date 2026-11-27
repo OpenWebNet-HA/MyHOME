@@ -21,6 +21,7 @@ writes to its built-in master zone, while subordinate zones 3 and 4 are written 
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
@@ -30,7 +31,7 @@ from homeassistant.components.climate import HVACAction, HVACMode
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
-from OWNd.message import OWNEvent, OWNHeatingEvent
+from OWNd.message import OWNEvent, OWNHeatingEvent, OWNMessage
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.myhome.climate import MyHOMEClimate, async_setup_entry
@@ -46,6 +47,7 @@ from custom_components.myhome.where_grammar import (
     is_actuator_where,
     is_four_zone_central_where,
 )
+from scripts.anonymize_plant_fixture import findings as privacy_findings
 from tests.conftest import attach_runtime
 from tests.test_climate_mode_state_2026_11_08 import _dispatcher, _gateway
 
@@ -53,6 +55,8 @@ MAC = "00:03:50:44:55:66"
 TRACES = Path(__file__).parent / "fixtures" / "traces" / "issue_994"
 FIRST = TRACES / "myhome_trace_F454_all_2026-11-22T18-38-46.json"
 SECOND = TRACES / "myhome_trace_F454_all_2026-11-22T21-40-54.json"
+THIRD = TRACES / "myhome_trace_F454_all_2026-11-26T20-03-46.json"
+THIRD_SHA256 = "b97ab2691c3e046f10a25d84a4e84afea1b03a9f5121b70599e2c2316ee92127"
 
 # The reporter's ``myhome.yaml`` of version 0.9.3 (issue 994), with the names replaced.
 REPORTERS_FILE = {
@@ -2735,3 +2739,73 @@ async def test_review_6054026044_coverage_edges(hass: HomeAssistant) -> None:
     assert out_reg is not None and out_reg.device_id == cu_dev.id
     # Second call with out_ent already on cu_dev hits src_dev_id == cu_device.id (line 671)
     disc._rehome_master_output_sensors(ent_reg, ("1", None), cu)
+
+
+def test_third_trace_provenance_privacy_and_v201_frames() -> None:
+    """Pin SHA-256, zero PII, non-truncation, and OWNd parsing on the v2.0.1 verification trace."""
+    raw_bytes = THIRD.read_bytes()
+    raw_text = raw_bytes.decode("utf-8")
+    assert hashlib.sha256(raw_bytes).hexdigest() == THIRD_SHA256
+    assert privacy_findings(raw_text, data_file=True) == []
+
+    payload = json.loads(raw_text)
+    assert payload["capture"]["kind"] == "trace"
+    assert payload["capture"]["window"]["truncated"] is False
+    assert payload["capture"]["window"]["frames"] == 18
+    assert payload["environment"]["integration_version"] == "2.0.1"
+    assert payload["environment"]["ownd_version"] == "2.0.2"
+    assert payload["gateway"]["model"] == "F454"
+    assert payload["gateway"]["firmware"] == "2.0.51"
+    assert payload["gateway"]["identification"]["who13_code"] == "200"
+    assert payload["gateway"]["identification"]["who1013_code"] == "51"
+
+    frames = payload["frames"]
+    assert len(frames) == 18
+    tx_frames = [f["raw"] for f in frames if f["direction"] == "tx"]
+    rx_frames = [f["raw"] for f in frames if f["direction"] == "rx"]
+    assert tx_frames == ["*#4*#0#1*#14*0185*3##", "*#4*3*#14*0180*3##"]
+    assert len(rx_frames) == 16
+    for frame in frames:
+        parsed = OWNMessage.parse(frame["raw"])
+        assert parsed is not None, f"Failed to parse {frame['raw']!r}"
+        assert parsed.who == 4
+
+
+async def test_third_trace_replay_verifies_master_propagation_actuators_and_zone3_override(
+    hass: HomeAssistant,
+) -> None:
+    """Replay the v2.0.1 verification trace: #0#1 sets 18.5 C + actuators ON, then zone 3 overrides to 18.0 C."""
+    gateway, found = await _plant(hass, None, THIRD)
+    assert set(found) == {"#0#1", "3", "4"}
+    assert gateway.has_central_unit is False
+
+    central = found["#0#1"]
+    zone3 = found["3"]
+    zone4 = found["4"]
+
+    # Master zone 1 unified into #0#1: manual heating at 18.5 C, measured 14.3 C, knob 0, actuator 1#1 ON
+    assert central._central is True
+    assert central.hvac_mode == HVACMode.HEAT
+    assert central.target_temperature == 18.5
+    assert central.current_temperature == 14.3
+    assert central.extra_state_attributes["knob_pos"] == "0"
+    assert central.hvac_action == HVACAction.HEATING
+
+    # Zone 3: propagated to 18.5 C first, then overridden directly to 18.0 C (frames 15-18)
+    assert zone3._central is False
+    assert zone3.hvac_mode == HVACMode.HEAT
+    assert zone3.target_temperature == 18.0
+    assert zone3.current_temperature == 16.2
+
+    # Zone 4: propagated to 18.5 C and stayed there after zone 3's write; actuator 4#1 ON
+    assert zone4._central is False
+    assert zone4.hvac_mode == HVACMode.HEAT
+    assert zone4.target_temperature == 18.5
+    assert zone4.current_temperature == 15.9
+    assert zone4.hvac_action == HVACAction.HEATING
+
+    # Confirm MyHOME emits the exact two wire writes captured in the v2.0.1 verification trace
+    gateway.send.reset_mock()
+    await central.async_set_temperature(temperature=18.5)
+    await zone3.async_set_temperature(temperature=18.0)
+    assert _sent(gateway) == ["*#4*#0#1*#14*0185*3##", "*#4*3*#14*0180*3##"]

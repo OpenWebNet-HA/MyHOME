@@ -54,13 +54,16 @@ Full setup guides, per-subsystem configuration references, automation recipes, a
 
 ### Option 1: Home Assistant Marketplace (`2026.11+`) / HACS (`2026.8 – 2026.10`)
 
+[![Open your Home Assistant instance and open a repository in the Marketplace.](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=OpenWebNet-HA&repository=MyHOME&category=integration)
+
 From **Home Assistant 2026.11** on, use the built-in **Home Assistant Marketplace** (**Settings → Marketplace**); existing HACS installations and custom repositories migrate automatically on upgrade. On **Home Assistant 2026.8 – 2026.10**, use **[HACS](https://hacs.xyz)**.
 
 1. **Add or locate the repository:**
-    - **Home Assistant 2026.11+ (Marketplace):** Open **Settings → Marketplace** and search for **MyHOME** *(if not yet listed in your catalog, select **Add from link** in the upper-right corner, enter `https://github.com/OpenWebNet-HA/MyHOME`, select **Integration** if prompted, and select **Add**)*.
-    - **Home Assistant 2026.8 – 2026.10 (HACS):** Open **HACS → Integrations** and search for **MyHOME** *(or open `⋮` → **Custom repositories** and add `https://github.com/OpenWebNet-HA/MyHOME` with category **Integration**)*.
+    - **One-click (`2026.11+` Marketplace & `2026.8 – 2026.10` HACS):** Click the **Open Marketplace repository on My Home Assistant** badge above to open `OpenWebNet-HA/MyHOME` directly in your Home Assistant Marketplace (prompting to add the custom repository if not yet in your catalog). On **Home Assistant 2026.8 – 2026.10** with HACS installed, the same badge also works automatically via My Home Assistant's `hacs_repository` legacy redirect fallback.
+    - **Home Assistant 2026.11+ (Marketplace — manual):** Open **Settings → Marketplace** and search for **MyHOME** *(if not yet listed in your catalog, select **Add from link** in the upper-right corner, enter `https://github.com/OpenWebNet-HA/MyHOME`, select **Integration** if prompted, and select **Add**)*.
+    - **Home Assistant 2026.8 – 2026.10 (HACS — manual):** Open **HACS → Integrations** and search for **MyHOME** *(or open `⋮` → **Custom repositories** and add `https://github.com/OpenWebNet-HA/MyHOME` with category **Integration**)*.
 2. **Install & restart:**
-    - Open **MyHOME** and select **Install** in Marketplace (or **Download** in HACS). To pick a specific release tag, open `⋮` → **Install another version** (Marketplace) or `⋮` → **Redownload** (HACS).
+    - On the **MyHOME** repository page (or after selecting **MyHOME** from search results), select **Install** in Marketplace (or **Download** in HACS). To pick a specific release tag, open `⋮` → **Install another version** (Marketplace) or `⋮` → **Redownload** (HACS).
     - Restart Home Assistant (**Settings → System → Restart**).
 
 > [!CAUTION]
@@ -151,7 +154,7 @@ Upgrading from the previous stable release? Follow the [upgrade guide](https://o
 | **F453AV** |  | ✅ | ✅ |  | ✅ | ✅ |  |  |  |  | ✅ |  |  |  |  |  |  |  | ✅ |  |  |  |
 | **F454** | ✅ | ✅ | ✅ |  | ✅ | ✅ |  |  |  | ✅ | ✅ | ✅ |  |  |  | ✅ |  | ✅ |  |  | ✅ |  |
 | **F455** |  | ✅ | ✅ |  | ✅ |  |  |  |  |  | ✅ |  |  |  |  |  |  | ✅ | ✅ |  | ✅ |  |
-| **F459** |  | ✅ | ✅ |  | ✅ |  |  |  |  |  | ✅ |  |  |  |  |  |  |  |  |  | ✅ |  |
+| **F459** |  | ✅ | ✅ |  | ✅ |  |  |  |  |  | ✅ |  |  |  |  |  |  | ✅ | ✅ |  | ✅ |  |
 | **F461** |  | ✅ | ✅ |  | ✅ |  |  |  |  |  | ✅ | ✅ |  |  |  |  |  | ✅ | ✅ |  | ✅ |  |
 | **H4684 / H/L4684** |  | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |  |  | ✅ | ✅ |  |  | ✅ |  |  | ✅ |  | ✅ | ✅ |  |  |
 | **H4890 / AM4890** |  | ✅ | ✅ |  | ✅ | ✅ |  |  |  | ✅ |  |  |  | ✅ |  | ✅ | ✅ | ✅ |  |  |  |  |

@@ -7,12 +7,15 @@ from typing import Any
 
 from homeassistant.components.diagnostics import REDACTED, async_redact_data
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_CODE, CONF_PASSWORD
+from homeassistant.const import CONF_CODE, CONF_MAC, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 
+from .binary_sensor import classify_binary_sensor_registry_entry
 from .const import (
     BUS_ROUTING,
     CONF_ADVANCED_SHUTTER,
+    CONF_COVER_TRAVEL_TIMES,
     CONF_DECODER_COMPANION,
     CONF_DECODER_ENTITY,
     CONF_DECODER_SLOTS,
@@ -31,7 +34,14 @@ from .const import (
 )
 from .data import MyHOMERuntimeData, get_runtime_data
 from .device_health import DeviceHealth
+from .discovery import COMPANION_SUFFIXES, Address, parse_unique_id
 from .legacy_yaml import CONF_MIGRATED_YAML_PLATFORMS
+from .where_grammar import (
+    canonical_central_zone,
+    canonical_contact_where,
+    canonical_point_spelling,
+    canonical_thermo_zone,
+)
 
 # A diagnostics download is meant to be attached to a public issue. Secrets go
 # without saying; the rest identifies a household - where the gateway lives on
@@ -212,14 +222,229 @@ def _redact_migrated_yaml_platforms(migrated: Mapping[str, Any]) -> dict[str, An
     return out
 
 
+_SENSOR_SUFFIX_MAP: dict[str, str] = {
+    "total-energy": "energy",
+    "daily-energy": "energy",
+    "monthly-energy": "energy",
+    "output-level": "output-level",
+    "temperature": "temperature",
+    "illuminance": "illuminance",
+    "humidity": "humidity",
+    "energy": "energy",
+    "power": "power",
+}
+_SENSOR_CLASS_WHO: dict[str, str] = {
+    "power": "18",
+    "energy": "18",
+    "temperature": "4",
+    "humidity": "4",
+    "illuminance": "1",
+    "output-level": "4",
+}
+
+
+def _canonical_match_where(
+    platform_name: str,
+    who: str,
+    where: str,
+    *,
+    central: bool = False,
+) -> str:
+    """Return canonical WHERE spelling for matching YAML entries against registry entities."""
+    clean = where.split("-")[-1]
+    if platform_name == "climate":
+        if central or clean.startswith("#0"):
+            return canonical_central_zone(clean)
+        return canonical_thermo_zone(clean) or clean
+    if who == "25":
+        norm = clean.lstrip("0") or "0" if clean.isascii() and clean.isdigit() else clean
+        return canonical_contact_where(norm)
+    if who in ("1", "2"):
+        return canonical_point_spelling(clean)
+    return clean
+
+
+def _redact_cover_travel_times(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    travel_times: Mapping[str, Any],
+    runtime: MyHOMERuntimeData | None,
+) -> dict[str, Any]:
+    """Copy cover_travel_times and replace user-named copied_from entity IDs with bus addresses or REDACTED."""
+    try:
+        ent_reg: er.EntityRegistry | None = er.async_get(hass)
+    except Exception:
+        ent_reg = None
+    entry_data = getattr(entry, "data", None) or {}
+    entry_mac = str(entry_data.get(CONF_MAC) or "")
+    gw_mac = str(getattr(runtime, "mac", "") or entry_mac)
+    out: dict[str, Any] = {}
+    for raw_key, record in travel_times.items():
+        key_str = str(raw_key)
+        safe_key = (
+            _unique_key(out, key_str)
+            if _SAFE_DEVICE_KEY_RE.match(key_str)
+            else _unique_key(out, f"cover_{len(out) + 1}")
+        )
+        if not isinstance(record, Mapping):
+            out[safe_key] = REDACTED if isinstance(record, str) else record
+            continue
+        clean = dict(record)
+        copied_from = clean.get("copied_from")
+        if isinstance(copied_from, str) and copied_from:
+            alias: str = REDACTED
+            if ent_reg is not None:
+                reg_entry = ent_reg.async_get(copied_from)
+                if (
+                    reg_entry is not None
+                    and reg_entry.platform == DOMAIN
+                    and reg_entry.unique_id
+                ):
+                    _who, dev_id = parse_unique_id(reg_entry.unique_id, gw_mac, entry_mac)
+                    addr = Address.from_device_id(dev_id)
+                    if addr.clean_key and _SAFE_DEVICE_KEY_RE.match(addr.clean_key):
+                        alias = f"cover.{addr.clean_key}"
+            clean["copied_from"] = alias
+        out[safe_key] = clean
+    return out
+
+
+def _registry_device_key(
+    reg_entry: er.RegistryEntry,
+    gw_mac: str,
+    entry_mac: str,
+) -> tuple[str, str, str, str] | None:
+    """Return canonical (who, base_addr, iface, klass) for a registered MyHOME entity."""
+    uid = getattr(reg_entry, "unique_id", None)
+    if not isinstance(uid, str) or not uid:
+        return None
+    who: str | None
+    dev_id: str
+    klass = ""
+    if reg_entry.domain == "binary_sensor":
+        classified = classify_binary_sensor_registry_entry(reg_entry, gw_mac, entry_mac)
+        if classified is not None:
+            who, dev_id = classified
+        else:
+            who, dev_id = parse_unique_id(uid, gw_mac, entry_mac)
+    else:
+        who, dev_id = parse_unique_id(uid, gw_mac, entry_mac)
+        if reg_entry.domain == "sensor":
+            if dev_id in _SENSOR_SUFFIX_MAP and who:
+                klass = _SENSOR_SUFFIX_MAP[dev_id]
+                dev_id = who
+                who = _SENSOR_CLASS_WHO.get(klass)
+            else:
+                for suffix, canonical_class in _SENSOR_SUFFIX_MAP.items():
+                    tail = f"-{suffix}"
+                    if dev_id.endswith(tail):
+                        dev_id = dev_id[: -len(tail)]
+                        klass = canonical_class
+                        break
+        elif reg_entry.domain == "button":
+            for suffix in COMPANION_SUFFIXES:
+                if dev_id.endswith(suffix):
+                    dev_id = dev_id[: -len(suffix)]
+                    break
+    key_suffix = "#16" if reg_entry.domain == "media_player" else ""
+    addr = Address.from_device_id(dev_id, key_suffix)
+    raw_who = who or _PLATFORM_DEFAULT_WHO.get(reg_entry.domain, "")
+    clean_where = _canonical_match_where(reg_entry.domain, raw_who, addr.clean_where)
+    return (raw_who, clean_where, addr.interface or "", klass)
+
+
+def _build_platforms_diagnostics(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    runtime: MyHOMERuntimeData | None,
+) -> dict[str, int]:
+    """Count entities/devices per platform from the entity registry and runtime.platforms."""
+    if runtime is None:
+        return {}
+    entry_id = getattr(entry, "entry_id", None)
+    by_domain: dict[str, list[er.RegistryEntry]] = {}
+    if isinstance(entry_id, str) and entry_id:
+        try:
+            ent_reg = er.async_get(hass)
+            for reg_entry in er.async_entries_for_config_entry(ent_reg, entry_id):
+                by_domain.setdefault(reg_entry.domain, []).append(reg_entry)
+        except Exception:
+            by_domain = {}
+
+    entry_data = getattr(entry, "data", None) or {}
+    entry_mac = str(entry_data.get(CONF_MAC) or "")
+    gw_mac = str(getattr(runtime, "mac", "") or entry_mac)
+
+    platforms_info: dict[str, int] = {}
+    platforms_map: Mapping[str, Any] = runtime.platforms
+    all_domains = list(dict.fromkeys([*platforms_map.keys(), *by_domain.keys()]))
+    for platform_name in all_domains:
+        plat_str = str(platform_name)
+        devices: Any = platforms_map.get(platform_name)
+        reg_entries = by_domain.get(plat_str, [])
+        if not reg_entries:
+            if devices is None:
+                platforms_info[plat_str] = 0
+            elif isinstance(devices, Mapping):
+                platforms_info[plat_str] = _count_unique_devices(devices, plat_str)
+            else:
+                platforms_info[plat_str] = len(devices)
+            continue
+        if not devices:
+            platforms_info[plat_str] = len(reg_entries)
+            continue
+        if not isinstance(devices, Mapping):
+            platforms_info[plat_str] = max(len(reg_entries), len(devices))
+            continue
+        reg_addrs: set[tuple[str, str, str]] = set()
+        reg_typed: set[tuple[str, str, str, str]] = set()
+        for reg_entry in reg_entries:
+            parsed = _registry_device_key(reg_entry, gw_mac, entry_mac)
+            if parsed is not None:
+                reg_typed.add(parsed)
+                reg_addrs.add(parsed[:3])
+        extra = 0
+        seen_ids: set[int] = set()
+        seen_identities: set[tuple[str, str, str, str, str]] = set()
+        for raw_key, cfg in devices.items():
+            if id(cfg) in seen_ids:
+                continue
+            seen_ids.add(id(cfg))
+            if isinstance(cfg, Mapping):
+                identity = _device_identity(cfg, platform_name=plat_str, raw_key=str(raw_key))
+                if identity is not None:
+                    if identity in seen_identities:
+                        continue
+                    seen_identities.add(identity)
+                    who, base_addr, iface, klass, _ = identity
+                    if plat_str == "sensor" and not who and klass:
+                        who = _SENSOR_CLASS_WHO.get(klass, "")
+                    clean_base = _canonical_match_where(
+                        plat_str, who, base_addr, central=bool(cfg.get("central"))
+                    )
+                    if plat_str == "sensor" and klass:
+                        if (who, clean_base, iface, klass) in reg_typed:
+                            continue
+                    elif (who, clean_base, iface) in reg_addrs:
+                        continue
+            extra += 1
+        platforms_info[plat_str] = len(reg_entries) + extra
+    return platforms_info
+
+
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> dict[str, Any]:
     """Return diagnostics for a MyHOME config entry."""
+    runtime = get_runtime_data(entry)
     raw_options = dict(entry.options)
     if isinstance(raw_options.get(CONF_MIGRATED_YAML_PLATFORMS), Mapping):
         raw_options[CONF_MIGRATED_YAML_PLATFORMS] = _redact_migrated_yaml_platforms(
             raw_options[CONF_MIGRATED_YAML_PLATFORMS]
+        )
+    if isinstance(raw_options.get(CONF_COVER_TRAVEL_TIMES), Mapping):
+        raw_options[CONF_COVER_TRAVEL_TIMES] = _redact_cover_travel_times(
+            hass, entry, raw_options[CONF_COVER_TRAVEL_TIMES], runtime
         )
     entry_data = async_redact_data(dict(entry.data), TO_REDACT)
     entry_options = async_redact_data(raw_options, TO_REDACT)
@@ -235,7 +460,6 @@ async def async_get_config_entry_diagnostics(
         if str(entry_options.get(src_key) or "").strip():
             entry_options[src_key] = f"Source {slot}"
 
-    runtime = get_runtime_data(entry)
     gateway_handler = runtime.gateway if runtime is not None else None
 
     gw_info: dict[str, Any] = {}
@@ -296,14 +520,7 @@ async def async_get_config_entry_diagnostics(
                 "recent_frames": bus_monitor.get_recent_frames(limit=bus_monitor.maxlen),
             }
 
-    # Configured devices per platform (``runtime.entities`` is never filled)
-    platforms_info: dict[str, int] = {}
-    for platform_name, devices in (runtime.platforms if runtime is not None else {}).items():
-        platforms_info[platform_name] = (
-            _count_unique_devices(devices, str(platform_name))
-            if isinstance(devices, Mapping)
-            else len(devices)
-        )
+    platforms_info = _build_platforms_diagnostics(hass, entry, runtime)
 
     topology_inference = _build_topology_inference_diagnostics(hass, entry, profile_info)
 

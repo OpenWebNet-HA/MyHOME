@@ -14,6 +14,7 @@ from scripts.verify_ha_standards import (
     _resolve_device_info_scan_files,
     check_deprecated_constants,
     check_discovery_flows,
+    check_entity_translations_parity,
     check_future_annotations_and_syntax,
     check_manifest_requirements_rule,
     check_marketplace_manifest_rule,
@@ -38,6 +39,111 @@ def test_config_flow_translation_completeness():
     checker = StandardsChecker()
     check_translation_coverage(checker)
     assert not checker.errors, f"Translation step violations found: {checker.errors}"
+
+
+def test_entity_translations_bundled_locales_parity():
+    """Verify strings.json matches en.json and all bundled locales have 100% key parity."""
+    checker = StandardsChecker()
+    check_entity_translations_parity(checker)
+    assert not checker.errors, f"Entity translation parity violations found: {checker.errors}"
+
+
+def test_entity_translations_parity_catches_regressions(tmp_path: Path):
+    """Verify check_entity_translations_parity catches missing, orphaned, empty, and malformed locales."""
+    cc_dir = tmp_path / "custom_components" / "myhome"
+    tr_dir = cc_dir / "translations"
+    tr_dir.mkdir(parents=True)
+
+    source = {
+        "config": {"step": {"user": {"title": "Connect", "description": "Enter host"}}},
+        "services": {"reload": {"name": "Reload"}},
+    }
+    (cc_dir / "strings.json").write_text(json.dumps(source), encoding="utf-8")
+    (tr_dir / "en.json").write_text(json.dumps(source), encoding="utf-8")
+    (tr_dir / "fr.json").write_text(
+        json.dumps(
+            {
+                "config": {"step": {"user": {"title": "Connexion", "description": "Saisir l'hôte"}}},
+                "services": {"reload": {"name": "Recharger"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tr_dir / "nl.json").write_text(
+        json.dumps(
+            {
+                "config": {"step": {"user": {"title": "Verbinden", "description": "Voer host in"}}},
+                "services": {"reload": {"name": "Herladen"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    # 1. Clean 100% parity passes
+    checker_clean = StandardsChecker()
+    check_entity_translations_parity(checker_clean, custom_components_dir=cc_dir)
+    assert not checker_clean.errors, f"Unexpected errors on complete catalogs: {checker_clean.errors}"
+
+    # 2. Missing key in fr.json, orphaned key in nl.json, malformed JSON in it.json
+    (tr_dir / "fr.json").write_text(
+        json.dumps(
+            {
+                "config": {"step": {"user": {"title": "Connexion", "description": "   "}}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tr_dir / "nl.json").write_text(
+        json.dumps(
+            {
+                "config": {
+                    "step": {
+                        "user": {
+                            "title": "Verbinden",
+                            "description": "Voer host in",
+                            "obsolete_key": "Oud",
+                        }
+                    }
+                },
+                "services": {"reload": {"name": "Herladen"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (tr_dir / "it.json").write_text("{not-json", encoding="utf-8")
+
+    checker_bad = StandardsChecker()
+    check_entity_translations_parity(checker_bad, custom_components_dir=cc_dir)
+    assert any(
+        "fr.json is missing 1 key(s)" in err
+        and "services.reload.name" in err
+        and "manage_translations.py check -v" in err
+        for err in checker_bad.errors
+    ), f"Expected missing-key error for fr.json, got: {checker_bad.errors}"
+    assert any(
+        "fr.json has 1 empty/blank translation value(s)" in err
+        and "config.step.user.description" in err
+        for err in checker_bad.errors
+    ), f"Expected empty-value error for fr.json, got: {checker_bad.errors}"
+    assert any(
+        "nl.json has 1 orphaned key(s)" in err
+        and "config.step.user.obsolete_key" in err
+        and "manage_translations.py check -v" in err
+        for err in checker_bad.errors
+    ), f"Expected orphaned-key error for nl.json, got: {checker_bad.errors}"
+    assert any(
+        "failed parsing it.json" in err for err in checker_bad.errors
+    ), f"Expected malformed JSON error for it.json, got: {checker_bad.errors}"
+    assert all("RULE_IQS_GOLD" in err for err in checker_bad.errors)
+
+    # 3. en.json drift relative to strings.json is caught
+    (tr_dir / "it.json").unlink()
+    (tr_dir / "fr.json").write_text(json.dumps(source), encoding="utf-8")
+    (tr_dir / "nl.json").write_text(json.dumps(source), encoding="utf-8")
+    (tr_dir / "en.json").write_text(json.dumps({"config": {}}), encoding="utf-8")
+    checker_drift = StandardsChecker()
+    check_entity_translations_parity(checker_drift, custom_components_dir=cc_dir)
+    assert any("strings.json and translations/en.json do not match" in err for err in checker_drift.errors)
 
 
 def test_no_deprecated_constants_imported():
@@ -962,3 +1068,20 @@ def test_brand_dir_validation_catches_invalid_dark_and_size_variants(tmp_path):
     assert any("Local brand asset 'logo.png' is 400x64, shortest side must be 128..256 px" in err for err in checker.errors)
     assert any("Dark brand asset 'dark_icon@2x.png' is byte-identical to 'icon@2x.png'" in err for err in checker.errors)
     assert any("Required local brand asset 'dark_icon.png' missing from brand/" in err for err in checker.errors)
+
+
+def test_marketplace_my_redirect_badge_in_readme_and_installation_docs():
+    """Verify README.md and installation.md carry the canonical My Home Assistant Marketplace badge."""
+    repo_root = TESTS_DIR.parent
+    expected_alt_text = "Open your Home Assistant instance and open a repository in the Marketplace."
+    expected_badge_svg = "https://my.home-assistant.io/badges/marketplace_repository.svg"
+    expected_redirect_url = (
+        "https://my.home-assistant.io/redirect/marketplace_repository/"
+        "?owner=OpenWebNet-HA&repository=MyHOME&category=integration"
+    )
+    expected_markdown_badge = f"[![{expected_alt_text}]({expected_badge_svg})]({expected_redirect_url})"
+    for rel_doc in ("README.md", "docs/getting-started/installation.md"):
+        content = (repo_root / rel_doc).read_text(encoding="utf-8")
+        assert expected_markdown_badge in content, (
+            f"{rel_doc} missing canonical My Home Assistant marketplace_repository markdown badge wrapper"
+        )

@@ -14,17 +14,19 @@ This guide covers installing and updating the **MyHOME** integration in Home Ass
 
 ## Option 1: Home Assistant Marketplace / HACS (Recommended for Stable Releases)
 
-From **Home Assistant 2026.11** on, HACS is integrated directly into Home Assistant Core as the **Home Assistant Marketplace** (**Settings → Marketplace**); existing HACS installations and custom repositories migrate automatically on upgrade. On earlier versions (**Home Assistant 2026.8 – 2026.10**), the same steps apply in **[HACS](https://hacs.xyz)**.
+[![Open your Home Assistant instance and open a repository in the Marketplace.](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=OpenWebNet-HA&repository=MyHOME&category=integration)
+
+From **Home Assistant 2026.11** on, HACS is integrated directly into Home Assistant Core as the **Home Assistant Marketplace** (**Settings → Marketplace**); existing HACS installations and custom repositories migrate automatically on upgrade. On earlier versions (**Home Assistant 2026.8 – 2026.10**), the same steps apply in **[HACS](https://hacs.xyz)** — and the one-click badge above also works with HACS via My Home Assistant's `hacs_repository` legacy redirect fallback.
 
 - **Home Assistant 2026.11+ (Marketplace):**
-    1. Open **Settings → Marketplace** in Home Assistant *(accept the community content warning if opening it for the first time)*.
-    2. Search for **MyHOME** in the catalog, or if adding manually before catalog publication, select **Add from link** in the upper-right corner, enter `https://github.com/OpenWebNet-HA/MyHOME`, and select **Add** *(if prompted for **Type**, select **Integration** and select **Add** again)*.
-    3. Select **MyHOME** to open its page, then select **Install** *(to pick a specific release, open `⋮` → **Install another version**)*.
+    1. Click the **Open Marketplace repository on My Home Assistant** badge above to jump directly to the **MyHOME** repository page in your instance *(accept the community content warning if opening Marketplace for the first time, and confirm adding the custom repository if prompted)*, **or** open **Settings → Marketplace** manually.
+    2. *(Manual path only)* Search for **MyHOME** in the catalog and select it to open its page — or, if adding before catalog publication, select **Add from link** in the upper-right corner, enter `https://github.com/OpenWebNet-HA/MyHOME`, select **Add** *(if prompted for **Type**, select **Integration** and select **Add** again)*, and open **MyHOME**.
+    3. On the **MyHOME** repository page, select **Install** *(to pick a specific release, open `⋮` → **Install another version**)*.
     4. Restart Home Assistant when prompted.
 - **Home Assistant 2026.8 – 2026.10 (HACS):**
-    1. Open **HACS** in Home Assistant.
-    2. Search for **MyHOME**, or click the three dots (`⋮`) in the top right → **Custom repositories** and add `https://github.com/OpenWebNet-HA/MyHOME` with category **Integration**.
-    3. Open **MyHOME**, select the desired release version, and click **Download**.
+    1. Click the **Open Marketplace repository on My Home Assistant** badge above to jump directly to `OpenWebNet-HA/MyHOME` in HACS *(via My Home Assistant's `hacs_repository` legacy redirect fallback)*, **or** open **HACS** manually.
+    2. *(Manual path only)* Search for **MyHOME** and open it, or click the three dots (`⋮`) in the top right → **Custom repositories**, add `https://github.com/OpenWebNet-HA/MyHOME` with category **Integration**, and open **MyHOME**.
+    3. On the **MyHOME** repository page, select the desired release version and click **Download**.
     4. Restart Home Assistant when prompted.
 
 > [!NOTE]
@@ -41,7 +43,7 @@ If you have the **Terminal & SSH** add-on installed (or connect via SSH), paste 
 
 ```bash
 # Set target release version (check https://github.com/OpenWebNet-HA/MyHOME/releases)
-TAG="2.0.1"
+TAG="2.0.2"
 
 # Download, extract cleanly, verify, and restart Home Assistant
 mkdir -p /config/custom_components && cd /config/custom_components && \

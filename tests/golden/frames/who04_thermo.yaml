@@ -1278,3 +1278,20 @@
   mcp_valid: true
   mcp_notes: "Thermoregulation: 4-zone central unit #0#1 behind an F454 2.0.51: WHAT 1103 ('Heating program x (x=1...3)' is 11xx in the WHO 4 PDF WHAT table, p. 5) sent by hand to the central unit while it was off; zones 1, 3 and 4 reported *4*1*1##, *4*1*3##, *4*1*4## and setpoint 0140 within 3 s, and the central unit reported this same frame 3.3 s after the send, followed by WHAT 21, 31 and 22 (MyHOME#994, tests/fixtures/traces/issue_994/myhome_trace_F454_all_2026-11-22T21-40-54.json, frames 55-69; the gateway's ACK or NACK is not in the capture)"
   roundtrip: true
+
+- id: thermo.capture.req.actuators.all_0_0
+  frame: "*#4*0#0*20##"
+  direction: dimension_request
+  who: 4
+  what: null
+  where: "0"
+  where_param: ["0"]
+  dimension: 20
+  source: community-plant-capture
+  mcp_valid: true
+  mcp_notes: "Thermoregulation: General all-zones/all-actuators Dimension 20 status request (WHERE=0#0); sent to BTicino F459 FW 2.1.5 and answered within 823 ms on the command session with 8 zone-actuator status frames (*#4*52#1*20*0##, *#4*34#1*20*0##, *#4*45#1*20*0##, *#4*35#1*20*0##, *#4*29#1*20*0##, *#4*39#1*20*0##, *#4*56#1*20*0##, *#4*46#1*20*0##) then ACK, followed by additional zone-actuator replies on the event monitor (MyHOME#466, tests/fixtures/traces/f459_full_debug_log_2026-11-26/F459_full_debug_log_2026-11-26T15-46-40.log, lines 1295-1344)"
+  roundtrip: true
+  builder:
+    class: OWNHeatingCommand
+    method: actuators_status
+    args: ["0#0"]

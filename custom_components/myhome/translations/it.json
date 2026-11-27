@@ -76,7 +76,10 @@
       "password_retry": "Il gateway non ha accettato la password, aspetta 60s prima di riprovare.",
       "password_error": "Password non valida",
       "primary_gateway_required": "Per i ruoli secondario o di riserva su un bus condiviso è necessario selezionare un gateway primario.",
-      "primary_gateway_not_found": "Il gateway primario selezionato non è stato trovato."
+      "primary_gateway_not_found": "Il gateway primario selezionato non è stato trovato.",
+      "overlapping_delegated_whos": "Uno o più sottosistemi WHO selezionati sono già delegati a un altro gateway secondario su questo bus.",
+      "who_not_supported_by_gateway": "Uno o più sottosistemi WHO selezionati non sono supportati dal profilo di questo modello di gateway.",
+      "multiple_standbys": "Questo gateway primario ha già un gateway di riserva configurato. È consentito un solo gateway di riserva per ciascun primario."
     },
     "abort": {
       "discovery_timeout": "Impossibile trovare il gateway MyHome",
@@ -331,15 +334,19 @@
           "decoder_1_entity": "Decoder 1 — entità lettore multimediale (ad es. media_player.cambridge_audio_cxn)",
           "decoder_1_source": "Decoder 1 — numero dell'ingresso sorgente BTicino (1–4)",
           "decoder_1_pre_gain": "Decoder 1 — correzione pre-guadagno % (0 = Cambridge con Pre-Amp OFF, 20 = squeezelite)",
+          "decoder_1_companion": "Decoder 1 — compagno di streaming (opzionale; lascia vuoto per il rilevamento automatico)",
           "decoder_2_entity": "Decoder 2 — entità lettore multimediale",
           "decoder_2_source": "Decoder 2 — numero dell'ingresso sorgente BTicino (1–4)",
           "decoder_2_pre_gain": "Decoder 2 — correzione pre-guadagno %",
+          "decoder_2_companion": "Decoder 2 — compagno di streaming (opzionale; lascia vuoto per il rilevamento automatico)",
           "decoder_3_entity": "Decoder 3 — entità lettore multimediale",
           "decoder_3_source": "Decoder 3 — numero dell'ingresso sorgente BTicino (1–4)",
           "decoder_3_pre_gain": "Decoder 3 — correzione pre-guadagno %",
+          "decoder_3_companion": "Decoder 3 — compagno di streaming (opzionale; lascia vuoto per il rilevamento automatico)",
           "decoder_4_entity": "Decoder 4 — entità lettore multimediale",
           "decoder_4_source": "Decoder 4 — numero dell'ingresso sorgente BTicino (1–4)",
           "decoder_4_pre_gain": "Decoder 4 — correzione pre-guadagno %",
+          "decoder_4_companion": "Decoder 4 — compagno di streaming (opzionale; lascia vuoto per il rilevamento automatico)",
           "default_source_env_1": "Sorgente predefinita per l'ambiente 1 — usata quando una zona di quella stanza viene accesa da Home Assistant",
           "default_source_env_2": "Sorgente predefinita per l'ambiente 2 — usata quando una zona di quella stanza viene accesa da Home Assistant",
           "default_source_env_3": "Sorgente predefinita per l'ambiente 3 — usata quando una zona di quella stanza viene accesa da Home Assistant",
@@ -353,13 +360,17 @@
           "gateway_role": "Ruolo del gateway",
           "primary_gateway": "Gateway primario",
           "delegated_whos": "Sottosistemi delegati",
+          "auto_join_streaming": "Unisci automaticamente ai gruppi di streaming",
           "ignored_addresses": "Indirizzi ignorati",
+          "standalone_zones": "Termostati autonomi",
           "tuner_pictures": "Immagini dei sintonizzatori"
         },
         "data_description": {
           "decoder_1_pre_gain": "Calibra in base all'hardware, non a occhio: se l'uscita di linea di questo decoder alimenta un modulo BTicino Ingresso RCA (L/N/NT4560) o Controllo Stereo (L4561), aumenta il Pre-Gain durante la riproduzione finché il led di segnale di quel modulo lampeggia arancione — non fisso verde (segnale troppo basso) né fisso rosso/arancione (distorsione). Collega sempre l'uscita di linea fissa ('OUT') del decoder, mai un'uscita cuffia/AUX dipendente dal volume: un secondo stadio di guadagno incontrollato in quel punto causa esattamente la distorsione contro cui mette in guardia la guida guasti BTicino.",
           "delegated_whos": "Solo per il ruolo secondario: sottosistemi di cui questo gateway rileva i nuovi dispositivi. I dispositivi che il primario ha già restano sul primario.",
+          "auto_join_streaming": "Unisce automaticamente a un gruppo di streaming attivo quando si accende una stanza o si regola il volume da un comando fisico a parete.",
           "ignored_addresses": "Ignora permanentemente gli indirizzi elencati (es. 1/74, 1/74#4#01): salta il rilevamento, le entità e il tracciamento guasti. Separa le voci con a capo o virgole.",
+          "standalone_zones": "Zone termostato (1-99, es. 2, 7) non gestite dalla centrale anche se nell'impianto ne è presente una: il loro setpoint e la modalità vengono scritti direttamente sul termostato (`*#4*Z*#14*...`) invece che tramite la centrale (`*#4*#Z*#14*...`). Lascia vuoto per lasciare che l'integrazione lo rilevi dal bus. Equivale a `standalone: true` in myhome.yaml.",
           "tuner_pictures": "Una voce MHz=URL per riga (es. 96.2=/local/radio/one.png): l'immagine mostrata finché un sintonizzatore è su quella frequenza. Immagini tue; nessuna è inclusa.",
           "command_worker_count": "Consigliato per il {model}: {session_default}. Accetta al massimo {session_limit} sessione/i di comando, e ognuna, insieme alla sessione eventi, occupa una delle sue poche connessioni, necessarie anche all'app Legrand/BTicino e ad altri client. Aumenta solo se i comandi si accodano."
         }
@@ -369,17 +380,24 @@
       "invalid_ip": "Indirizzo IP non valido",
       "invalid_worker_count": "I workers devono essere compresi tra 1 e 10",
       "worker_count_above_gateway_limit": "Il {model} accetta al massimo {session_limit} sessione/i di comando contemporanee; oltre smette di rispondere.",
+      "invalid_standalone_zone": "I termostati autonomi devono essere numeri di zona da 1 a 99, separati da virgole (es. 2, 7).",
       "invalid_config_path": "Il file di configurazione non esiste in questo percorso",
       "invalid_password": "Password non valida",
       "password_error": "Errore password",
       "not_a_media_player": "Deve essere un'entità media_player (ad es. media_player.cambridge_audio_cxn)",
+      "companion_same_as_decoder": "Il compagno di streaming deve essere un'entità diversa dal decoder stesso.",
+      "companion_without_decoder": "È possibile configurare un compagno di streaming solo per uno slot che ha un'entità decoder.",
       "mass_entity_not_allowed": "Protezione dai loop infiniti: non selezionare cloni di Music Assistant! Seleziona invece l'entità hardware originale.",
+      "myhome_entity_not_allowed": "Non selezionare le zone audio MyHOME come decoder! Seleziona invece il lettore di streaming fisico sottostante.",
       "primary_gateway_required": "Per i ruoli secondario o di riserva su un bus condiviso è necessario selezionare un gateway primario.",
       "invalid_primary_gateway": "Questo gateway non può essere il proprio gateway primario.",
       "primary_gateway_not_found": "Il gateway primario selezionato non è stato trovato.",
       "circular_gateway_reference": "Riferimento circolare: il gateway primario selezionato punta già a questo gateway.",
       "primary_gateway_not_shared_primary": "Il gateway selezionato deve prima essere configurato con topologia del bus Condiviso e ruolo Primario.",
       "gateway_has_dependents": "Altri gateway usano questo gateway come primario. Prima falli puntare a un altro primario (o rendili autonomi).",
+      "overlapping_delegated_whos": "Uno o più sottosistemi WHO selezionati sono già delegati a un altro gateway secondario su questo bus.",
+      "who_not_supported_by_gateway": "Uno o più sottosistemi WHO selezionati non sono supportati dal profilo di questo modello di gateway.",
+      "multiple_standbys": "Questo gateway primario ha già un gateway di riserva configurato. È consentito un solo gateway di riserva per ciascun primario.",
       "secondary_requires_shared_topology": "I ruoli secondario e di riserva richiedono che la topologia del bus sia impostata su Condiviso.",
       "multiple_shared_primaries": "Un altro gateway è già configurato come gateway primario per questo bus condiviso. Selezionare Secondario o Riserva attiva.",
       "duplicate_decoder_source": "Ciascun decoder deve essere collegato a un ingresso sorgente della matrice diverso.",
@@ -399,7 +417,7 @@
     },
     "send_message": {
       "name": "Send message",
-      "description": "Send an arbitrary (but valid) OpenWebNet message to the gateway.",
+      "description": "Invia un messaggio OpenWebNet arbitrario (ma valido) al gateway (solo amministratori).",
       "fields": {
         "gateway": {
           "name": "Gateway",
@@ -555,6 +573,24 @@
       "name": "Reimposta il tempo di corsa della tapparella",
       "description": "Dimentica i tempi di corsa misurati o impostati manualmente e torna al travel_time di myhome.yaml o al valore predefinito di 25 s."
     },
+    "send_scenario_plus_command": {
+      "name": "Invia comando scenario plus",
+      "description": "Invia un comando scenario plus WHO 25 (on, off, increase, decrease, stop) a un oggetto scenario plus indirizzato.",
+      "fields": {
+        "gateway": {
+          "name": "Gateway",
+          "description": "Indirizzo MAC del gateway (opzionale; usa il gateway primario per impostazione predefinita)."
+        },
+        "where": {
+          "name": "Indirizzo WHERE",
+          "description": "L'indirizzo dell'oggetto scenario plus sul bus."
+        },
+        "action": {
+          "name": "Azione",
+          "description": "L'azione scenario plus da eseguire (on, off, increase, decrease o stop; il passo/velocità per increase/decrease è fisso da protocollo)."
+        }
+      }
+    },
     "cancel_cover_request": {
       "name": "Annulla richiesta cancello o porta garage",
       "description": "Annulla una richiesta di approvazione in sospeso o un preavviso in corso di un cancello o porta garage a impulso. L'annullamento è sempre sicuro; non si muove nulla."
@@ -565,6 +601,22 @@
     }
   },
   "issues": {
+    "invalid_decoder": {
+      "title": "Il decoder {decoder} è un'entità {platform} e viene ignorato",
+      "description": "Lo slot decoder punta a `{decoder}`, che appartiene all'integrazione `{platform}`. Un decoder deve essere lo streamer fisico collegato alla matrice; una zona MyHOME o un lettore Music Assistant reinstraderebbe l'audio su sé stesso, quindi MyHOME esclude questo slot.\n\nApri Configura sul gateway e scegli l'entità hardware reale (Squeezelite, WiiM, Cambridge Audio, Cast, ...)."
+    },
+    "ambiguous_companion": {
+      "title": "Trovati più compagni di streaming per {decoder}",
+      "description": "`{decoder}` richiede un renderer DLNA / UPnP / Cast dello stesso dispositivo per accettare gli URL di streaming, ma sono stati trovati più dispositivi corrispondenti: {candidates}.\n\nMyHOME non tira a indovinare. Apri Configura sul gateway e imposta il *compagno di streaming* di questo slot decoder sull'entità corretta."
+    },
+    "multiple_audio_gateways": {
+      "title": "Più di un gateway gestisce le zone audio",
+      "description": "Le zone audio sono configurate su più gateway ({gateways}). L'indirizzamento audio non include ancora l'interfaccia bus, quindi le zone di due matrici audio possono entrare in conflitto sullo stesso numero di stanza, entità e ambiente (issue #426).\n\nMantieni la matrice audio su un solo gateway finché il problema non sarà risolto."
+    },
+    "unresponsive_zone": {
+      "title": "La zona di riscaldamento {device} non risponde più ({gateway})",
+      "description": "La zona di riscaldamento {device} su {gateway} non ha risposto alla richiesta di stato per due riavvii consecutivi, quindi MyHOME ha smesso di interrogarla all'avvio (ogni richiesta senza risposta costa diversi secondi alla coda comandi del gateway). Se la zona non esiste più, rimuovi il relativo dispositivo o entità in Home Assistant. Se esiste ancora, questo avviso si risolve automaticamente appena la zona invia un frame e verrà nuovamente interrogata dopo una settimana."
+    },
     "unconfigured_timezone": {
       "title": "Unconfigured timezone on MyHOME gateway ({gateway})",
       "description": "The MyHOME gateway {gateway} is reporting an unconfigured timezone (999). This will cause incorrect timestamps in the bus monitor and potentially alarm logs.\\n\\nPlease log into the gateway web UI or MyHOME Suite and configure a valid timezone, then restart the gateway."
@@ -574,7 +626,22 @@
       "description": "Il gateway ha segnalato un codice del tipo di dispositivo hardware ({code}) sconosciuto all'integrazione MyHOME. Fai clic su 'Ulteriori informazioni' per aprire una segnalazione su GitHub e allegare una traccia diagnostica per consentirci di aggiungere il supporto per questo modello."
     },
     "incompatible_decoder_platform": {
-      "title": "Il decoder {decoder} usa un'integrazione non supportata ({platform})"
+      "title": "Il decoder {decoder} usa un'integrazione non supportata ({platform})",
+      "fix_flow": {
+        "step": {
+          "confirm_companion": {
+            "title": "Usa compagno di streaming DLNA",
+            "description": "Il decoder configurato `{decoder}` ({platform}) non supporta gli URL di streaming HTTP diretti. Tuttavia, per questo dispositivo è stato rilevato un DLNA Digital Media Renderer compatibile: `{companion}`.\n\nFai clic su **Invia** per aggiornare automaticamente la configurazione del decoder MyHOME in modo da usare `{companion}`."
+          },
+          "missing_companion": {
+            "title": "Renderer DLNA non trovato",
+            "description": "Il decoder configurato `{decoder}` ({platform}) richiede l'integrazione DLNA Digital Media Renderer per accettare gli URL di streaming da Music Assistant.\n\nHome Assistant non ha ancora configurato DLNA per questo dispositivo. Vai su **Impostazioni → Dispositivi e servizi**, aggiungi l'integrazione **DLNA Digital Media Renderer** per il tuo dispositivo e fai clic su **Invia** per completare."
+          }
+        },
+        "abort": {
+          "companion_still_missing": "Non è stata trovata alcuna entità DLNA Digital Media Renderer per questo dispositivo. Configura DLNA e riprova."
+        }
+      }
     },
     "gateway_authentication_failed": {
       "title": "Autenticazione non riuscita sul gateway MyHOME {gateway}",
@@ -654,6 +721,21 @@
     "auto_standalone_zone": {
       "message": "{name} è un termostato autonomo: la centrale non ha un programma per esso"
     },
+    "setpoint_not_taken": {
+      "message": "{name} non ha accettato il setpoint di {temperature} °C, né tramite la centrale né direttamente: segnala ancora {reported} °C"
+    },
+    "setpoint_refused": {
+      "message": "{name}: il gateway ha rifiutato la scrittura del setpoint ({frame})"
+    },
+    "zone_no_setpoint_known": {
+      "message": "{name} non ha ancora segnalato alcun setpoint: imposta prima una temperatura"
+    },
+    "zone_command_refused": {
+      "message": "{name}: il gateway ha rifiutato {frame}"
+    },
+    "setpoint_not_taken_via_central": {
+      "message": "{name} non ha accettato il setpoint di {temperature} °C inviato tramite la centrale ({frame}): segnala ancora {reported} °C. Se si tratta di un termostato autonomo, elenca la sua zona in \"Termostati autonomi\" nelle opzioni del gateway (oppure imposta `standalone: true` in myhome.yaml)"
+    },
     "zone_heat_in_conditioning_season": {
       "message": "{name} segue la centrale, che è nella stagione di condizionamento: cambia la stagione sulla centrale"
     },
@@ -705,6 +787,12 @@
     "cover_busy_calibrating": {
       "message": "{entity_id} è in fase di calibrazione; riprova quando sarà terminata"
     },
+    "cover_position_unknown": {
+      "message": "{name}: la posizione è sconosciuta finché la tapparella non ha eseguito almeno una volta una corsa completa di apertura o chiusura"
+    },
+    "cover_tilt_position_unknown": {
+      "message": "{name}: l'inclinazione delle lamelle è sconosciuta finché le lamelle non sono state orientate almeno una volta in apertura o chiusura completa"
+    },
     "cover_busy_moving": {
       "message": "{name} è in movimento; fermala prima di orientare le lamelle"
     },
@@ -744,6 +832,15 @@
     "decoder_wake_timeout": {
       "message": "{entity_id}: il decoder {decoder} non si è riattivato entro 5 secondi"
     },
+    "unknown_station": {
+      "message": "{entity_id}: stazione sconosciuta \"{station}\""
+    },
+    "frequency_out_of_range": {
+      "message": "{entity_id}: {frequency} MHz è fuori dalla banda FM"
+    },
+    "invalid_tuner_media": {
+      "message": "{entity_id}: \"{media_id}\" non è né una stazione né una frequenza"
+    },
     "seek_not_supported": {
       "message": "{entity_id}: la ricerca di frequenza è supportata solo sulle entità sintonizzatore"
     },
@@ -756,8 +853,29 @@
     "volume_not_finite": {
       "message": "{entity_id}: il livello del volume {volume} non è un numero finito valido"
     },
+    "scenario_plus_gateway_not_found": {
+      "message": "Gateway \"{gateway}\" non trovato per il comando scenario plus"
+    },
+    "scenario_plus_no_gateway": {
+      "message": "Nessun gateway MyHOME attivo trovato"
+    },
+    "scenario_plus_missing_where": {
+      "message": "Nessun indirizzo WHERE/oggetto specificato per il comando scenario plus"
+    },
+    "scenario_plus_unknown_action": {
+      "message": "Azione scenario plus sconosciuta \"{action}\""
+    },
+    "scenario_plus_command_invalid": {
+      "message": "Impossibile costruire il comando scenario plus per l'indirizzo WHERE \"{where}\" e l'azione \"{action}\""
+    },
     "thermo_switch_no_timer": {
       "message": "{name} è un attuatore di termoregolazione WHO=4 e non supporta i timer hardware su bus WHO=1; utilizza invece un ritardo nelle automazioni di Home Assistant."
+    },
+    "thermo_switch_interface_write_refused": {
+      "message": "{name} si trova dietro l'interfaccia bus {interface} e questo gateway non instrada il WHO 4 attraverso di essa: scrivere `{where}` azionerebbe un attuatore del bus locale. Configura invece un comando di accensione e uno di spegnimento per questo interruttore."
+    },
+    "thermo_switch_write_refused": {
+      "message": "{name}: il gateway ha rifiutato {frames}"
     },
     "invert_switch_no_timer": {
       "message": "{name} è un interruttore di configurazione di sensore binario e non supporta i timer hardware su bus WHO=1."

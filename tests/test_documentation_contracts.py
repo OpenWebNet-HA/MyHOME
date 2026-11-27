@@ -974,16 +974,17 @@ def test_gate3_verify_ha_standards_catches_regressions(tmp_path: Path) -> None:
     verify_ha.check_service_and_icon_parity(checker, root_dir=sandbox)
     assert checker.errors == []
 
-    # 1. Inject schema=None into services.py
+    # 1. Inject schema=None into services.py (both regular and admin service registrations)
     svc_py = sandbox / "custom_components" / "myhome" / "services.py"
     orig_svc_py = svc_py.read_text(encoding="utf-8")
-    svc_py.write_text(
-        orig_svc_py.replace("schema=as_any(SYNC_TIME_SCHEMA)", "schema=None", 1),
-        encoding="utf-8",
-    )
-    checker = verify_ha.StandardsChecker()
-    verify_ha.check_service_and_icon_parity(checker, root_dir=sandbox)
-    assert any("non-None schema" in e for e in checker.errors)
+    for schema_expr in ("schema=as_any(SYNC_TIME_SCHEMA)", "schema=as_any(SEND_MESSAGE_SCHEMA)"):
+        svc_py.write_text(
+            orig_svc_py.replace(schema_expr, "schema=None", 1),
+            encoding="utf-8",
+        )
+        checker = verify_ha.StandardsChecker()
+        verify_ha.check_service_and_icon_parity(checker, root_dir=sandbox)
+        assert any("non-None schema" in e for e in checker.errors), schema_expr
     svc_py.write_text(orig_svc_py, encoding="utf-8")
 
     # 2. Remove an entity translation_key from icons.json

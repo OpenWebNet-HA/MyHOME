@@ -76,7 +76,10 @@
       "password_retry": "Le serveur refuse la négociation, attendez 60s avant de réessayer.",
       "password_error": "Mot de passe invalide",
       "primary_gateway_required": "Une passerelle principale doit être sélectionnée pour les rôles secondaire ou de secours sur un bus partagé.",
-      "primary_gateway_not_found": "La passerelle principale sélectionnée est introuvable."
+      "primary_gateway_not_found": "La passerelle principale sélectionnée est introuvable.",
+      "overlapping_delegated_whos": "Un ou plusieurs des sous-systèmes WHO sélectionnés sont déjà délégués à une autre passerelle secondaire sur ce bus.",
+      "who_not_supported_by_gateway": "Un ou plusieurs des sous-systèmes WHO sélectionnés ne sont pas pris en charge par le profil de ce modèle de passerelle.",
+      "multiple_standbys": "Cette passerelle principale dispose déjà d'une passerelle de secours configurée. Une seule passerelle de secours est autorisée par passerelle principale."
     },
     "abort": {
       "discovery_timeout": "Impossible de découvrir des serveurs MyHome",
@@ -331,15 +334,19 @@
           "decoder_1_entity": "Décodeur 1 — entité lecteur multimédia (par ex. media_player.cambridge_audio_cxn)",
           "decoder_1_source": "Décodeur 1 — numéro d'entrée de source BTicino (1–4)",
           "decoder_1_pre_gain": "Décodeur 1 — correction de pré-gain % (0 = Cambridge avec Pre-Amp OFF, 20 = squeezelite)",
+          "decoder_1_companion": "Décodeur 1 — compagnon de streaming (optionnel ; laisser vide pour la détection automatique)",
           "decoder_2_entity": "Décodeur 2 — entité lecteur multimédia",
           "decoder_2_source": "Décodeur 2 — numéro d'entrée de source BTicino (1–4)",
           "decoder_2_pre_gain": "Décodeur 2 — correction de pré-gain %",
+          "decoder_2_companion": "Décodeur 2 — compagnon de streaming (optionnel ; laisser vide pour la détection automatique)",
           "decoder_3_entity": "Décodeur 3 — entité lecteur multimédia",
           "decoder_3_source": "Décodeur 3 — numéro d'entrée de source BTicino (1–4)",
           "decoder_3_pre_gain": "Décodeur 3 — correction de pré-gain %",
+          "decoder_3_companion": "Décodeur 3 — compagnon de streaming (optionnel ; laisser vide pour la détection automatique)",
           "decoder_4_entity": "Décodeur 4 — entité lecteur multimédia",
           "decoder_4_source": "Décodeur 4 — numéro d'entrée de source BTicino (1–4)",
           "decoder_4_pre_gain": "Décodeur 4 — correction de pré-gain %",
+          "decoder_4_companion": "Décodeur 4 — compagnon de streaming (optionnel ; laisser vide pour la détection automatique)",
           "default_source_env_1": "Source par défaut pour l'environnement 1 — utilisée lorsqu'une zone de cette pièce est allumée depuis Home Assistant",
           "default_source_env_2": "Source par défaut pour l'environnement 2 — utilisée lorsqu'une zone de cette pièce est allumée depuis Home Assistant",
           "default_source_env_3": "Source par défaut pour l'environnement 3 — utilisée lorsqu'une zone de cette pièce est allumée depuis Home Assistant",
@@ -353,13 +360,17 @@
           "gateway_role": "Rôle de la passerelle",
           "primary_gateway": "Passerelle principale",
           "delegated_whos": "Sous-systèmes délégués",
+          "auto_join_streaming": "Rejoindre automatiquement les groupes de streaming",
           "ignored_addresses": "Adresses ignorées",
+          "standalone_zones": "Thermostats autonomes",
           "tuner_pictures": "Images des tuners"
         },
         "data_description": {
           "decoder_1_pre_gain": "Calibrez à partir du matériel, pas au jugé : si la sortie ligne de ce décodeur alimente un module BTicino Ingresso RCA (L/N/NT4560) ou Controllo Stereo (L4561), augmentez le Pre-Gain pendant la lecture jusqu'à ce que la led de signal de ce module clignote en orange — ni fixe vert (signal trop faible) ni fixe rouge/orange (écrêtage). Câblez toujours la sortie ligne fixe (« OUT ») du décodeur, jamais une sortie casque/AUX dépendante du volume : un second étage de gain incontrôlé à cet endroit provoque exactement la distorsion contre laquelle le guide de dépannage BTicino met en garde.",
           "delegated_whos": "Rôle secondaire uniquement : sous-systèmes dont cette passerelle découvre les nouveaux appareils. Les appareils que la principale possède déjà restent sur la principale.",
+          "auto_join_streaming": "Rejoint automatiquement un groupe de streaming actif lors de l'allumage d'une pièce ou du réglage du volume depuis une commande murale physique.",
           "ignored_addresses": "Ignore définitivement les adresses indiquées (ex. 1/74, 1/74#4#01) : ignore la découverte, supprime les entités et désactive le suivi des pannes. Séparez les entrées par des retours à la ligne ou des virgules.",
+          "standalone_zones": "Zones de thermostat (1-99, ex. 2, 7) qui ne sont pas gérées par la centrale bien que l'installation en possède une : leur consigne et leur mode sont écrits directement sur le thermostat (`*#4*Z*#14*...`) au lieu de passer par la centrale (`*#4*#Z*#14*...`). Laissez vide pour que l'intégration le détecte depuis le bus. Équivalent à `standalone: true` dans myhome.yaml.",
           "tuner_pictures": "Une entrée MHz=URL par ligne (ex. 96.2=/local/radio/one.png) : l'image affichée tant qu'un tuner est sur cette fréquence. Vos propres images ; aucune n'est fournie.",
           "command_worker_count": "Recommandé pour la {model} : {session_default}. Elle accepte au plus {session_limit} session(s) de commande, et chacune, avec la session d'événements, occupe l'une de ses rares connexions, dont l'application Legrand/BTicino et d'autres clients ont aussi besoin. N'augmentez que si les commandes s'accumulent."
         }
@@ -369,17 +380,24 @@
       "invalid_ip": "Adresse IP invalide",
       "invalid_worker_count": "Workers must be between 1 and 10",
       "worker_count_above_gateway_limit": "Le {model} accepte au maximum {session_limit} session(s) de commande simultanée(s) ; au-delà, il cesse de répondre.",
+      "invalid_standalone_zone": "Les thermostats autonomes doivent être des numéros de zone compris entre 1 et 99, séparés par des virgules (ex. 2, 7).",
       "invalid_config_path": "Fichier de configuration inexistant à ce chemin",
       "invalid_password": "Mot de passe invalide",
       "password_error": "Mot de passe invalide",
       "not_a_media_player": "Doit être une entité media_player (par ex. media_player.cambridge_audio_cxn)",
+      "companion_same_as_decoder": "Le compagnon de streaming doit être une entité différente du décodeur lui-même.",
+      "companion_without_decoder": "Un compagnon de streaming ne peut être configuré que pour un emplacement disposant d'une entité décodeur.",
       "mass_entity_not_allowed": "Protection contre les boucles infinies : ne sélectionnez pas de clones Music Assistant ! Sélectionnez plutôt l'entité matérielle d'origine.",
+      "myhome_entity_not_allowed": "Ne sélectionnez pas de zones audio MyHOME comme décodeurs ! Sélectionnez plutôt le lecteur de streaming physique sous-jacent.",
       "primary_gateway_required": "Une passerelle principale doit être sélectionnée pour les rôles secondaire ou de secours sur un bus partagé.",
       "invalid_primary_gateway": "Cette passerelle ne peut pas être sa propre passerelle principale.",
       "primary_gateway_not_found": "La passerelle principale sélectionnée est introuvable.",
       "circular_gateway_reference": "Référence circulaire : la passerelle principale sélectionnée pointe déjà vers cette passerelle.",
       "primary_gateway_not_shared_primary": "La passerelle sélectionnée doit d'abord être configurée avec la topologie de bus Partagé et le rôle Principale.",
       "gateway_has_dependents": "D'autres passerelles utilisent cette passerelle comme principale. Faites-les d'abord pointer vers une autre principale (ou rendez-les autonomes).",
+      "overlapping_delegated_whos": "Un ou plusieurs des sous-systèmes WHO sélectionnés sont déjà délégués à une autre passerelle secondaire sur ce bus.",
+      "who_not_supported_by_gateway": "Un ou plusieurs des sous-systèmes WHO sélectionnés ne sont pas pris en charge par le profil de ce modèle de passerelle.",
+      "multiple_standbys": "Cette passerelle principale dispose déjà d'une passerelle de secours configurée. Une seule passerelle de secours est autorisée par passerelle principale.",
       "secondary_requires_shared_topology": "Les rôles secondaire et veille active nécessitent que la topologie du bus soit définie sur Partagé.",
       "multiple_shared_primaries": "Une autre passerelle est déjà configurée comme passerelle principale pour ce bus partagé. Sélectionnez Secondaire ou Veille active.",
       "duplicate_decoder_source": "Chaque décodeur doit être connecté à une entrée source de matrice différente.",
@@ -399,7 +417,7 @@
     },
     "send_message": {
       "name": "Envoyer un message",
-      "description": "Envoyer un message OpenWebNet arbitraire (mais valide) au serveur.",
+      "description": "Envoyer un message OpenWebNet arbitraire (mais valide) au serveur (administrateurs uniquement).",
       "fields": {
         "gateway": {
           "name": "Serveur",
@@ -507,6 +525,24 @@
         }
       }
     },
+    "send_scenario_plus_command": {
+      "name": "Envoyer une commande scénario plus",
+      "description": "Envoyer une commande scénario plus WHO 25 (on, off, increase, decrease, stop) à un objet scénario plus adressé.",
+      "fields": {
+        "gateway": {
+          "name": "Passerelle",
+          "description": "Adresse MAC de la passerelle (facultatif ; passerelle principale par défaut)."
+        },
+        "where": {
+          "name": "Adresse WHERE",
+          "description": "Adresse de l'objet scénario plus sur le bus."
+        },
+        "action": {
+          "name": "Action",
+          "description": "Action scénario plus à exécuter (on, off, increase, decrease ou stop ; le pas et la vitesse pour increase/decrease sont fixés par le protocole)."
+        }
+      }
+    },
     "calibrate_cover": {
       "name": "Calibrer le temps de course du volet",
       "description": "Mesure les temps de course en montée et en descente d'un volet temporisé sur le bus SCS et les enregistre : le volet est entièrement monté, puis entièrement descendu (chronométré), puis de nouveau entièrement monté (chronométré). Les volets sont calibrés un par un pour chaque passerelle."
@@ -565,6 +601,22 @@
     }
   },
   "issues": {
+    "invalid_decoder": {
+      "title": "Le décodeur {decoder} est une entité {platform} et est ignoré",
+      "description": "L'emplacement de décodeur pointe vers `{decoder}`, qui appartient à l'intégration `{platform}`. Un décodeur doit être le lecteur de streaming physique raccordé à la matrice ; une zone MyHOME ou un lecteur Music Assistant renverrait l'audio sur lui-même, c'est pourquoi MyHOME ignore cet emplacement.\n\nOuvrez Configurer sur la passerelle et sélectionnez l'entité matérielle réelle (Squeezelite, WiiM, Cambridge Audio, Cast, ...)."
+    },
+    "ambiguous_companion": {
+      "title": "Plusieurs compagnons de streaming trouvés pour {decoder}",
+      "description": "`{decoder}` nécessite un moteur de rendu DLNA / UPnP / Cast du même appareil pour accepter les URL de flux, mais plusieurs appareils correspondent : {candidates}.\n\nMyHOME ne devine pas. Ouvrez Configurer sur la passerelle et définissez le *compagnon de streaming* de cet emplacement de décodeur sur la bonne entité."
+    },
+    "multiple_audio_gateways": {
+      "title": "Plusieurs passerelles gèrent des zones audio",
+      "description": "Des zones audio sont configurées sur plusieurs passerelles ({gateways}). L'adressage audio ne transporte pas encore l'interface de bus, de sorte que les zones de deux matrices audio peuvent entrer en collision sur le même numéro de pièce, la même entité et le même environnement (ticket #426).\n\nConservez la matrice audio sur une seule passerelle jusqu'à la résolution de ce problème."
+    },
+    "unresponsive_zone": {
+      "title": "La zone de chauffage {device} ne répond plus ({gateway})",
+      "description": "La zone de chauffage {device} sur {gateway} n'a pas répondu à sa demande d'état lors de deux redémarrages consécutifs ; MyHOME a donc cessé de l'interroger au démarrage (chaque requête sans réponse bloque la file de commandes de la passerelle pendant plusieurs secondes). Si la zone n'existe plus, supprimez son appareil ou son entité dans Home Assistant. Si elle existe toujours, ce problème disparaîtra dès qu'elle émettra une trame, et elle sera de nouveau interrogée au bout d'une semaine."
+    },
     "unconfigured_timezone": {
       "title": "Unconfigured timezone on MyHOME gateway ({gateway})",
       "description": "The MyHOME gateway {gateway} is reporting an unconfigured timezone (999). This will cause incorrect timestamps in the bus monitor and potentially alarm logs.\\n\\nPlease log into the gateway web UI or MyHOME Suite and configure a valid timezone, then restart the gateway."
@@ -574,7 +626,22 @@
       "description": "La passerelle a signalé un code de type d'appareil matériel ({code}) inconnu pour l'intégration MyHOME. Veuillez cliquer sur « En savoir plus » pour ouvrir un ticket GitHub et joindre une trace de diagnostic afin que nous puissions ajouter la prise en charge de ce modèle."
     },
     "incompatible_decoder_platform": {
-      "title": "Le décodeur {decoder} utilise une intégration non prise en charge ({platform})"
+      "title": "Le décodeur {decoder} utilise une intégration non prise en charge ({platform})",
+      "fix_flow": {
+        "step": {
+          "confirm_companion": {
+            "title": "Utiliser le compagnon de streaming DLNA",
+            "description": "Le décodeur configuré `{decoder}` ({platform}) ne prend pas en charge les URL de flux HTTP directes. Cependant, une entité DLNA Digital Media Renderer compatible a été détectée pour cet appareil : `{companion}`.\n\nCliquez sur **Valider** pour mettre à jour automatiquement la configuration de votre décodeur MyHOME afin d'utiliser `{companion}`."
+          },
+          "missing_companion": {
+            "title": "Moteur de rendu DLNA introuvable",
+            "description": "Le décodeur configuré `{decoder}` ({platform}) nécessite l'intégration DLNA Digital Media Renderer pour accepter les URL de flux provenant de Music Assistant.\n\nHome Assistant n'a pas encore configuré DLNA pour cet appareil. Veuillez accéder à **Paramètres → Appareils et services**, ajouter l'intégration **DLNA Digital Media Renderer** pour votre appareil, puis cliquer sur **Valider** pour terminer."
+          }
+        },
+        "abort": {
+          "companion_still_missing": "Aucune entité DLNA Digital Media Renderer n'a été trouvée pour cet appareil. Veuillez configurer DLNA et réessayer."
+        }
+      }
     },
     "gateway_authentication_failed": {
       "title": "Échec de l'authentification de la passerelle MyHOME {gateway}",
@@ -645,6 +712,30 @@
     "auto_standalone_zone": {
       "message": "{name} est un thermostat autonome : la centrale n'a pas de programme pour lui"
     },
+    "setpoint_not_taken": {
+      "message": "{name} n'a pas pris en compte la consigne de {temperature} °C, ni via la centrale ni directement : il signale toujours {reported} °C"
+    },
+    "setpoint_refused": {
+      "message": "{name} : la passerelle a refusé l'écriture de la consigne ({frame})"
+    },
+    "zone_no_setpoint_known": {
+      "message": "{name} n'a pas encore signalé de consigne : définissez d'abord une température"
+    },
+    "zone_command_refused": {
+      "message": "{name} : la passerelle a refusé {frame}"
+    },
+    "central_command_refused": {
+      "message": "{name} : la passerelle a refusé {frame}"
+    },
+    "central_command_not_written": {
+      "message": "{name} : la passerelle n'a pas écrit {frame} dans les 15 secondes ; la commande a été retirée"
+    },
+    "central_command_unconfirmed": {
+      "message": "{name} : la passerelle n'a pas confirmé {frame} ; la commande a peut-être tout de même atteint la centrale"
+    },
+    "setpoint_not_taken_via_central": {
+      "message": "{name} n'a pas pris en compte la consigne de {temperature} °C envoyée via la centrale ({frame}) : il signale toujours {reported} °C. S'il s'agit d'un thermostat autonome, ajoutez sa zone dans « Thermostats autonomes » dans les options de la passerelle (ou définissez `standalone: true` dans myhome.yaml)"
+    },
     "zone_heat_in_conditioning_season": {
       "message": "{name} suit la centrale, qui est en saison de climatisation : changez la saison sur la centrale"
     },
@@ -696,6 +787,12 @@
     "cover_busy_calibrating": {
       "message": "{entity_id} est en cours de calibration ; réessayez lorsqu'elle sera terminée"
     },
+    "cover_position_unknown": {
+      "message": "{name} : la position est inconnue tant que le volet n'a pas effectué une ouverture ou une fermeture complète au moins une fois"
+    },
+    "cover_tilt_position_unknown": {
+      "message": "{name} : l'inclinaison des lames est inconnue tant que les lames n'ont pas été orientées en ouverture ou en fermeture complète au moins une fois"
+    },
     "cover_busy_moving": {
       "message": "{name} est en mouvement ; arrêtez-le avant d'orienter les lames"
     },
@@ -735,6 +832,15 @@
     "decoder_wake_timeout": {
       "message": "{entity_id}: le décodeur {decoder} ne s'est pas réveillé dans les 5 secondes"
     },
+    "unknown_station": {
+      "message": "{entity_id} : station inconnue « {station} »"
+    },
+    "frequency_out_of_range": {
+      "message": "{entity_id} : {frequency} MHz est en dehors de la bande FM"
+    },
+    "invalid_tuner_media": {
+      "message": "{entity_id} : « {media_id} » n'est ni une station ni une fréquence"
+    },
     "seek_not_supported": {
       "message": "{entity_id} : la recherche de fréquence n'est prise en charge que sur les entités tuner"
     },
@@ -747,8 +853,29 @@
     "volume_not_finite": {
       "message": "{entity_id} : le niveau de volume {volume} n'est pas un nombre fini valide"
     },
+    "scenario_plus_gateway_not_found": {
+      "message": "Passerelle « {gateway} » introuvable pour la commande scénario plus"
+    },
+    "scenario_plus_no_gateway": {
+      "message": "Aucune passerelle MyHOME active trouvée"
+    },
+    "scenario_plus_missing_where": {
+      "message": "Aucune adresse WHERE ou aucun objet spécifié pour la commande scénario plus"
+    },
+    "scenario_plus_unknown_action": {
+      "message": "Action scénario plus inconnue « {action} »"
+    },
+    "scenario_plus_command_invalid": {
+      "message": "Impossible de construire la commande scénario plus pour l'adresse WHERE « {where} » et l'action « {action} »"
+    },
     "thermo_switch_no_timer": {
       "message": "{name} est un actionneur thermique WHO=4 et ne prend pas en charge les temporisations matérielles sur bus WHO=1 ; utilisez plutôt un délai d'automatisation Home Assistant."
+    },
+    "thermo_switch_interface_write_refused": {
+      "message": "{name} se trouve derrière l'interface de bus {interface} et cette passerelle n'achemine pas le WHO 4 à travers elle : écrire `{where}` commuterait un actionneur du bus local. Configurez plutôt une commande marche et une commande arrêt pour cet interrupteur."
+    },
+    "thermo_switch_write_refused": {
+      "message": "{name} : la passerelle a refusé {frames}"
     },
     "invert_switch_no_timer": {
       "message": "{name} est un interrupteur de configuration de capteur binaire et ne prend pas en charge les temporisations matérielles sur bus WHO=1."
@@ -927,6 +1054,56 @@
         "53": "53 - Énergie partielle du mois en cours (Wh)",
         "54": "54 - Énergie partielle du jour en cours (Wh)"
       }
+    }
+  },
+  "device_automation": {
+    "trigger_type": {
+      "pushbutton_short_press": "« {subtype} » appuyé",
+      "pushbutton_short_release": "« {subtype} » relâché après un appui court",
+      "pushbutton_long_press": "« {subtype} » maintenu enfoncé",
+      "pushbutton_long_press_repeat": "« {subtype} » maintenu enfoncé (répétition)",
+      "pushbutton_long_release": "« {subtype} » relâché après un appui long",
+      "rotary_cw_slow": "« {subtype} » tourné lentement dans le sens horaire",
+      "rotary_cw_fast": "« {subtype} » tourné rapidement dans le sens horaire",
+      "rotary_ccw_slow": "« {subtype} » tourné lentement dans le sens antihoraire",
+      "rotary_ccw_fast": "« {subtype} » tourné rapidement dans le sens antihoraire",
+      "centralized_shutter_open": "Commande centralisée d'OUVERTURE de volet reçue",
+      "centralized_shutter_close": "Commande centralisée de FERMETURE de volet reçue",
+      "centralized_shutter_stop": "Commande centralisée d'ARRÊT de volet reçue"
+    },
+    "trigger_subtype": {
+      "button_0": "Bouton 0",
+      "button_1": "Bouton 1",
+      "button_2": "Bouton 2",
+      "button_3": "Bouton 3",
+      "button_4": "Bouton 4",
+      "button_5": "Bouton 5",
+      "button_6": "Bouton 6",
+      "button_7": "Bouton 7",
+      "button_8": "Bouton 8",
+      "button_9": "Bouton 9",
+      "button_10": "Bouton 10",
+      "button_11": "Bouton 11",
+      "button_12": "Bouton 12",
+      "button_13": "Bouton 13",
+      "button_14": "Bouton 14",
+      "button_15": "Bouton 15",
+      "button_16": "Bouton 16",
+      "button_17": "Bouton 17",
+      "button_18": "Bouton 18",
+      "button_19": "Bouton 19",
+      "button_20": "Bouton 20",
+      "button_21": "Bouton 21",
+      "button_22": "Bouton 22",
+      "button_23": "Bouton 23",
+      "button_24": "Bouton 24",
+      "button_25": "Bouton 25",
+      "button_26": "Bouton 26",
+      "button_27": "Bouton 27",
+      "button_28": "Bouton 28",
+      "button_29": "Bouton 29",
+      "button_30": "Bouton 30",
+      "button_31": "Bouton 31"
     }
   }
 }
