@@ -37,8 +37,27 @@ function makeElement(id) {
     scrollHeight: 0,
     querySelector: () => null,
     addEventListener() {},
-    appendChild(child) { this.children.push(child); this.firstElementChild = this.children[0]; },
-    removeChild(child) { this.children = this.children.filter((c) => c !== child); this.firstElementChild = this.children[0] || null; },
+    appendChild(child) {
+      this.children.push(child);
+      if (this.id === "filter-who") this.options.push(child);
+      this.firstElementChild = this.children[0];
+    },
+    insertBefore(child, ref) {
+      const idx = this.children.indexOf(ref);
+      if (idx >= 0) this.children.splice(idx, 0, child);
+      else this.children.push(child);
+      if (this.id === "filter-who") {
+        const optIdx = this.options.indexOf(ref);
+        if (optIdx >= 0) this.options.splice(optIdx, 0, child);
+        else this.options.push(child);
+      }
+      this.firstElementChild = this.children[0];
+    },
+    removeChild(child) {
+      this.children = this.children.filter((c) => c !== child);
+      if (this.id === "filter-who") this.options = this.options.filter((c) => c !== child);
+      this.firstElementChild = this.children[0] || null;
+    },
     focus() {},
     click() {},
   };

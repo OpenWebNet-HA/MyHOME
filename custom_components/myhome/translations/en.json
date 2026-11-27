@@ -417,7 +417,7 @@
     },
     "send_message": {
       "name": "Send message",
-      "description": "Send an arbitrary (but valid) OpenWebNet message to the gateway.",
+      "description": "Send an arbitrary (but valid) OpenWebNet message to the gateway (administrators only).",
       "fields": {
         "gateway": {
           "name": "Gateway",

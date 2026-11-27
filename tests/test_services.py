@@ -2,8 +2,9 @@
 from unittest.mock import MagicMock
 
 import pytest
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.auth.const import GROUP_ID_ADMIN, GROUP_ID_USER
+from homeassistant.core import Context, HomeAssistant
+from homeassistant.exceptions import ServiceValidationError, Unauthorized, UnknownUser
 
 from custom_components.myhome import services
 from custom_components.myhome.const import (
@@ -884,3 +885,73 @@ def test_destructive_frame_reason_returns_none_without_ownd_classifier(monkeypat
     """When running against an older OWNd without destructive_frame_reason, helper returns None."""
     monkeypatch.setattr(services, "_ownd_destructive_frame_reason", None)
     assert services.destructive_frame_reason("*22*1*1##") is None
+
+
+async def test_send_message_requires_admin_user(hass: HomeAssistant, sending_gateway) -> None:
+    """myhome.send_message rejects non-admin and unknown users while allowing admins and system contexts."""
+    # HA marks the very first created user as owner (always admin), so create
+    # the owner before non-owner admin and regular users.
+    owner_user = await hass.auth.async_create_user("Owner", group_ids=[GROUP_ID_ADMIN])
+    admin_user = await hass.auth.async_create_user("Admin User", group_ids=[GROUP_ID_ADMIN])
+    regular_user = await hass.auth.async_create_user("Regular User", group_ids=[GROUP_ID_USER])
+    assert owner_user.is_owner is True
+    assert admin_user.is_owner is False
+    assert admin_user.is_admin is True
+    assert regular_user.is_admin is False
+
+    # Non-admin user is refused before dispatching commands or status requests
+    for frame in ("*1*1*12##", "*#13**15##"):
+        with pytest.raises(Unauthorized):
+            await hass.services.async_call(
+                DOMAIN,
+                SERVICE_SEND_MESSAGE,
+                {ATTR_MESSAGE: frame},
+                blocking=True,
+                context=Context(user_id=regular_user.id),
+            )
+    sending_gateway.send.assert_not_awaited()
+    sending_gateway.send_status_request.assert_not_awaited()
+
+    # Unknown user_id is also refused without sending anything
+    with pytest.raises(UnknownUser):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SEND_MESSAGE,
+            {ATTR_MESSAGE: "*1*1*12##"},
+            blocking=True,
+            context=Context(user_id="nonexistent-user-id"),
+        )
+    sending_gateway.send.assert_not_awaited()
+
+    # Admin user succeeds for both commands and status requests
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SEND_MESSAGE,
+        {ATTR_MESSAGE: "*1*1*12##"},
+        blocking=True,
+        context=Context(user_id=admin_user.id),
+    )
+    assert [str(c.args[0]) for c in sending_gateway.send.await_args_list] == ["*1*1*12##"]
+
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SEND_MESSAGE,
+        {ATTR_MESSAGE: "*#13**15##"},
+        blocking=True,
+        context=Context(user_id=admin_user.id),
+    )
+    assert [str(c.args[0]) for c in sending_gateway.send_status_request.await_args_list] == [
+        "*#13**15##"
+    ]
+
+    # System context (no user_id, e.g., automations) continues to succeed
+    sending_gateway.send.reset_mock()
+    await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SEND_MESSAGE,
+        {ATTR_MESSAGE: "*1*0*12##"},
+        blocking=True,
+        context=Context(),
+    )
+    assert [str(c.args[0]) for c in sending_gateway.send.await_args_list] == ["*1*0*12##"]
+

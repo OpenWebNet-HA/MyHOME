@@ -703,7 +703,13 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         await handler.send(cmd)
 
     hass.services.async_register(DOMAIN, SERVICE_SYNC_TIME, handle_sync_time, schema=as_any(SYNC_TIME_SCHEMA))
-    hass.services.async_register(DOMAIN, SERVICE_SEND_MESSAGE, handle_send_message, schema=as_any(SEND_MESSAGE_SCHEMA))
+    service_helper.async_register_admin_service(
+        hass,
+        DOMAIN,
+        SERVICE_SEND_MESSAGE,
+        handle_send_message,
+        schema=as_any(SEND_MESSAGE_SCHEMA),
+    )
     hass.services.async_register(DOMAIN, SERVICE_SWEEP_BUS, handle_sweep_bus, schema=as_any(SWEEP_BUS_SCHEMA))
     hass.services.async_register(
         DOMAIN,
