@@ -427,6 +427,7 @@ _ZONE_REQUEST_MODELS = sorted(
     | GENERAL_ZONE_REQUEST_REFUSED | SOUND_STATUS_REQUEST_REFUSED | ZONE_TEMPERATURE_POLL
     | KNOB_READ_IN_SILENT_ZONE_POLL
     | ZONE_ACTUATOR_REQUEST_REFUSED
+    | WHO14_COMMANDS_REFUSED
     | COVER_PRE_MOVE_STOP_EMITTED
     | COVER_PRE_MOVE_STOP_OMITTED,
     key=len,
@@ -1145,11 +1146,20 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
 
     @property
     def supports_who14_commands(self) -> bool:
-        """Whether this gateway (or its WHO=14 secondary) accepts outbound WHO=14 lock/unlock commands."""
+        """Whether this gateway (or its WHO=14 / WHO=1/2 secondary) accepts outbound WHO=14 lock/unlock commands."""
         if 14 in self.delegated_away_whos:
             sec = self._get_secondary_for_who(14)
             if sec is not None and sec is not self:
                 return sec.supports_who14_commands
+        if (
+            not (self._profile_supports_who(1) or self._profile_supports_who(2))
+            or {1, 2}.issubset(self.delegated_away_whos)
+        ):
+            for cand_who in (1, 2):
+                if cand_who in self.delegated_away_whos:
+                    sec_lock = self._get_secondary_for_who(cand_who)
+                    if sec_lock is not None and sec_lock is not self:
+                        return sec_lock.supports_who14_commands
         return self._model_key not in WHO14_COMMANDS_REFUSED
 
     @property

@@ -663,6 +663,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         self._brightness_refresh_level: int | None = None
         self._brightness_refresh_repeats = 0
         self._brightness_refresh_from_live = False
+        self._brightness_refresh_again_from_live = False
         self._exact_level_pct: int | None = None
         self._exact_level_since_refresh = False
         self._last_preset_echo_at: float | None = None
@@ -1101,6 +1102,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         lock_state = bool(locked)
         prev_locked = self._actuator_locked
         self._brightness_refresh_from_live = False
+        self._brightness_refresh_again_from_live = False
         if lock_state:
             self._fade_engine.cancel_fade_if_active()
             if (
@@ -1696,6 +1698,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         self._brightness_refresh_repeats = 0
         self._brightness_refresh_again = False
         self._brightness_refresh_from_live = False
+        self._brightness_refresh_again_from_live = False
         self._last_preset_echo_at = None
 
     def _request_brightness_refresh(self, force: bool = False) -> bool:
@@ -1754,9 +1757,12 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             self._brightness_refresh_after = time.monotonic() + _BRIGHTNESS_REFRESH_WINDOW_S
             if aborted:
                 self._brightness_refresh_again = False
+                self._brightness_refresh_again_from_live = False
                 self._brightness_refresh_next_preset = None
             elif self._brightness_refresh_again:
                 self._brightness_refresh_again = False
+                next_from_live = self._brightness_refresh_again_from_live
+                self._brightness_refresh_again_from_live = False
                 next_preset = self._brightness_refresh_next_preset
                 self._brightness_refresh_next_preset = None
                 if next_preset is not None:
@@ -1767,7 +1773,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                         else (self._attr_brightness_pct if self._actuator_locked is True else None)
                     )
                     self._brightness_refresh_repeats = 1
-                self._request_brightness_refresh(force=True)
+                if self._request_brightness_refresh(force=True) and next_from_live:
+                    self._brightness_refresh_from_live = True
         return not aborted
 
     def _request_status_check(self, background: bool) -> bool:
@@ -2477,6 +2484,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                         )
                     ):
                         self._brightness_refresh_from_live = True
+                        self._brightness_refresh_again_from_live = True
                 else:
                     # The same answer reaches every instance on the bus, so a read that
                     # brings nothing new is repeated at most _BRIGHTNESS_REFRESH_REPEATS

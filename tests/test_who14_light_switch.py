@@ -58,6 +58,7 @@ def _make_gateway(
     *,
     model: str = "MH200N",
     options: dict[str, Any] | None = None,
+    mac: str = GW_MAC,
 ) -> tuple[MockConfigEntry, MyHOMEGatewayHandler]:
     entry = MockConfigEntry(
         domain=DOMAIN,
@@ -65,11 +66,11 @@ def _make_gateway(
             CONF_HOST: "192.0.2.55",
             CONF_PORT: 20000,
             CONF_PASSWORD: "secret",
-            CONF_MAC: GW_MAC,
+            CONF_MAC: mac,
             CONF_NAME: model,
         },
         options=options or {},
-        unique_id=GW_MAC,
+        unique_id=mac,
     )
     entry.add_to_hass(hass)
     handler = MyHOMEGatewayHandler(hass, entry)
@@ -2998,4 +2999,166 @@ async def test_group2b_who14_buttons_created_normally_on_capable_gateways(
     assert await button_mod.async_setup_entry(hass, entry, added.extend) is True
     assert any(isinstance(e, DisableCommandButtonEntity) for e in added)
     assert any(isinstance(e, EnableCommandButtonEntity) for e in added)
+
+
+def test_group2b_who14_delegated_who1_and_2_and_f455_standby_failover(
+    hass: HomeAssistant,
+) -> None:
+    """F455 delegating WHO 1+2 to F461 reports supports_who14_commands=True; F455 standby rejects WHO 14 failover."""
+    from OWNd.message import OWNCommand
+
+    from custom_components.myhome.const import (
+        CONF_BUS_TOPOLOGY,
+        CONF_DELEGATED_WHOS,
+        CONF_GATEWAY_ROLE,
+        CONF_PRIMARY_GATEWAY,
+        ROLE_PRIMARY,
+        ROLE_SECONDARY,
+        ROLE_STANDBY,
+        TOPOLOGY_SHARED,
+    )
+
+    mac_f455 = "00:03:50:8a:06:1d"
+    mac_f461 = "00:03:50:9f:3f:97"
+    _e_f455, f455 = _make_gateway(
+        hass,
+        model="F455",
+        mac=mac_f455,
+        options={CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED, CONF_GATEWAY_ROLE: ROLE_PRIMARY},
+    )
+    assert f455.supports_who14_commands is False
+
+    # Add F461 secondary delegating WHO 1 and WHO 2 from F455 -> WHO 14 routes through F461
+    _e_f461, f461 = _make_gateway(
+        hass,
+        model="F461",
+        mac=mac_f461,
+        options={
+            CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED,
+            CONF_GATEWAY_ROLE: ROLE_SECONDARY,
+            CONF_PRIMARY_GATEWAY: mac_f455,
+            CONF_DELEGATED_WHOS: [1, 2],
+        },
+    )
+    assert f461.supports_who14_commands is True
+    assert f455.supports_who14_commands is True
+
+    # Separate bus: F461 primary disconnected with F455 warm standby must NOT fail over WHO 14 to F455
+    mac_p = "00:03:50:aa:00:01"
+    mac_s = "00:03:50:aa:00:02"
+    _ep, primary_f461 = _make_gateway(
+        hass,
+        model="F461",
+        mac=mac_p,
+        options={CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED, CONF_GATEWAY_ROLE: ROLE_PRIMARY},
+    )
+    _es, standby_f455 = _make_gateway(
+        hass,
+        model="F455",
+        mac=mac_s,
+        options={
+            CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED,
+            CONF_GATEWAY_ROLE: ROLE_STANDBY,
+            CONF_PRIMARY_GATEWAY: mac_p,
+        },
+    )
+    primary_f461._available = False
+    primary_f461._is_connected = False
+    standby_f455._available = True
+    standby_f455._is_connected = True
+    assert primary_f461.is_who_available(14) is False
+    assert primary_f461._failover_target(OWNCommand("*14*0*05##")) is None
+
+    # Direct WHO=14 delegation: F461 primary delegating WHO 14 to an F455 secondary returns False
+    mac_d14_p = "00:03:50:bb:00:01"
+    mac_d14_s = "00:03:50:bb:00:02"
+    _ep2, primary_d14 = _make_gateway(
+        hass,
+        model="F461",
+        mac=mac_d14_p,
+        options={CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED, CONF_GATEWAY_ROLE: ROLE_PRIMARY},
+    )
+    _es2, secondary_d14_f455 = _make_gateway(
+        hass,
+        model="F455",
+        mac=mac_d14_s,
+        options={
+            CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED,
+            CONF_GATEWAY_ROLE: ROLE_SECONDARY,
+            CONF_PRIMARY_GATEWAY: mac_d14_p,
+            CONF_DELEGATED_WHOS: [14],
+        },
+    )
+    assert secondary_d14_f455.supports_who14_commands is False
+    assert primary_d14.supports_who14_commands is False
+
+
+async def test_group2a_queued_live_brightness_refresh_preserves_self_heal(
+    hass: HomeAssistant,
+) -> None:
+    """A second live coarse preset queued behind an in-flight Dim 1 refresh must still self-heal actuator_locked."""
+    _entry, handler = _make_gateway(hass, model="F461")
+    first_release = asyncio.Event()
+    second_started = asyncio.Event()
+    calls = 0
+
+    async def _send_status(cmd: Any, **_kwargs: Any) -> bool:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            await first_release.wait()
+        else:
+            second_started.set()
+        return True
+
+    handler.send_status_request = AsyncMock(side_effect=_send_status)
+    dim = MyHOMELight(
+        hass=hass,
+        name="Dimmer 56",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="56",
+        who="1",
+        where="56",
+        interface=None,
+        dimmable=True,
+        manufacturer="BTicino",
+        model="F418",
+        gateway=handler,
+    )
+    _attach_live_entity(hass, dim, "light.dim_56_queued")
+    dim.handle_event(OWNEvent.parse("*#1*56*1*150*5##"))
+    dim.handle_actuator_lock(True)
+    assert dim.actuator_locked is True
+
+    # Live coarse preset 1 starts Dim 1 refresh #1
+    dim.handle_event(OWNEvent.parse("*1*6*56##"))
+    await asyncio.sleep(0)
+    assert dim._brightness_refresh_out is True
+
+    # Live coarse preset 2 arrives while Dim 1 refresh #1 is still in flight
+    dim.handle_event(OWNEvent.parse("*1*8*56##"))
+    assert dim._brightness_refresh_again is True
+    assert dim._brightness_refresh_again_from_live is True
+
+    # Dim 1 reply #1 returns stale 50% (clears _brightness_refresh_from_live for #1)
+    stale_reply = OWNEvent.parse("*#1*56*1*150*5##")
+    stale_reply._from_status_request = True  # type: ignore[attr-defined]
+    dim.handle_event(stale_reply)
+    assert dim.actuator_locked is True
+
+    # Finish refresh #1 -> queued refresh #2 starts with _brightness_refresh_from_live restored!
+    first_release.set()
+    await asyncio.wait_for(second_started.wait(), timeout=2.0)
+    assert dim._brightness_refresh_from_live is True
+
+    # Dim 1 reply #2 returns new 75% -> self-heals actuator_locked!
+    new_reply = OWNEvent.parse("*#1*56*1*175*5##")
+    new_reply._from_status_request = True  # type: ignore[attr-defined]
+    dim.handle_event(new_reply)
+    assert dim.actuator_locked is False
+    if dim._brightness_refresh_task is not None:
+        await dim._brightness_refresh_task
+
 

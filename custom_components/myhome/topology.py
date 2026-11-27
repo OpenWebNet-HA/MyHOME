@@ -587,7 +587,10 @@ class GatewayTopologyMixin:
         standby = self._get_standby_gateway()
         if standby is not None and standby.available:
             if who_int == 14:
-                return standby._profile_supports_who(1) or standby._profile_supports_who(2)
+                return (
+                    (standby._profile_supports_who(1) or standby._profile_supports_who(2))
+                    and getattr(standby, "supports_who14_commands", True) is True
+                )
             return standby._profile_supports_who(who_int)
         return False
 
@@ -881,7 +884,8 @@ class GatewayTopologyMixin:
         if msg_who is not None:
             who_int = int(msg_who)
             supports = (
-                standby._profile_supports_who(1) or standby._profile_supports_who(2)
+                (standby._profile_supports_who(1) or standby._profile_supports_who(2))
+                and getattr(standby, "supports_who14_commands", True) is True
                 if who_int == 14
                 else standby._profile_supports_who(who_int)
             )
