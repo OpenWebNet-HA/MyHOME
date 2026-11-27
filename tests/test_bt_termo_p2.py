@@ -9,9 +9,8 @@ from homeassistant.components.climate.const import HVACAction, HVACMode
 from homeassistant.const import CONF_HOST, CONF_MAC, CONF_NAME, CONF_PASSWORD, CONF_PORT
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+from OWNd import message as own_message
 from OWNd.message import (
-    MESSAGE_TYPE_LOCAL_OFFSET_RELEASE,
-    MESSAGE_TYPE_PUMP_CALL,
     OWNEvent,
     OWNHeatingCommand,
     OWNHeatingEvent,
@@ -38,6 +37,24 @@ from custom_components.myhome.gateway import _zone_request_frame
 from tests.conftest import attach_runtime
 
 MAC = "00:03:50:00:02:99"
+_HAS_OWND_P2 = hasattr(own_message, "MESSAGE_TYPE_PUMP_CALL") and hasattr(
+    own_message, "MESSAGE_TYPE_LOCAL_OFFSET_RELEASE"
+)
+
+
+def _parse_typed(frame: str, expected_type: str) -> OWNHeatingEvent:
+    """Parse a WHO=4 frame and verify its P2 message_type when OWNd P2 is installed.
+
+    On PyPI OWNd 2.0.2 (before OWNd#190 is released), the parser leaves ``_type`` as
+    ``None`` for P2 frames; populate ``_type`` so MyHOME's handlers are still exercised.
+    """
+    ev = OWNEvent.parse(frame)
+    assert isinstance(ev, OWNHeatingEvent)
+    if _HAS_OWND_P2:
+        assert ev.message_type == expected_type
+    else:
+        ev._type = expected_type
+    return ev
 
 
 def _make_zone(where: str = "2", *, model: str = "F461", central: bool = False) -> MyHOMEClimate:
@@ -75,10 +92,16 @@ def _make_zone(where: str = "2", *, model: str = "F461", central: bool = False) 
 
 
 def test_p2_constants_match_ownd() -> None:
-    assert _MESSAGE_TYPE_PUMP_CALL == MESSAGE_TYPE_PUMP_CALL
-    assert DISCOVERY_MESSAGE_TYPE_PUMP_CALL == MESSAGE_TYPE_PUMP_CALL
-    assert _MESSAGE_TYPE_LOCAL_OFFSET_RELEASE == MESSAGE_TYPE_LOCAL_OFFSET_RELEASE
-    assert DISCOVERY_MESSAGE_TYPE_LOCAL_OFFSET_RELEASE == MESSAGE_TYPE_LOCAL_OFFSET_RELEASE
+    assert _MESSAGE_TYPE_PUMP_CALL == "pump_call"
+    assert DISCOVERY_MESSAGE_TYPE_PUMP_CALL == "pump_call"
+    assert _MESSAGE_TYPE_LOCAL_OFFSET_RELEASE == "local_offset_release"
+    assert DISCOVERY_MESSAGE_TYPE_LOCAL_OFFSET_RELEASE == "local_offset_release"
+    ownd_pump_call = getattr(own_message, "MESSAGE_TYPE_PUMP_CALL", None)
+    if ownd_pump_call is not None:
+        assert _MESSAGE_TYPE_PUMP_CALL == ownd_pump_call
+    ownd_release = getattr(own_message, "MESSAGE_TYPE_LOCAL_OFFSET_RELEASE", None)
+    if ownd_release is not None:
+        assert _MESSAGE_TYPE_LOCAL_OFFSET_RELEASE == ownd_release
 
 
 def test_p2_13_pump_call_does_not_alter_climate_state() -> None:
@@ -92,9 +115,7 @@ def test_p2_13_pump_call_does_not_alter_climate_state() -> None:
     assert zone.target_temperature == 22.0
 
     for frame in ("*4*4001#2*0#3##", "*4*4002#2*0#3##", "*4*4002*2##"):
-        ev = OWNEvent.parse(frame)
-        assert isinstance(ev, OWNHeatingEvent)
-        zone.handle_event(ev)
+        zone.handle_event(_parse_typed(frame, _MESSAGE_TYPE_PUMP_CALL))
 
     assert zone.hvac_mode == HVACMode.HEAT
     assert zone.hvac_action == HVACAction.HEATING
@@ -132,18 +153,21 @@ async def test_p2_13_typed_pump_calls_still_defer_thermo_switch_zones(hass: Home
 
     # Hold an actuator frame first (as in live #785 plants) to verify non-telemetry frames never confirm it
     async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*7#1*20*0##"))
-    for frame in ("*4*4001#7*0#1##", "*4*4001*7##", "*4*4002#7*0#1##", "*4*4002*7##", "*4*40*7##"):
-        ev = OWNEvent.parse(frame)
-        assert isinstance(ev, OWNHeatingEvent)
-        assert ev.message_type in (MESSAGE_TYPE_PUMP_CALL, MESSAGE_TYPE_LOCAL_OFFSET_RELEASE)
+    for frame, expected_type in (
+        ("*4*4001#7*0#1##", _MESSAGE_TYPE_PUMP_CALL),
+        ("*4*4001*7##", _MESSAGE_TYPE_PUMP_CALL),
+        ("*4*4002#7*0#1##", _MESSAGE_TYPE_PUMP_CALL),
+        ("*4*4002*7##", _MESSAGE_TYPE_PUMP_CALL),
+        ("*4*40*7##", _MESSAGE_TYPE_LOCAL_OFFSET_RELEASE),
+    ):
+        ev = _parse_typed(frame, expected_type)
         async_dispatcher_send(hass, f"myhome_message_{MAC}", ev)
     await hass.async_block_till_done()
     assert added == []
 
 
 def test_p2_13_zero_calling_zone_pump_call_has_no_discovery_address() -> None:
-    ev = OWNEvent.parse("*4*4001#0*0#3##")
-    assert isinstance(ev, OWNHeatingEvent)
+    ev = _parse_typed("*4*4001#0*0#3##", _MESSAGE_TYPE_PUMP_CALL)
     assert _zone_address(ev) is None
 
 
@@ -155,8 +179,7 @@ def test_p2_14_local_offset_release_refreshes_dim13_only_when_needed() -> None:
     zone._gateway_handler.request_zone_dimension.reset_mock()
 
     # Inbound *4*40*2## refreshes DIM 13 when offset is non-zero
-    release = OWNEvent.parse("*4*40*2##")
-    assert isinstance(release, OWNHeatingEvent)
+    release = _parse_typed("*4*40*2##", _MESSAGE_TYPE_LOCAL_OFFSET_RELEASE)
     zone.handle_event(release)
     zone._gateway_handler.request_zone_dimension.assert_called_once_with("2", 13)
 
@@ -172,8 +195,7 @@ def test_p2_14_local_offset_release_refreshes_dim13_only_when_needed() -> None:
 def test_p2_14_central_unit_and_unified_four_zone_local_offset_release() -> None:
     central = _make_zone("#0", central=True)
     central._gateway_handler.request_zone_dimension.reset_mock()
-    release_central = OWNEvent.parse("*4*40*#0##")
-    assert isinstance(release_central, OWNHeatingEvent)
+    release_central = _parse_typed("*4*40*#0##", _MESSAGE_TYPE_LOCAL_OFFSET_RELEASE)
     central.handle_event(release_central)
     central._gateway_handler.request_zone_dimension.assert_not_called()
 
@@ -182,8 +204,7 @@ def test_p2_14_central_unit_and_unified_four_zone_local_offset_release() -> None
     unified.handle_event(OWNHeatingEvent("*#4*1*13*02##"))
     assert unified._local_offset == 2
     unified._gateway_handler.request_zone_dimension.reset_mock()
-    release_master = OWNEvent.parse("*4*40*1##")
-    assert isinstance(release_master, OWNHeatingEvent)
+    release_master = _parse_typed("*4*40*1##", _MESSAGE_TYPE_LOCAL_OFFSET_RELEASE)
     unified.handle_event(release_master)
     unified._gateway_handler.request_zone_dimension.assert_called_once_with("1", 13)
 
