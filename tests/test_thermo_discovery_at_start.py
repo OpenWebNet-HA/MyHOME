@@ -51,9 +51,10 @@ ZONE_3_TEMPERATURE = "*#4*3*0*0255##"
         ("H4684", []),  # the oracle shows the request dropped
         ("MH200", []),
         ("MH202", []),
-        ("MH201", []),  # not in the oracle, no capture
-        ("MH200N", []),  # Gen B *#4*0## polls zone 0 point-to-point (QUIRK-15)
-        ("F453", []),
+        ("MH201", []),  # catalogued, no capture
+        ("MH200N", ["*#4*0#0*20##"]),  # Gen B *#4*0## polls zone 0 (QUIRK-15); oracle forwards *#4*0#0*20##
+        ("F453", ["*#4*0#0*20##"]),
+        ("F453AV", ["*#4*0#0*20##"]),
     ],
 )
 def test_what_replaces_the_general_request_at_start(hass: HomeAssistant, model: str, who4: list[str]) -> None:

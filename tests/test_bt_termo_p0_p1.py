@@ -36,6 +36,7 @@ def _make_zone(
     cooling: bool = True,
     fan: bool = False,
     standalone: bool = True,
+    central: bool = False,
 ) -> MyHOMEClimate:
     gw = MagicMock()
     gw.mac = "00:03:50:00:b7:00"
@@ -43,7 +44,7 @@ def _make_zone(
     gw.send = AsyncMock()
     gw.send_status_request = AsyncMock()
     gw.request_zone_dimension = MagicMock()
-    gw.has_central_unit = not standalone
+    gw.has_central_unit = not standalone or central
     gw.supports_zone_status = True
     zone = MyHOMEClimate(
         hass=hass,
@@ -55,7 +56,7 @@ def _make_zone(
         cooling=cooling,
         fan=fan,
         standalone=standalone,
-        central=False,
+        central=central,
         manufacturer="BTicino",
         model="Heating Zone",
         gateway=gw,
@@ -538,3 +539,78 @@ def test_live_bus2_3488_who1013_model_128_resolved() -> None:
         GatewayIdentityEvidence(manual="MyHomeServer1", who13_code="200", who1013_code="128")
     )
     assert res_manual.unknown_code is None
+
+
+@pytest.mark.parametrize(
+    ("season_frame", "prot_frame", "expected_mode", "expected_op"),
+    [
+        ("*4*1101*#0##", "*4*402*#0##", HVACMode.HEAT, "antifreeze"),
+        ("*4*1101*#0##", "*4*502*#0##", HVACMode.HEAT, "antifreeze"),
+        ("*4*2101*#0##", "*4*402*#0##", HVACMode.COOL, "thermal_protection"),
+        ("*4*2101*#0##", "*4*502*#0##", HVACMode.COOL, "thermal_protection"),
+    ],
+)
+def test_group1a_central_extended_protection_402_502_preserves_season(
+    hass: HomeAssistant,
+    season_frame: str,
+    prot_frame: str,
+    expected_mode: HVACMode,
+    expected_op: str,
+) -> None:
+    """Central unit extended protection 402/502 keeps active season + protection instead of OFF."""
+    central = _make_zone(hass, "#0", standalone=False, central=True)
+    central._handle_event(OWNMessage.parse(season_frame))
+    assert central.hvac_mode == expected_mode
+    central._handle_event(OWNMessage.parse(prot_frame))
+    assert central.hvac_mode == expected_mode
+    assert central.extra_state_attributes.get("central_operation") == expected_op
+
+
+def test_group1b_gen_b_startup_all_actuators_request() -> None:
+    """Gen B (F453, F453AV, MH200N) replace *#4*0## with *#4*0#0*20## at startup."""
+    from custom_components.myhome.gateway import STARTUP_ALL_ACTUATORS_REQUEST
+
+    for model in ("F453", "F453AV", "MH200N"):
+        assert model in STARTUP_ALL_ACTUATORS_REQUEST
+
+
+@pytest.mark.parametrize("manual_what", ["410", "510"])
+@pytest.mark.parametrize(
+    ("season_what", "expected_mode"),
+    [("1", HVACMode.HEAT), ("0", HVACMode.COOL)],
+)
+def test_group1c_standalone_clears_manual_on_season_return_while_central_keeps_it(
+    hass: HomeAssistant,
+    manual_what: str,
+    season_what: str,
+    expected_mode: HVACMode,
+) -> None:
+    """Standalone zone returning from 410/510 via *4*1*Z##/*4*0*Z## clears stale zone_operation=manual."""
+    standalone = _make_zone(hass, "2", standalone=True)
+    standalone._handle_event(OWNMessage.parse(f"*4*{manual_what}*2##"))
+    assert standalone.hvac_mode == HVACMode.AUTO
+    assert standalone.extra_state_attributes.get("zone_operation") == "manual"
+    standalone._handle_event(OWNMessage.parse(f"*4*{season_what}*2##"))
+    assert standalone.hvac_mode == expected_mode
+    assert standalone.extra_state_attributes.get("zone_operation") is None
+
+    # Central-managed zone must still preserve zone_operation="manual" across *4*110*#3## -> *4*1*3##
+    managed = _make_zone(hass, "3", standalone=False)
+    managed._handle_event(OWNMessage.parse("*4*110*#3##"))
+    assert managed.extra_state_attributes.get("zone_operation") == "manual"
+    managed._handle_event(OWNMessage.parse("*4*1*3##"))
+    assert managed.extra_state_attributes.get("zone_operation") == "manual"
+
+
+def test_group1d_3488_and_067259_supported_models_and_spelling_alias() -> None:
+    """BTicino 3488 and Legrand 067259 are selectable models and resolve cleanly to 3488."""
+    from custom_components.myhome.const import SUPPORTED_GATEWAY_MODELS
+    from custom_components.myhome.gateway import _MODEL_SPELLINGS, _resolve_model_key
+
+    assert "3488" in SUPPORTED_GATEWAY_MODELS
+    assert "067259" in SUPPORTED_GATEWAY_MODELS
+    assert _MODEL_SPELLINGS.get("067259") == "3488"
+    assert _resolve_model_key("3488") == "3488"
+    assert _resolve_model_key("067259") == "3488"
+    assert _resolve_model_key("BTicino 3488") == "3488"
+

@@ -170,7 +170,9 @@ _ZONE_STATES_OFF = ("protection", "off")
 # regulates to the protection setpoint; it is not switched off.
 _CENTRAL_PROTECTION = {"102": ("antifreeze", HVACMode.HEAT), "202": ("thermal_protection", HVACMode.COOL)}
 # 302 is generic protection (WHO 4 p. 5): the protection of the season the plant is in.
-_CENTRAL_GENERIC_PROTECTION = "302"
+# 402 / 502 are Auto / extended-context Protection (own-firmware-oracle findings/bt-termo.md §4.5.1,
+# D2 04 C1 mode byte 0x1D -> 402): same season-preserving protection on central units.
+_CENTRAL_GENERIC_PROTECTION = frozenset({"302", "402", "502"})
 # What a zone's mode frame says besides its season (WHO 4 WHAT table, p. 5: 102 "Anti Freeze",
 # 202 "Thermal Protection", 302 "Protection (generic)", 110 / 210 / 310 "Manual-adjustment
 # Mode", 111 / 211 / 311 "Programming Mode"; p. 9 monitor frames "111 -> Automatic heating",
@@ -4799,12 +4801,18 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._note_central_reported_state(message, None)
             self._note_own_season(message)
             self._refresh_hvac_modes()
-            if self._zone_operation in (*_ZONE_PROTECTION_OPERATIONS, "comfort", "eco"):
+            if (
+                self._zone_operation in (*_ZONE_PROTECTION_OPERATIONS, "comfort", "eco")
+                or (self._standalone and self._zone_operation == "manual")
+            ):
                 # A zone in protection (102 / 202) or a preset (107 / 108 / 207 / 208) reports
                 # that mode frame in place of its season frame in D2 04 12 (bt_termo 0x5390;
                 # live F461 captures f461_live_2026-10-24 and f461_presets_live_2026-10-24):
                 # the season frame (*4*1*Z## / *4*0*Z##) returning says it left protection or
-                # the preset and is running a normal setpoint again.
+                # the preset and is running a normal setpoint again. On a standalone zone,
+                # returning from seasonless 410 / 510 (manual) via *4*1*Z## / *4*0*Z## also
+                # leaves manual operation (central-managed zones keep "manual" because
+                # *4*110*#Z## is followed by *4*1*Z##).
                 self._zone_operation = None
             season_mode = HVACMode.HEAT if message.season == SEASON_HEATING else HVACMode.COOL
             prev_mode = self._attr_hvac_mode
@@ -4875,7 +4883,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     if (
                         message.mode == CLIMATE_MODE_OFF
                         or plain_what in _CENTRAL_PROTECTION
-                        or plain_what == _CENTRAL_GENERIC_PROTECTION
+                        or plain_what in _CENTRAL_GENERIC_PROTECTION
                     ):
                         self._clear_master_dim12_pairing()
                     return
@@ -4905,7 +4913,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._daily_holiday = raw_what.split("#", 1)[0] in ("115", "215", "315")
             self._scenario = getattr(message, "scenario", None)
             protection = _CENTRAL_PROTECTION.get(raw_what) if self._central else None
-            if self._central and raw_what == _CENTRAL_GENERIC_PROTECTION and self._season is not None:
+            if self._central and raw_what in _CENTRAL_GENERIC_PROTECTION and self._season is not None:
                 protection = _CENTRAL_PROTECTION["102" if self._season == SEASON_HEATING else "202"]
             if self._central:
                 self._central_operation = protection[0] if protection is not None else None

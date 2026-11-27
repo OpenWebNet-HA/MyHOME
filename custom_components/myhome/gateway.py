@@ -372,11 +372,12 @@ ALL_ZONE_REQUESTS: dict[str, dict[int, str]] = {
 # minutes later; twelve seconds after ``*#4*#0##`` and the zones were read from another client
 # it had its central unit and three zones (2026-11-18).
 # - The all-actuator request, where the firmware forwards it: live on F455, F461 and
-#   MyHomeServer1 (above); F450, F454, F459 and F460 by the oracle row above (not tried on a
-#   plant). Not sent where the oracle shows it dropped (H4684, MH200, MH202) nor on the MH201
-#   (not in the oracle, no capture). Every actuator answers as ``Z#N``: a fan coil creates its
-#   zone at once, a plain valve is kept until the zone is known to be a thermostat (#785), see
-#   ``climate._ask_actuator_only_zones``.
+#   MyHomeServer1 (above); 3488, F450, F453, F453AV, F454, F459, F460 and MH200N by the oracle
+#   row above (`thermo-zone-requests.tsv:17` -> `bus:24 30 34 42 39 30 30 33 30 31 30 0d`,
+#   findings/bt-termo.md §7; not tried on a plant). Not sent where the oracle shows it dropped
+#   (H4684, MH200, MH202) nor on the MH201 (catalogued, no capture). Every actuator answers as
+#   ``Z#N``: a fan coil creates its zone at once, a plain valve is kept until the zone is known
+#   to be a thermostat (#785), see ``climate._ask_actuator_only_zones``.
 # - The central unit's status, ``*#4*#0##``, where an unanswered request is cheap: the F461
 #   answered it in 0.16 s with the 3550's state, and a MyHomeServer1 with no central unit
 #   NACKed it after 2.09 s. Not on the F455: it answered in 1.07 s on a plant with a 3550, but
@@ -385,7 +386,7 @@ ALL_ZONE_REQUESTS: dict[str, dict[int, str]] = {
 #   tried it on. On every model the same request is sent once later, when a report about a
 #   zone shows that a central unit is there to answer it (``request_central_status``).
 STARTUP_ALL_ACTUATORS_REQUEST = frozenset(
-    {"3488", "F450", "F454", "F455", "F459", "F460", "F461", "MYHOMESERVER1"}
+    {"3488", "F450", "F453", "F453AV", "F454", "F455", "F459", "F460", "F461", "MH200N", "MYHOMESERVER1"}
 )
 STARTUP_CENTRAL_STATUS_REQUEST = frozenset({"F461", "MYHOMESERVER1"})
 # A zone created from the answers to the sweep's all-actuator request asks for its actuators as
@@ -436,9 +437,11 @@ _ZONE_REQUEST_MODELS = sorted(
     key=len,
     reverse=True,
 )
-# Legrand 067292 Céliane 3.5" touch screen family (issue #832) SSDP model names mapped
-# to the H4890 profile until OWNd aliases them upstream.
+# Legrand 067292 Céliane 3.5" touch screen family (issue #832) and Legrand 067259
+# (BTicino 3488 HOMETOUCH / SMARTDES) catalogue spellings mapped to canonical profiles.
 _MODEL_SPELLINGS = {
+    "067259": "3488",
+    "67259": "3488",
     "067292": "H4890",
     "67292": "H4890",
     "573958": "H4890",
