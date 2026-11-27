@@ -7,7 +7,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import voluptuous as vol
-from homeassistant.components.media_player import MediaClass, MediaPlayerEntityFeature, MediaType
+from homeassistant.components.media_player import (
+    MediaClass,
+    MediaPlayerEntityFeature,
+    MediaPlayerState,
+    MediaType,
+)
 from homeassistant.components.number import NumberDeviceClass, NumberMode
 from homeassistant.const import (
     CONF_HOST,
@@ -579,6 +584,14 @@ async def test_tuner_guard_branches_and_edge_cases(hass: HomeAssistant) -> None:
     all_checked_entry.add_to_hass(hass)
     _prune_unchecked_tuner_entities(hass, ent_reg, all_checked_entry, ("00:11-",))
 
+    foreign_prefix_entry = MockConfigEntry(domain=DOMAIN, options={})
+    foreign_prefix_entry.add_to_hass(hass)
+    ent_reg.async_get_or_create(
+        "media_player", DOMAIN, "other-prefix-16-102#16", config_entry=foreign_prefix_entry
+    )
+    _prune_unchecked_tuner_entities(hass, ent_reg, foreign_prefix_entry, ("00:11-",))
+    assert ent_reg.async_get_entity_id("media_player", DOMAIN, "other-prefix-16-102#16") is not None
+
     # 2. number.async_setup_entry: None runtime, follower without WHO 16/22, and non-Mapping options
     no_rt_entry = MockConfigEntry(domain=DOMAIN)
     no_rt_entry.add_to_hass(hass)
@@ -784,12 +797,38 @@ async def test_media_player_prunes_stale_zone_1000_and_rejects_invalid_who16_whe
         assert dev_reg.async_get(stale_1000_dev.id) is None
         assert dev_reg.async_get(stale_100_dev.id) is None
 
-        # Bus frames for 1000 or 100 never create phantom media_player entities
-        for raw in ("*16*13*1000##", "*16*3*100##"):
+        # Bus frames for 1000, 100, F422-routed #4#02, or foreign where_param never create or route to local zones
+        entry.runtime_data.gateway._on_event_connection_state_change(True)
+        await hass.async_block_till_done()
+        zone_21_entity_id = ent_reg.async_get_entity_id("media_player", DOMAIN, f"{mac}-16-21#16")
+        assert zone_21_entity_id is not None
+        zone_21_player = entry.runtime_data.media_players[zone_21_entity_id]
+        assert zone_21_player._attr_state == MediaPlayerState.OFF
+        assert hass.states.get(zone_21_entity_id).state == "off"
+
+        for raw in (
+            "*16*13*1000##",
+            "*16*3*100##",
+            "*16*3*22#4#02##",
+            "*16*3*21#4#02##",
+            "*16*3*22#9#02##",
+            "*16*3*21#1##",
+            "*16*3*22#4#99##",
+        ):
             async_dispatcher_send(hass, f"myhome_message_{mac}", OWNSoundEvent(raw))
         await hass.async_block_till_done()
         assert ent_reg.async_get_entity_id("media_player", DOMAIN, f"{mac}-16-1000#16") is None
         assert ent_reg.async_get_entity_id("media_player", DOMAIN, f"{mac}-16-100#16") is None
+        assert ent_reg.async_get_entity_id("media_player", DOMAIN, f"{mac}-16-22#16") is None
+        assert ent_reg.async_get_entity_id("media_player", DOMAIN, f"{mac}-16-22#4#02#16") is None
+        assert zone_21_player._attr_state == MediaPlayerState.OFF
+        assert hass.states.get(zone_21_entity_id).state == "off"
+
+        # Real local bus frame for zone 21 still routes cleanly and updates state
+        async_dispatcher_send(hass, f"myhome_message_{mac}", OWNSoundEvent("*16*3*21##"))
+        await hass.async_block_till_done()
+        assert zone_21_player._attr_state == MediaPlayerState.ON
+        assert hass.states.get(zone_21_entity_id).state == "on"
 
         await hass.config_entries.async_unload(entry.entry_id)
         await hass.async_block_till_done()

@@ -150,6 +150,7 @@ from .sound_source import (
     who22_tuner_listener,
 )
 from .tuner_decode import parse_tuner_pictures
+from .where_grammar import bus_interface_from_message
 
 PARALLEL_UPDATES = 0
 
@@ -375,9 +376,14 @@ def _zone_address(message: Any) -> Address | None:
     Reads ``where``, not ``zone``: ``where`` is the frame's address in every
     OWNd version, whereas ``zone`` is OWNd's reading of it, and a routing frame
     (``1ES``) must reach ``route_pseudo_zones`` whatever OWNd calls it.
+    Frames carrying F422 bus routing (``#4#II``) or any foreign ``where_param``
+    are rejected so they never create or route into local WHO=16 zones.
     """
     zone = getattr(message, "where", None)
     if not zone or getattr(message, "is_source_event", False):
+        return None
+    valid_iface, interface = bus_interface_from_message(message)
+    if not valid_iface or interface is not None:
         return None
     return Address(str(zone), key_suffix="#16")
 

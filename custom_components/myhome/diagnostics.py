@@ -11,6 +11,7 @@ from homeassistant.const import CONF_CODE, CONF_MAC, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
+from .binary_sensor import classify_binary_sensor_registry_entry
 from .const import (
     BUS_ROUTING,
     CONF_ADVANCED_SHUTTER,
@@ -33,8 +34,14 @@ from .const import (
 )
 from .data import MyHOMERuntimeData, get_runtime_data
 from .device_health import DeviceHealth
-from .discovery import Address, parse_unique_id
+from .discovery import COMPANION_SUFFIXES, Address, parse_unique_id
 from .legacy_yaml import CONF_MIGRATED_YAML_PLATFORMS
+from .where_grammar import (
+    canonical_central_zone,
+    canonical_contact_where,
+    canonical_point_spelling,
+    canonical_thermo_zone,
+)
 
 # A diagnostics download is meant to be attached to a public issue. Secrets go
 # without saying; the rest identifies a household - where the gateway lives on
@@ -215,14 +222,46 @@ def _redact_migrated_yaml_platforms(migrated: Mapping[str, Any]) -> dict[str, An
     return out
 
 
-_SENSOR_CLASS_SUFFIXES = (
-    "power",
-    "energy",
-    "temperature",
-    "humidity",
-    "illuminance",
-    "output-level",
-)
+_SENSOR_SUFFIX_MAP: dict[str, str] = {
+    "total-energy": "energy",
+    "daily-energy": "energy",
+    "monthly-energy": "energy",
+    "output-level": "output-level",
+    "temperature": "temperature",
+    "illuminance": "illuminance",
+    "humidity": "humidity",
+    "energy": "energy",
+    "power": "power",
+}
+_SENSOR_CLASS_WHO: dict[str, str] = {
+    "power": "18",
+    "energy": "18",
+    "temperature": "4",
+    "humidity": "4",
+    "illuminance": "1",
+    "output-level": "4",
+}
+
+
+def _canonical_match_where(
+    platform_name: str,
+    who: str,
+    where: str,
+    *,
+    central: bool = False,
+) -> str:
+    """Return canonical WHERE spelling for matching YAML entries against registry entities."""
+    clean = where.split("-")[-1]
+    if platform_name == "climate":
+        if central or clean.startswith("#0"):
+            return canonical_central_zone(clean)
+        return canonical_thermo_zone(clean) or clean
+    if who == "25":
+        norm = clean.lstrip("0") or "0" if clean.isascii() and clean.isdigit() else clean
+        return canonical_contact_where(norm)
+    if who in ("1", "2"):
+        return canonical_point_spelling(clean)
+    return clean
 
 
 def _redact_cover_travel_times(
@@ -279,24 +318,39 @@ def _registry_device_key(
     uid = getattr(reg_entry, "unique_id", None)
     if not isinstance(uid, str) or not uid:
         return None
-    who, dev_id = parse_unique_id(uid, gw_mac, entry_mac)
+    who: str | None
+    dev_id: str
     klass = ""
-    if reg_entry.domain == "sensor":
-        if dev_id in _SENSOR_CLASS_SUFFIXES and who:
-            klass = dev_id
-            dev_id = who
-            who = "1" if klass == "illuminance" else None
+    if reg_entry.domain == "binary_sensor":
+        classified = classify_binary_sensor_registry_entry(reg_entry, gw_mac, entry_mac)
+        if classified is not None:
+            who, dev_id = classified
         else:
-            for suffix in _SENSOR_CLASS_SUFFIXES:
-                tail = f"-{suffix}"
-                if dev_id.endswith(tail):
-                    dev_id = dev_id[: -len(tail)]
-                    klass = suffix
+            who, dev_id = parse_unique_id(uid, gw_mac, entry_mac)
+    else:
+        who, dev_id = parse_unique_id(uid, gw_mac, entry_mac)
+        if reg_entry.domain == "sensor":
+            if dev_id in _SENSOR_SUFFIX_MAP and who:
+                klass = _SENSOR_SUFFIX_MAP[dev_id]
+                dev_id = who
+                who = _SENSOR_CLASS_WHO.get(klass)
+            else:
+                for suffix, canonical_class in _SENSOR_SUFFIX_MAP.items():
+                    tail = f"-{suffix}"
+                    if dev_id.endswith(tail):
+                        dev_id = dev_id[: -len(tail)]
+                        klass = canonical_class
+                        break
+        elif reg_entry.domain == "button":
+            for suffix in COMPANION_SUFFIXES:
+                if dev_id.endswith(suffix):
+                    dev_id = dev_id[: -len(suffix)]
                     break
     key_suffix = "#16" if reg_entry.domain == "media_player" else ""
     addr = Address.from_device_id(dev_id, key_suffix)
     raw_who = who or _PLATFORM_DEFAULT_WHO.get(reg_entry.domain, "")
-    return (raw_who, addr.clean_where, addr.interface or "", klass)
+    clean_where = _canonical_match_where(reg_entry.domain, raw_who, addr.clean_where)
+    return (raw_who, clean_where, addr.interface or "", klass)
 
 
 def _build_platforms_diagnostics(
@@ -363,7 +417,11 @@ def _build_platforms_diagnostics(
                         continue
                     seen_identities.add(identity)
                     who, base_addr, iface, klass, _ = identity
-                    clean_base = base_addr.split("-")[-1]
+                    if plat_str == "sensor" and not who and klass:
+                        who = _SENSOR_CLASS_WHO.get(klass, "")
+                    clean_base = _canonical_match_where(
+                        plat_str, who, base_addr, central=bool(cfg.get("central"))
+                    )
                     if plat_str == "sensor" and klass:
                         if (who, clean_base, iface, klass) in reg_typed:
                             continue

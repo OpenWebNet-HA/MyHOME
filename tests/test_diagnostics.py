@@ -947,3 +947,133 @@ async def test_diagnostics_platforms_counts_entity_registry_and_hybrid_yaml(
         diag_fallback = await async_get_config_entry_diagnostics(hass, entry)
     assert diag_fallback["platforms"]["cover"] == 0
 
+
+@pytest.mark.asyncio
+async def test_diagnostics_hybrid_validated_yaml_no_double_counting(
+    hass: HomeAssistant,
+) -> None:
+    """Validated myhome.yaml + real registered unique_ids never double-count sensor, binary_sensor, button, or climate."""
+    from homeassistant.helpers import entity_registry as er
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.validate import config_schema
+
+    mac = "00:03:50:aa:bb:e3"
+    raw_yaml = {
+        "gw": {
+            "mac": mac,
+            "light": {
+                "hall_light": {"where": "11", "name": "Hall"},
+                "area0_light": {"where": "0004", "name": "Area 0 Light"},
+                "group_light": {"where": "#1", "name": "All Hall"},
+            },
+            "cover": {
+                "routed_shade": {"where": "11", "interface": "02", "name": "East Shade"},
+            },
+            "sensor": {
+                "main_power": {"where": "51", "class": "power", "name": "Main Meter"},
+                "sub_energy": {"where": "52", "class": "energy", "name": "Sub Meter"},
+                "legacy_meter": {"where": "53", "class": "power", "name": "Legacy Meter"},
+                "lux_area0": {"where": "0004", "class": "illuminance", "name": "Porch Lux"},
+            },
+            "binary_sensor": {
+                "front_door": {"who": "25", "where": "31", "class": "door", "name": "Front Door"},
+                "f455_routed": {
+                    "who": "25",
+                    "where": "31",
+                    "interface": "01",
+                    "class": "opening",
+                    "name": "Garden Gate",
+                },
+                "hall_motion": {"who": "1", "where": "0004", "class": "motion", "name": "Hall PIR"},
+                "aux_contact": {"who": "9", "where": "1", "class": "opening", "name": "Aux 1"},
+                "bare_legacy_contact": {"who": "25", "where": "35", "class": "opening", "name": "Bare 35"},
+            },
+            "climate": {
+                "z02": {"zone": "02", "name": "Living Room"},
+                "z05": {"zone": "#5", "name": "Kitchen"},
+                "central99": {"zone": "0", "central": True, "name": "Central 99"},
+                "central4": {"zone": "1", "central": True, "name": "Central 4"},
+            },
+        }
+    }
+    validated = config_schema(raw_yaml)[mac]["platforms"]
+    # Also inject an unvalidated YAML sensor dict without explicit "who" and an unvalidated central climate dict
+    validated["sensor"]["unvalidated_power"] = {"where": "54", "class": "power", "name": "Raw Power"}
+    validated["climate"]["unvalidated_central"] = {"zone": "0", "central": True, "name": "Raw Central"}
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="MH200 Gateway",
+        data={CONF_MAC: mac, "name": "MH200"},
+        options={},
+    )
+    entry.add_to_hass(hass)
+
+    ent_reg = er.async_get(hass)
+    registered_entities = (
+        # Lights + covers
+        ("light", f"{mac}-1-11", "hall_light", None),
+        ("light", f"{mac}-1-04", "area0_light", None),
+        ("light", f"{mac}-1-#1", "group_light", None),
+        ("cover", f"{mac}-2-11#4#02", "east_shade", None),
+        # Real WHO=18 power/energy sensors (including total/daily/monthly suffixes & legacy unprefixed {mac}-53-power)
+        ("sensor", f"{mac}-18-51-power", "main_power", None),
+        ("sensor", f"{mac}-18-51-total-energy", "main_total_energy", None),
+        ("sensor", f"{mac}-18-51-daily-energy", "main_daily_energy", None),
+        ("sensor", f"{mac}-18-51-monthly-energy", "main_monthly_energy", None),
+        ("sensor", f"{mac}-18-52-total-energy", "sub_total_energy", None),
+        ("sensor", f"{mac}-18-52-daily-energy", "sub_daily_energy", None),
+        ("sensor", f"{mac}-18-52-monthly-energy", "sub_monthly_energy", None),
+        ("sensor", f"{mac}-53-power", "legacy_53_power", None),
+        ("sensor", f"{mac}-18-54-power", "unvalidated_54_power", None),
+        ("sensor", f"{mac}-1-04-illuminance", "porch_lux", None),
+        # Real binary_sensor unique_ids with device class suffixes, F455 301#4#01 padding, motion, aux, and bare fallback
+        ("binary_sensor", f"{mac}-25-31-door", "front_door", "door"),
+        ("binary_sensor", f"{mac}-25-301#4#01-opening", "garden_gate", "opening"),
+        ("binary_sensor", f"{mac}-1-04-motion", "hall_pir", "motion"),
+        ("binary_sensor", f"{mac}-9-1-opening", "aux_1", "opening"),
+        ("binary_sensor", f"{mac}-35", "bare_35", None),
+        # Real button companion suffixes for YAML lights & routed covers (+ gateway calibrate-all-covers button)
+        ("button", f"{mac}-1-11-disable", "hall_disable", None),
+        ("button", f"{mac}-1-11-enable", "hall_enable", None),
+        ("button", f"{mac}-1-04-disable", "area0_disable", None),
+        ("button", f"{mac}-1-04-enable", "area0_enable", None),
+        ("button", f"{mac}-2-11#4#02-disable", "shade_disable", None),
+        ("button", f"{mac}-2-11#4#02-enable", "shade_enable", None),
+        ("button", f"{mac}-2-11#4#02-calibrate", "shade_calibrate", None),
+        ("button", f"{mac}-calibrate-all-covers", "calibrate_all", None),
+        # Real canonical climate unique_ids matching YAML "02", "#5", central "0", and 4-zone central "1"
+        ("climate", f"{mac}-4-2", "living_room", None),
+        ("climate", f"{mac}-4-5", "kitchen", None),
+        ("climate", f"{mac}-4-#0", "central_99", None),
+        ("climate", f"{mac}-4-#0#1", "central_4", None),
+    )
+    for domain, uid, obj_id, orig_cls in registered_entities:
+        ent_reg.async_get_or_create(
+            domain=domain,
+            platform=DOMAIN,
+            unique_id=uid,
+            config_entry=entry,
+            suggested_object_id=obj_id,
+            original_device_class=orig_cls,
+        )
+
+    mock_handler = MagicMock()
+    mock_handler.gateway = None
+    mock_handler.send_buffer = None
+    mock_handler.bus_monitor = None
+    mock_handler.device_health = None
+    hass.data[DOMAIN] = {mac: {CONF_ENTITY: mock_handler, CONF_PLATFORMS: validated}}
+    attach_runtime(hass, entry, mac, mock_handler)
+
+    diag = await async_get_config_entry_diagnostics(hass, entry)
+
+    assert diag["platforms"]["light"] == 3
+    assert diag["platforms"]["cover"] == 1
+    assert diag["platforms"]["sensor"] == 10
+    assert diag["platforms"]["binary_sensor"] == 5
+    assert diag["platforms"]["button"] == 8
+    assert diag["platforms"]["climate"] == 4
+
+
