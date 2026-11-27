@@ -1808,7 +1808,8 @@ async def test_queued_calibration_promoted_while_waiting_on_lock_aborts_cleanly(
             assert cover_0111 in cover_0110.calibration_hub.queued_covers
 
             # Promote 0111 while it sits queued on calibration_hub.lock (do NOT call _feed / async_block_till_done
-            # while task_0110 is parked on proceed_0110.wait()).
+            # while task_0110 is parked on proceed_0110.wait()), also verifying stale _calibration_interrupted is cleared.
+            cover_0111._calibration_interrupted = "stale_interrupt"
             msg_0111 = OWNMessage.parse("*#2*0111*10*10*60*001*0##")
             assert msg_0111 is not None
             async_dispatcher_send(hass, f"myhome_message_{MAC}", msg_0111)
@@ -1821,6 +1822,7 @@ async def test_queued_calibration_promoted_while_waiting_on_lock_aborts_cleanly(
             with pytest.raises(HomeAssistantError) as batch_exc:
                 await asyncio.wait_for(task_0111, timeout=5.0)
             assert batch_exc.value.translation_key == "cover_reports_position"
+            assert cover_0111._calibration_interrupted is None
             await hass.async_block_till_done()
 
             # 0110 completed and saved travel times; 0111 NEVER swept its motor and NEVER wrote travel times.
@@ -1832,8 +1834,8 @@ async def test_queued_calibration_promoted_while_waiting_on_lock_aborts_cleanly(
                 for e in cal_events
             )
 
-            # 2. Queued async_calibrate on 0112 via CalibrateAllCoversButtonEntity,
-            # also verifying stale _calibration_interrupted is cleared and pre-lock check raises cleanly.
+            # 2. Sequential batch via CalibrateAllCoversButtonEntity: 0110 waits on lock while
+            # 0112 promotes to Dim 10 before its turn; 0112 never sweeps and pre-lock check raises cleanly.
             swept_covers.clear()
             async with cover_0112.calibration_hub.lock:
                 await hass.services.async_call(
@@ -1843,27 +1845,28 @@ async def test_queued_calibration_promoted_while_waiting_on_lock_aborts_cleanly(
                     blocking=True,
                 )
                 for _ in range(20):
-                    if cover_0112 in cover_0112.calibration_hub.queued_covers:
+                    if cover_0110 in cover_0110.calibration_hub.queued_covers:
                         break
                     await asyncio.sleep(0.01)
-                assert cover_0112 in cover_0112.calibration_hub.queued_covers
-                cover_0112._calibration_interrupted = "stale_interrupt"
+                assert cover_0110 in cover_0110.calibration_hub.queued_covers
                 msg_0112 = OWNMessage.parse("*#2*0112*10*10*45*001*0##")
                 assert msg_0112 is not None
                 async_dispatcher_send(hass, f"myhome_message_{MAC}", msg_0112)
                 await asyncio.sleep(0)
 
-            await asyncio.sleep(0.05)
+            for _ in range(50):
+                if (
+                    len(swept_covers) >= 3
+                    and not cover_0110.calibration_hub.is_calibrating
+                    and cover_0110.calibration_hub._active_batch_gen is None
+                ):
+                    break
+                await asyncio.sleep(0.01)
             await hass.async_block_till_done()
             assert "0112" not in [w for w, _ in swept_covers]
             assert [w for w, _ in swept_covers] == ["0110", "0110", "0110"]
             assert "0112" not in entry.options.get(CONF_COVER_TRAVEL_TIMES, {})
-            assert cover_0112._calibration_interrupted is None
             assert cover_0112.calibration_hub.queued_covers == set()
-            assert any(
-                e.get("entity_id") == "cover.cover_0112" and e.get("phase") == "failed"
-                for e in cal_events
-            )
 
             # Calling calibrate_cover on an already-promoted cover fails immediately at entry.
             with pytest.raises(HomeAssistantError) as pre_lock_exc:

@@ -416,14 +416,14 @@ async def test_calibrate_button_calls_the_service_for_its_cover(hass, gateway):
     calls = []
     hass.services.async_register(DOMAIN, "calibrate_cover", callback(lambda call: calls.append(dict(call.data))))
     await btn.async_press()
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
     assert calls == [{"entity_id": "cover.bedroom_shutter"}]
 
     # no cover entity registered for this device: nothing is called
     other = CalibrateCoverButtonEntity(hass=hass, platform="button", device_id="99", where="99", interface=None, name="Ghost", gateway=gateway)
     other.hass = hass
     await other.async_press()
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
     assert len(calls) == 1
 
 
@@ -451,15 +451,15 @@ async def test_calibrate_all_button_targets_every_enabled_cover_of_the_entry(has
     calls = []
     hass.services.async_register(DOMAIN, "calibrate_cover", callback(lambda call: calls.append(dict(call.data))))
     await btn.async_press()
-    await hass.async_block_till_done()
-    assert calls == [{"entity_id": ["cover.a", "cover.b"]}]
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert calls == [{"entity_id": "cover.a"}, {"entity_id": "cover.b"}]
 
     # nothing to calibrate -> no call
     for eid in ("cover.a", "cover.b", "cover.c"):
         registry.async_remove(eid)
     await btn.async_press()
-    await hass.async_block_till_done()
-    assert len(calls) == 1
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert len(calls) == 2
 
 
 async def test_button_platform_creates_calibration_buttons_for_registered_and_discovered_covers(hass, gateway):
@@ -918,7 +918,9 @@ async def test_run_ending_at_the_actuator_cutoff_fails_at_once(hass, gateway, cl
     await _drive_run(cover, gateway, clock, direction_frame="1", write_delay=0.3, motor_delay=0.55, run=61.5)
     with pytest.raises(HomeAssistantError, match="60 s run-time limit") as err:
         await asyncio.wait_for(task, 5)
-    assert "61.5 s" in str(err.value) and "stopwatch" in str(err.value)
+    assert "61.5 s" in str(err.value)
+    assert "Settings -> Repairs" in str(err.value)
+    assert "stopwatch" not in str(err.value)
 
     assert [f for f, _ in gateway.deliveries] == ["*2*1*21##"]  # no second and third run
     assert cover.extra_state_attributes["calibration_source"] == "default"
@@ -1955,6 +1957,385 @@ async def test_yaml_cover_travel_time_and_source_consistent_across_first_and_sec
     partial_opts = {CONF_COVER_TRAVEL_TIMES: {"06": {"min_motor_pulse": 0.25}}}
     assert await _run_start(partial_opts, registered=False) == (15.0, 15.0, "yaml")
     assert await _run_start(partial_opts, registered=True) == (15.0, 15.0, "yaml")
+
+
+# ── v2.0.2 cover calibration UX, button orchestration, source & legacy cutoff ─
+
+
+def test_calibration_cutoff_message_guides_manual_timing_not_stopwatch() -> None:
+    """CalibrationCutoff references guided Repairs manual timing and drops removed Stop & Save/shutter copy."""
+    err_close = CalibrationCutoff("Living Curtain", "close", 60.9, 60.0)
+    msg_close = str(err_close)
+    assert "Stop & Save" not in msg_close
+    assert "stopwatch" not in msg_close.lower()
+    assert "shutter" not in msg_close.lower()
+    assert "cannot measure this cover automatically" in msg_close
+    assert "Settings -> Repairs" in msg_close
+    assert "last_run_seconds" in msg_close
+    assert "myhome.set_cover_travel_time" in msg_close
+    assert err_close.limit == 60.0
+    assert err_close.seconds == 60.9
+    assert err_close.translation_key == "calibration_actuator_cutoff_close"
+    assert err_close.translation_placeholders == {
+        "name": "Living Curtain",
+        "seconds": "60.9",
+        "limit": "60",
+    }
+
+    err_open = CalibrationCutoff("Living Curtain", "open", 121.2, 120.0)
+    assert err_open.translation_key == "calibration_actuator_cutoff_open"
+    assert err_open.limit == 120.0
+    assert err_open.seconds == 121.2
+
+
+async def test_calibrate_button_cutoff_logs_warning_notifies_and_creates_repair(
+    hass, gateway, caplog
+) -> None:
+    """CalibrateCoverButtonEntity handles CalibrationCutoff with warning log, notification, and fixable repair."""
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
+    from homeassistant.helpers import issue_registry as ir
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.button import CalibrateCoverButtonEntity
+    from custom_components.myhome.const import DOMAIN
+    from custom_components.myhome.repairs import ISSUE_COVER_CALIBRATION_CUTOFF
+
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": gateway.mac}, unique_id=gateway.mac)
+    entry.add_to_hass(hass)
+    gateway.config_entry = entry
+
+    dev_reg = dr.async_get(hass)
+    device = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, f"{gateway.mac}-2-22#4#02")},
+        name="Cover 22I02",
+    )
+    dev_reg.async_update_device(device.id, name_by_user="Gordijn woonkamer")
+
+    ent_reg = er.async_get(hass)
+    cover_entry = ent_reg.async_get_or_create(
+        "cover",
+        DOMAIN,
+        f"{gateway.mac}-2-22#4#02",
+        suggested_object_id="gordijn_woonkamer",
+        config_entry=entry,
+        device_id=device.id,
+    )
+
+    btn = CalibrateCoverButtonEntity(
+        hass=hass,
+        platform="button",
+        device_id="22#4#02",
+        where="22",
+        interface="02",
+        name="Cover 22I02",
+        gateway=gateway,
+        config_entry=entry,
+    )
+    btn.hass = hass
+
+    mode = {"action": "cutoff"}
+
+    async def _fake_calibrate(call) -> None:
+        if mode["action"] == "cutoff":
+            raise CalibrationCutoff("Gordijn woonkamer", "close", 60.9, 60.0)
+        if mode["action"] == "error":
+            raise HomeAssistantError("Actuator locked via WHO=14")
+
+    hass.services.async_register(DOMAIN, "calibrate_cover", _fake_calibrate)
+
+    with (
+        patch("custom_components.myhome.button.persistent_notification.async_create") as mock_notify,
+        patch("custom_components.myhome.button.persistent_notification.async_dismiss") as mock_dismiss,
+        caplog.at_level("WARNING"),
+    ):
+        await btn.async_press()
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+        assert any(rec.levelname == "WARNING" and "cutoff" in rec.message.lower() for rec in caplog.records)
+        assert not any(rec.levelname == "ERROR" for rec in caplog.records)
+        mock_notify.assert_called_once()
+        notif_msg = mock_notify.call_args.args[1]
+        assert "/config/repairs" in notif_msg
+        assert "Gordijn woonkamer" in mock_notify.call_args.kwargs["title"]
+
+        issue_id = f"{ISSUE_COVER_CALIBRATION_CUTOFF}_{entry.entry_id}_22_4_02"
+        issue = ir.async_get(hass).async_get_issue(DOMAIN, issue_id)
+        assert issue is not None
+        assert issue.is_fixable is True
+        assert issue.translation_key == ISSUE_COVER_CALIBRATION_CUTOFF
+        assert issue.translation_placeholders == {
+            "name": "Gordijn woonkamer",
+            "limit": "60",
+            "seconds": "60.9",
+        }
+        assert issue.data["entity_id"] == cover_entry.entity_id
+        assert issue.data["device_id"] == "22#4#02"
+
+        # Non-cutoff HomeAssistantError posts notification cleanly without crashing
+        mock_notify.reset_mock()
+        caplog.clear()
+        mode["action"] = "error"
+        await btn.async_press()
+        await hass.async_block_till_done(wait_background_tasks=True)
+        assert any(rec.levelname == "WARNING" for rec in caplog.records)
+        assert not any(rec.levelname == "ERROR" for rec in caplog.records)
+        mock_notify.assert_called_once()
+        assert "Actuator locked" in mock_notify.call_args.args[1]
+
+        # Subsequent success dismisses notification and clears the cutoff repair issue
+        mode["action"] = "ok"
+        await btn.async_press()
+        await hass.async_block_till_done(wait_background_tasks=True)
+        mock_dismiss.assert_called_once()
+        assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None
+
+
+async def test_calibrate_button_resolves_entry_mac_fallback_and_suffix_name(hass, gateway) -> None:
+    """Routed covers keep Cover <suffix> default name and CalibrateCoverButtonEntity falls back to entry_mac."""
+    from homeassistant.helpers import entity_registry as er
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.button import (
+        CalibrateCoverButtonEntity,
+    )
+    from custom_components.myhome.button import (
+        async_setup_entry as setup_buttons,
+    )
+    from custom_components.myhome.const import CONF_ENTITY, CONF_PLATFORMS, DOMAIN
+
+    # 1. Routed cover without device/entity name gets "Cover 22I02" (address.suffix), not "Cover 22"
+    entry_suffix = MockConfigEntry(domain=DOMAIN, data={"mac": gateway.mac}, unique_id=gateway.mac)
+    entry_suffix.add_to_hass(hass)
+    ent_reg = er.async_get(hass)
+    ent_reg.async_get_or_create(
+        "cover",
+        DOMAIN,
+        f"{gateway.mac}-2-22#4#02",
+        suggested_object_id="cover_22i02",
+        config_entry=entry_suffix,
+    )
+    hass.data[DOMAIN] = {gateway.mac: {CONF_PLATFORMS: {"button": {}}, CONF_ENTITY: gateway}}
+    added: list = []
+    attach_runtime(hass, entry_suffix)
+    await setup_buttons(hass, entry_suffix, added.extend)
+    calib_btns = [e for e in added if isinstance(e, CalibrateCoverButtonEntity)]
+    assert len(calib_btns) == 1
+    assert calib_btns[0]._device_name == "Cover 22I02"
+
+    # 2. entry_mac fallback when entity unique_id uses entry.data[CONF_MAC] rather than gateway.mac
+    entry_mac = "00:03:50:aa:bb:ff"
+    entry_fallback = MockConfigEntry(domain=DOMAIN, data={"mac": entry_mac}, unique_id=entry_mac)
+    entry_fallback.add_to_hass(hass)
+    ent_reg.async_get_or_create(
+        "cover",
+        DOMAIN,
+        f"{entry_mac}-2-33#4#02",
+        suggested_object_id="fallback_cover",
+        config_entry=entry_fallback,
+    )
+    btn = CalibrateCoverButtonEntity(
+        hass=hass,
+        platform="button",
+        device_id="33#4#02",
+        where="33",
+        interface="02",
+        name="Cover 33I02",
+        gateway=gateway,
+        config_entry=entry_fallback,
+    )
+    btn.hass = hass
+
+    called: list[dict] = []
+    hass.services.async_register(DOMAIN, "calibrate_cover", callback(lambda call: called.append(dict(call.data))))
+    await btn.async_press()
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert called == [{"entity_id": "cover.fallback_cover"}]
+
+
+async def test_calibrate_all_button_continues_on_cover_failure_and_aborts_on_stop(hass, gateway) -> None:
+    """CalibrateAllCoversButtonEntity continues past per-cover failures and stops immediately on stop_cover_calibration."""
+    from homeassistant.helpers import entity_registry as er
+    from homeassistant.helpers import issue_registry as ir
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.button import CalibrateAllCoversButtonEntity
+    from custom_components.myhome.const import DOMAIN
+    from custom_components.myhome.cover_calibration import get_calibration_hub
+    from custom_components.myhome.repairs import ISSUE_COVER_CALIBRATION_CUTOFF
+
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": gateway.mac}, unique_id=gateway.mac)
+    entry.add_to_hass(hass)
+    gateway.config_entry = entry
+    gateway.unique_id = gateway.mac
+
+    ent_reg = er.async_get(hass)
+    ent_reg.async_get_or_create("cover", DOMAIN, f"{gateway.mac}-2-21", suggested_object_id="a", config_entry=entry)
+    ent_reg.async_get_or_create("cover", DOMAIN, f"{gateway.mac}-2-22", suggested_object_id="b", config_entry=entry)
+    ent_reg.async_get_or_create("cover", DOMAIN, f"{gateway.mac}-2-23", suggested_object_id="c", config_entry=entry)
+
+    btn = CalibrateAllCoversButtonEntity(hass=hass, config_entry=entry, gateway=gateway)
+    hub = get_calibration_hub(gateway)
+
+    # Part 1: cover.a hits cutoff, cover.b succeeds, cover.c fails with locked -> all 3 attempted
+    attempted: list[str] = []
+
+    async def _run_part1(call) -> None:
+        eid = call.data["entity_id"]
+        attempted.append(eid)
+        if eid == "cover.a":
+            raise CalibrationCutoff("Cover A", "close", 61.0, 60.0)
+        if eid == "cover.c":
+            raise HomeAssistantError("Cover C: locked via WHO=14")
+
+    hass.services.async_register(DOMAIN, "calibrate_cover", _run_part1)
+
+    with patch("custom_components.myhome.button.persistent_notification.async_create") as mock_notify:
+        await btn.async_press()
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+        assert attempted == ["cover.a", "cover.b", "cover.c"]
+        assert ir.async_get(hass).async_get_issue(
+            DOMAIN, f"{ISSUE_COVER_CALIBRATION_CUTOFF}_{entry.entry_id}_21"
+        ) is not None
+        assert ir.async_get(hass).async_get_issue(
+            DOMAIN, f"{ISSUE_COVER_CALIBRATION_CUTOFF}_{entry.entry_id}_22"
+        ) is None
+        mock_notify.assert_called_once()
+        summary = mock_notify.call_args.args[1]
+        assert "Succeeded: 1" in summary
+        assert "Failed: 2" in summary
+        assert "/config/repairs" in summary
+
+    # Part 2: stop_cover_calibration called during cover.a -> aborts cover.b & cover.c immediately
+    attempted.clear()
+    gen_before = hub.stop_generation
+
+    async def _run_part2(call) -> None:
+        eid = call.data["entity_id"]
+        attempted.append(eid)
+        if eid == "cover.a":
+            stopped = await async_stop_cover_calibration(hass)
+            assert stopped is True
+            raise CalibrationInterrupted("Cover A", "Calibration stopped by user")
+
+    hass.services.async_register(DOMAIN, "calibrate_cover", _run_part2)
+
+    with patch("custom_components.myhome.button.persistent_notification.async_create") as mock_notify:
+        await btn.async_press()
+        await hass.async_block_till_done(wait_background_tasks=True)
+
+        assert hub.stop_generation == gen_before + 1
+        assert attempted == ["cover.a"]
+        mock_notify.assert_called_once()
+        summary = mock_notify.call_args.args[1]
+        assert "Stopped / remaining: 3" in summary
+
+
+async def test_calibrate_persists_source_measured(hass, gateway, clock, fake_time, sleeps) -> None:
+    """async_calibrate() persists 'source': 'measured' into cover_travel_times options."""
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.const import DOMAIN
+
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": gateway.mac}, unique_id=gateway.mac, options={})
+    entry.add_to_hass(hass)
+    gateway.config_entry = entry
+
+    cover = _make_cover(hass, gateway, device_id="21", where="21")
+    task = asyncio.create_task(cover.async_calibrate())
+    await _drive_run(cover, gateway, clock, direction_frame="1", write_delay=0.2, motor_delay=0.5, run=22.0)
+    await _drive_run(cover, gateway, clock, direction_frame="2", write_delay=0.2, motor_delay=0.5, run=19.2)
+    await _drive_run(cover, gateway, clock, direction_frame="1", write_delay=0.2, motor_delay=0.5, run=20.4)
+    result = await asyncio.wait_for(task, 5)
+
+    assert result["source"] == "measured"
+    stored = entry.options[CONF_COVER_TRAVEL_TIMES]["21"]
+    assert stored["source"] == "measured"
+    assert stored["down"] == pytest.approx(19.2, abs=0.01)
+    assert stored["up"] == pytest.approx(20.4, abs=0.01)
+
+
+async def test_legacy_cutoff_travel_times_create_and_auto_clear_repair_issues(hass, gateway) -> None:
+    """Legacy ~61s/121s stored travel times with source None/'measured' create per-cover fixable issues and auto-clear."""
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
+    from homeassistant.helpers import issue_registry as ir
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.const import CONF_IGNORED_ADDRESSES, DOMAIN
+    from custom_components.myhome.cover import async_sync_cover_calibration_issues
+    from custom_components.myhome.repairs import ISSUE_COVER_LEGACY_CUTOFF
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"mac": gateway.mac},
+        unique_id=gateway.mac,
+        options={
+            CONF_IGNORED_ADDRESSES: ["2/25"],
+            CONF_COVER_TRAVEL_TIMES: {
+                "21": {"down": 60.9, "up": 61.0, "measured_at": "2026-09-13T12:00:00+00:00"},
+                "22#4#02": {"down": 121.5, "up": 38.0, "source": "measured"},
+                "23": {"down": 61.0, "up": 61.0, "source": "manual"},
+                "24": {"down": 61.0, "up": 61.0, "source": "copied", "copied_from": "cover.other"},
+                "25": {"down": 61.0, "up": 61.0},  # ignored address
+                "26": {"slat_time": 1.8, "min_motor_pulse": 0.4},  # partial record
+                "27": {"down": 22.4, "up": 23.1, "source": "measured"},  # valid non-cutoff
+                "28": {"down": 61.0, "up": 61.0},  # deleted cover (not in registry)
+            },
+        },
+    )
+    entry.add_to_hass(hass)
+    gateway.config_entry = entry
+
+    dev_reg = dr.async_get(hass)
+    dev_21 = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, f"{gateway.mac}-2-21")},
+        name="Cover 21",
+    )
+    dev_reg.async_update_device(dev_21.id, name_by_user="Gordijn badkamer")
+
+    ent_reg = er.async_get(hass)
+    ent_reg.async_get_or_create(
+        "cover", DOMAIN, f"{gateway.mac}-2-21", suggested_object_id="gordijn_badkamer", config_entry=entry, device_id=dev_21.id
+    )
+    for dev_id in ("22#4#02", "23", "24", "25", "26", "27"):
+        ent_reg.async_get_or_create(
+            "cover", DOMAIN, f"{gateway.mac}-2-{dev_id}", config_entry=entry
+        )
+
+    async_sync_cover_calibration_issues(hass, entry)
+
+    issue_reg = ir.async_get(hass)
+    issue_21_id = f"{ISSUE_COVER_LEGACY_CUTOFF}_{entry.entry_id}_21"
+    issue_22_id = f"{ISSUE_COVER_LEGACY_CUTOFF}_{entry.entry_id}_22_4_02"
+    issue_21 = issue_reg.async_get_issue(DOMAIN, issue_21_id)
+    issue_22 = issue_reg.async_get_issue(DOMAIN, issue_22_id)
+    assert issue_21 is not None
+    assert issue_21.is_fixable is True
+    assert issue_21.translation_placeholders == {"name": "Gordijn badkamer", "down": "60.9", "up": "61.0"}
+    assert issue_22 is not None
+    assert issue_22.is_fixable is True
+    assert issue_22.translation_placeholders["down"] == "121.5"
+
+    # Non-legacy, manual, copied, ignored, partial, normal, and deleted covers must NOT be flagged
+    for excluded_slug in ("23", "24", "25", "26", "27", "28"):
+        assert issue_reg.async_get_issue(
+            DOMAIN, f"{ISSUE_COVER_LEGACY_CUTOFF}_{entry.entry_id}_{excluded_slug}"
+        ) is None
+
+    # Saving manual travel times auto-clears cover 21's issue while keeping 22#4#02
+    cover_21 = _make_cover(hass, gateway, device_id="21", where="21", name="Gordijn badkamer")
+    await cover_21.async_set_travel_time(travel_time_down=38.5, travel_time_up=39.2)
+    assert issue_reg.async_get_issue(DOMAIN, issue_21_id) is None
+    assert issue_reg.async_get_issue(DOMAIN, issue_22_id) is not None
+
+    # Resetting travel times auto-clears cover 22#4#02's issue
+    cover_22 = _make_cover(hass, gateway, device_id="22#4#02", where="22", interface="02", name="Cover 22I02")
+    await cover_22.async_reset_travel_time()
+    assert issue_reg.async_get_issue(DOMAIN, issue_22_id) is None
 
 
 

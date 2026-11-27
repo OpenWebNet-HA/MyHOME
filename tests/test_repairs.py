@@ -436,3 +436,296 @@ async def test_repair_issue_canonical_manual_urls(hass: HomeAssistant) -> None:
     )
 
 
+@pytest.mark.asyncio
+async def test_cover_manual_calibration_repair_flow_guided_start_stop(hass: HomeAssistant) -> None:
+    """Guided Start -> Stop repair flow disables early timer settling, saves manual travel times, and clears issue."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from homeassistant.helpers import entity_registry as er
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.const import CONF_COVER_TRAVEL_TIMES
+    from custom_components.myhome.cover import MyHOMECover
+    from custom_components.myhome.data import MyHOMERuntimeData
+    from custom_components.myhome.repairs import (
+        ISSUE_COVER_CALIBRATION_CUTOFF,
+        CoverManualCalibrationRepairFlow,
+        async_create_cover_cutoff_issue,
+        async_create_fix_flow,
+    )
+
+    mac = "00:03:50:00:00:01"
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": mac}, unique_id=mac, options={})
+    entry.add_to_hass(hass)
+
+    gw = MagicMock()
+    gw.mac = mac
+    gw.log_id = "[Test GW]"
+    gw.available = True
+    gw.config_entry = entry
+
+    cover = MyHOMECover(
+        hass=hass,
+        name="Gordijn woonkamer",
+        entity_name=None,
+        device_id="22#4#02",
+        who="2",
+        where="22",
+        interface="02",
+        advanced=False,
+        manufacturer="BTicino",
+        model="Shutter / Cover",
+        gateway=gw,
+        travel_time=25,
+    )
+    cover.hass = hass
+    cover.entity_id = "cover.gordijn_woonkamer"
+    cover.async_write_ha_state = MagicMock()
+    cover.async_close_cover = AsyncMock()
+    cover.async_open_cover = AsyncMock()
+    cover.async_stop_cover = AsyncMock()
+
+    runtime = MyHOMERuntimeData(gateway=gw)
+    runtime.entities["cover"] = {"22#4#02": cover}
+    entry.runtime_data = runtime
+
+    ent_reg = er.async_get(hass)
+    ent_reg.async_get_or_create(
+        "cover",
+        DOMAIN,
+        f"{mac}-2-22#4#02",
+        suggested_object_id="gordijn_woonkamer",
+        config_entry=entry,
+    )
+
+    async def _svc_set_travel_time(call) -> None:
+        await cover.async_set_travel_time(
+            travel_time_down=call.data.get("travel_time_down"),
+            travel_time_up=call.data.get("travel_time_up"),
+        )
+
+    hass.services.async_register(DOMAIN, "set_cover_travel_time", _svc_set_travel_time)
+
+    async_create_cover_cutoff_issue(
+        hass, entry.entry_id, "22#4#02", cover.entity_id, "Gordijn woonkamer", 60.0, 60.9
+    )
+    issue_id = f"{ISSUE_COVER_CALIBRATION_CUTOFF}_{entry.entry_id}_22_4_02"
+    issue = ir.async_get(hass).async_get_issue(DOMAIN, issue_id)
+    assert issue is not None and issue.is_fixable
+
+    flow = await async_create_fix_flow(hass, issue_id, issue.data)
+    assert isinstance(flow, CoverManualCalibrationRepairFlow)
+
+    # 1. Menu step
+    step = await flow.async_step_init()
+    assert step["type"] == "menu"
+    assert step["step_id"] == "init"
+    assert step["menu_options"] == ["timed_close_ready", "manual_entry", "reset_default"]
+    assert step["description_placeholders"]["name"] == "Gordijn woonkamer"
+
+    # 2. Close ready -> start closing (disables timer settle)
+    step = await flow.async_step_timed_close_ready()
+    assert step["type"] == "form" and step["step_id"] == "timed_close_ready"
+    step = await flow.async_step_timed_close_ready(user_input={})
+    assert step["type"] == "form" and step["step_id"] == "timed_close_stop"
+    assert cover._settles_on_timer is False
+    cover.async_close_cover.assert_awaited_once()
+
+    # 3. Close stop -> bus-anchored last_run_seconds captured & timer settle restored
+    cover._last_run = {"seconds": 38.4, "direction": "close", "ended_at": "2026-11-27T12:00:38.400+00:00"}
+    step = await flow.async_step_timed_close_stop(user_input={})
+    assert step["type"] == "form" and step["step_id"] == "timed_open_ready"
+    assert step["description_placeholders"]["down"] == "38.4"
+    assert cover._settles_on_timer is True
+    cover.async_stop_cover.assert_awaited_once()
+
+    # 4. Open ready -> start opening -> open stop -> confirm save
+    step = await flow.async_step_timed_open_ready(user_input={"reuse_down_for_up": False})
+    assert step["type"] == "form" and step["step_id"] == "timed_open_stop"
+    assert cover._settles_on_timer is False
+    cover.async_open_cover.assert_awaited_once()
+
+    cover._last_run = {"seconds": 40.2, "direction": "open", "ended_at": "2026-11-27T12:01:20.200+00:00"}
+    step = await flow.async_step_timed_open_stop(user_input={})
+    assert step["type"] == "form" and step["step_id"] == "confirm_save"
+    assert step["description_placeholders"]["down"] == "38.4"
+    assert step["description_placeholders"]["up"] == "40.2"
+    assert cover._settles_on_timer is True
+
+    # 5. Confirm save persists source='manual' and clears repair issue
+    done = await flow.async_step_confirm_save(
+        user_input={"travel_time_down": 38.4, "travel_time_up": 40.2}
+    )
+    assert done["type"] == "create_entry"
+    saved = entry.options[CONF_COVER_TRAVEL_TIMES]["22#4#02"]
+    assert saved["source"] == "manual"
+    assert saved["down"] == pytest.approx(38.4)
+    assert saved["up"] == pytest.approx(40.2)
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None
+
+    # 6. Also verify reuse_down_for_up=True jumps directly to confirm_save
+    flow_reuse = await async_create_fix_flow(hass, issue_id, issue.data)
+    flow_reuse._measured_down = 33.5
+    step_reuse = await flow_reuse.async_step_timed_open_ready(user_input={"reuse_down_for_up": True})
+    assert step_reuse["type"] == "form" and step_reuse["step_id"] == "confirm_save"
+    assert step_reuse["description_placeholders"]["down"] == "33.5"
+    assert step_reuse["description_placeholders"]["up"] == "33.5"
+
+
+@pytest.mark.asyncio
+async def test_cover_manual_calibration_repair_flow_manual_and_reset(hass: HomeAssistant) -> None:
+    """Repair flow supports numeric manual entry (with validation), reset to default, and missing-cover abort."""
+    from homeassistant.helpers import entity_registry as er
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.repairs import (
+        ISSUE_COVER_LEGACY_CUTOFF,
+        async_create_fix_flow,
+        async_sync_legacy_cover_cutoff_issues,
+    )
+
+    mac = "00:03:50:00:00:02"
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": mac}, unique_id=mac)
+    entry.add_to_hass(hass)
+
+    ent_reg = er.async_get(hass)
+    cov_ent = ent_reg.async_get_or_create(
+        "cover", DOMAIN, f"{mac}-2-21", suggested_object_id="gordijn_badkamer", config_entry=entry
+    )
+    hass.states.async_set(
+        cov_ent.entity_id,
+        "open",
+        {"friendly_name": "Gordijn badkamer", "travel_time_down": 61.0, "travel_time_up": 61.0},
+    )
+
+    set_calls: list[dict] = []
+    reset_calls: list[dict] = []
+
+    async def _svc_set(call) -> None:
+        set_calls.append(dict(call.data))
+
+    async def _svc_reset(call) -> None:
+        reset_calls.append(dict(call.data))
+
+    hass.services.async_register(DOMAIN, "set_cover_travel_time", _svc_set)
+    hass.services.async_register(DOMAIN, "reset_cover_travel_time", _svc_reset)
+
+    async_sync_legacy_cover_cutoff_issues(
+        hass,
+        entry.entry_id,
+        [{"device_id": "21", "entity_id": cov_ent.entity_id, "name": "Gordijn badkamer", "down": 61.0, "up": 61.0}],
+    )
+    issue_id = f"{ISSUE_COVER_LEGACY_CUTOFF}_{entry.entry_id}_21"
+    issue = ir.async_get(hass).async_get_issue(DOMAIN, issue_id)
+    assert issue is not None and issue.is_fixable
+
+    # Manual entry: invalid input -> form error, valid input -> service called & issue deleted
+    flow = await async_create_fix_flow(hass, issue_id, issue.data)
+    form = await flow.async_step_manual_entry()
+    assert form["type"] == "form" and form["step_id"] == "manual_entry"
+
+    invalid = await flow.async_step_manual_entry(
+        user_input={"travel_time_down": 0.2, "travel_time_up": 20.0}
+    )
+    assert invalid["type"] == "form"
+    assert invalid["errors"] == {"base": "invalid_travel_time"}
+    assert set_calls == []
+
+    done = await flow.async_step_manual_entry(
+        user_input={"travel_time_down": 35.0, "travel_time_up": 37.5}
+    )
+    assert done["type"] == "create_entry"
+    assert set_calls == [
+        {"entity_id": cov_ent.entity_id, "travel_time_down": 35.0, "travel_time_up": 37.5}
+    ]
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None
+
+    # Reset to default path
+    async_sync_legacy_cover_cutoff_issues(
+        hass,
+        entry.entry_id,
+        [{"device_id": "21", "entity_id": cov_ent.entity_id, "name": "Gordijn badkamer", "down": 61.0, "up": 61.0}],
+    )
+    issue = ir.async_get(hass).async_get_issue(DOMAIN, issue_id)
+    assert issue is not None
+    flow_reset = await async_create_fix_flow(hass, issue_id, issue.data)
+    confirm = await flow_reset.async_step_reset_default()
+    assert confirm["type"] == "form" and confirm["step_id"] == "reset_default"
+    done_reset = await flow_reset.async_step_reset_default(user_input={})
+    assert done_reset["type"] == "create_entry"
+    assert reset_calls == [{"entity_id": cov_ent.entity_id}]
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_id) is None
+
+    # Missing cover aborts cleanly
+    missing_flow = await async_create_fix_flow(
+        hass,
+        f"{ISSUE_COVER_LEGACY_CUTOFF}_{entry.entry_id}_99",
+        {"entry_id": entry.entry_id, "device_id": "99", "entity_id": "cover.missing", "cover_name": "Missing"},
+    )
+    aborted = await missing_flow.async_step_init()
+    assert aborted["type"] == "abort" and aborted["reason"] == "cover_missing"
+
+
+@pytest.mark.asyncio
+async def test_cover_manual_calibration_repair_flow_cancel_stops_motor(hass: HomeAssistant) -> None:
+    """Dismissing the repair modal mid-run immediately restores _settles_on_timer and stops the motor."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.cover import MyHOMECover
+    from custom_components.myhome.data import MyHOMERuntimeData
+    from custom_components.myhome.repairs import (
+        ISSUE_COVER_CALIBRATION_CUTOFF,
+        async_create_fix_flow,
+    )
+
+    mac = "00:03:50:00:00:03"
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": mac}, unique_id=mac)
+    entry.add_to_hass(hass)
+
+    gw = MagicMock()
+    gw.mac = mac
+    gw.log_id = "[Test GW]"
+    gw.config_entry = entry
+
+    cover = MyHOMECover(
+        hass=hass,
+        name="Living Cover",
+        entity_name=None,
+        device_id="21",
+        who="2",
+        where="21",
+        interface=None,
+        advanced=False,
+        manufacturer="BTicino",
+        model="Shutter / Cover",
+        gateway=gw,
+    )
+    cover.hass = hass
+    cover.entity_id = "cover.living_cover"
+    cover.async_close_cover = AsyncMock()
+    cover.async_stop_cover = AsyncMock()
+
+    runtime = MyHOMERuntimeData(gateway=gw)
+    runtime.entities["cover"] = {"21": cover}
+    entry.runtime_data = runtime
+
+    flow = await async_create_fix_flow(
+        hass,
+        f"{ISSUE_COVER_CALIBRATION_CUTOFF}_{entry.entry_id}_21",
+        {"entry_id": entry.entry_id, "device_id": "21", "entity_id": cover.entity_id, "cover_name": "Living Cover"},
+    )
+    step = await flow.async_step_timed_close_ready(user_input={})
+    assert step["step_id"] == "timed_close_stop"
+    assert cover._settles_on_timer is False
+    assert flow._moving is True
+
+    # Simulate dismissing the repair dialog via the close button (X)
+    flow.async_remove()
+    assert cover._settles_on_timer is True
+    assert flow._moving is False
+    await hass.async_block_till_done()
+    cover.async_stop_cover.assert_awaited_once()
+
+

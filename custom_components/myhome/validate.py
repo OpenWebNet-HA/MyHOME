@@ -757,7 +757,7 @@ def _validate_impulse_covers(data: dict[str, typing.Any]) -> dict[str, typing.An
         is_impulse = str(cfg.get(CONF_WHO)) == "1"
         cover_type = cfg.get(CONF_TYPE)
         if cover_type == TYPE_IMPULSE_RELAY and not is_impulse:
-            raise Invalid(f"{device}: type: {TYPE_IMPULSE_RELAY} needs who: 1 (a WHO 2 shutter has no impulse relay)")
+            raise Invalid(f"{device}: type: {TYPE_IMPULSE_RELAY} needs who: 1 (a WHO 2 cover has no impulse relay)")
         if is_impulse and cover_type in ("shutter", "standard"):
             raise Invalid(f"{device}: who: 1 is an impulse relay; type: {cover_type} only applies to who: 2")
         if is_impulse:

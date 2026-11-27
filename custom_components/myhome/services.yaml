@@ -148,7 +148,7 @@ calibrate_cover:
   description: >-
     Measures a timed cover's up and down travel times on the SCS bus and stores them.
     The cover is driven fully up, then fully down (timed), then fully up again (timed).
-    Covers are calibrated one at a time per gateway. Do not run while the shutter must stay put.
+    Covers are calibrated one at a time per gateway. Do not run while the cover must stay put.
   target:
     entity:
       domain: cover
