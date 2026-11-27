@@ -371,10 +371,11 @@ ALL_ZONE_REQUESTS: dict[str, dict[int, str]] = {
 # unit's quarter-hour push): a new F461 entry sent no WHO 4 frame and had no climate entity two
 # minutes later; twelve seconds after ``*#4*#0##`` and the zones were read from another client
 # it had its central unit and three zones (2026-11-18).
-# - The all-actuator request, where the firmware forwards it: live on F455, F461 and
-#   MyHomeServer1 (above); 3488, F450, F453, F453AV, F454, F459, F460 and MH200N by the oracle
-#   row above (`thermo-zone-requests.tsv:17` -> `bus:24 30 34 42 39 30 30 33 30 31 30 0d`,
-#   findings/bt-termo.md §7; not tried on a plant). Not sent where the oracle shows it dropped
+# - The all-actuator request, where the firmware forwards it: live on 3488, F455, F461 and
+#   MyHomeServer1 (above); F450, F453, F453AV, F454, F459, F460 and MH200N by the oracle
+#   row above (`thermo-zone-requests.tsv:17` -> `$04B9003010\r` on F450/F453/F453AV/F454/F459/MH200N,
+#   `$004B9003010\r` on F460, `$104B9003010\r` on 3488; findings/bt-termo.md §7; F450/F453/F453AV/
+#   F454/F459/F460/MH200N not tried on a plant). Not sent where the oracle shows it dropped
 #   (H4684, MH200, MH202) nor on the MH201 (catalogued, no capture). Every actuator answers as
 #   ``Z#N``: a fan coil creates its zone at once, a plain valve is kept until the zone is known
 #   to be a thermostat (#785), see ``climate._ask_actuator_only_zones``.

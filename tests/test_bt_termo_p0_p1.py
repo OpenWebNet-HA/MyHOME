@@ -602,6 +602,79 @@ def test_group1c_standalone_clears_manual_on_season_return_while_central_keeps_i
     assert managed.extra_state_attributes.get("zone_operation") == "manual"
 
 
+def test_dim7_automatic_manual_preserved_across_trailing_season_frame(hass: HomeAssistant) -> None:
+    """Standalone DIM 7 *#4*2*7*3*0## (automatic+manual) must keep HVACMode.AUTO across *4*1*2##."""
+    standalone = _make_zone(hass, "2", standalone=True)
+    standalone._handle_event(OWNMessage.parse("*#4*2*7*3*0##"))
+    assert standalone.hvac_mode == HVACMode.AUTO
+    assert standalone.extra_state_attributes.get("zone_operation") == "manual"
+    standalone._handle_event(OWNMessage.parse("*4*1*2##"))
+    assert standalone.hvac_mode == HVACMode.AUTO
+    assert standalone.extra_state_attributes.get("zone_operation") == "manual"
+
+
+def test_auto_mode_fallbacks_when_hvac_auto_unavailable(hass: HomeAssistant) -> None:
+    """When HVACMode.AUTO is not offered (standalone on central plant), AUTO falls back to season/HEAT/COOL."""
+    # Season fallback (heating) via *4*311*2## (generic automatic) when AUTO is not advertised
+    zone_season = _make_zone(hass, "2", standalone=True, heating=True, cooling=True)
+    zone_season._gateway_handler.has_central_unit = True
+    zone_season._refresh_hvac_modes()
+    assert HVACMode.AUTO not in zone_season.hvac_modes
+    zone_season._handle_event(OWNMessage.parse("*4*1*2##"))
+    zone_season._handle_event(OWNMessage.parse("*4*311*2##"))
+    assert zone_season.hvac_mode == HVACMode.HEAT
+
+    # Heat fallback (no season known)
+    zone_heat = _make_zone(hass, "3", standalone=True, heating=True, cooling=False)
+    zone_heat._gateway_handler.has_central_unit = True
+    zone_heat._refresh_hvac_modes()
+    zone_heat._handle_event(OWNMessage.parse("*4*311*3##"))
+    assert zone_heat.hvac_mode == HVACMode.HEAT
+
+    # Cool fallback (no season known, cool-only)
+    zone_cool = _make_zone(hass, "4", standalone=True, heating=False, cooling=True)
+    zone_cool._gateway_handler.has_central_unit = True
+    zone_cool._refresh_hvac_modes()
+    zone_cool._handle_event(OWNMessage.parse("*4*311*4##"))
+    assert zone_cool.hvac_mode == HVACMode.COOL
+
+
+@pytest.mark.asyncio
+async def test_gateway_events_rejects_non_2digit_who4_interface_token(
+    hass: HomeAssistant,
+) -> None:
+    """A WHO=4 setpoint write carrying a malformed >2-digit interface token is ignored cleanly."""
+    handler = MagicMock()
+    handler.hass = hass
+    handler.mac = "00:03:50:8a:06:1d"
+    handler.log_id = "[f455]"
+    handler.supports_zone_status = False
+    handler.interface_zone_request_refused = False
+    handler.send_status_request = AsyncMock()
+    handler.request_zone_dimension = MagicMock()
+    handler.owned_whos = None
+    dispatcher = GatewayEventDispatcher(handler)
+    dispatcher._is_active_for_who = lambda who: True  # type: ignore[method-assign]
+
+    msg = OWNMessage.parse("*#4*2*#14*0215*3##")
+    msg._where_param = ["4", "123"]
+    await dispatcher.process_message(msg)
+    handler.request_zone_dimension.assert_not_called()
+    handler.send_status_request.assert_not_called()
+
+
+def test_follow_season_change_polls_dim11_after_single_empty_dim19(hass: HomeAssistant) -> None:
+    """After single-empty DIM 19 (*#4*2*19**0##), switching to the unknown cooling side polls DIM 11."""
+    zone = _make_zone(hass, "2", standalone=True)
+    zone._fan = True
+    zone._gateway_handler.request_zone_dimension = MagicMock(return_value=True)
+    zone._handle_event(OWNMessage.parse("*4*1*2##"))
+    zone._handle_event(OWNMessage.parse("*#4*2*19**0##"))
+    zone._gateway_handler.request_zone_dimension.reset_mock()
+    zone._handle_event(OWNMessage.parse("*4*0*2##"))
+    zone._gateway_handler.request_zone_dimension.assert_called_once_with("2", 11)
+
+
 def test_group1d_3488_and_067259_supported_models_and_spelling_alias() -> None:
     """BTicino 3488 and Legrand 067259 are selectable models and resolve cleanly to 3488."""
     from custom_components.myhome.const import SUPPORTED_GATEWAY_MODELS

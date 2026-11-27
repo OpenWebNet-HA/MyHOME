@@ -423,7 +423,8 @@ WHO13_OFFICIAL_DEVICE_TYPES = {
 #        MyHOMEServer1 (PR #420 trace, firmware 2.87.13; earlier in issue
 #        #292/#297), H4890 (issue #466 sweep, firmware 4.0.15), F461 (issue
 #        #466 comment 5870342995 sweep, firmware 2.0.11; reported without
-#        diagnostics in issue #370), and MH201 (firmware 3.3.6, 3.6.27; OWNd#116).
+#        diagnostics in issue #370), MH201 (firmware 3.3.6, 3.6.27; OWNd#116),
+#        and 3488 (live capture, firmware 3.2.5; also emulated 3488/030205).
 #        Shared across modern gateway families (not all Linux-based, e.g. MH201),
 #        so it identifies none of them (see WHO13_SHARED_DEVICE_TYPES).
 #        It contradicts legacy gateways (e.g. MH200/F452), but only as field evidence.
@@ -502,8 +503,10 @@ WHO13_SHARED_DEVICE_TYPES: frozenset[str] = frozenset({"200"})
 #
 #     *#1013**1*OBJECT_MODEL*N_CONF*BRAND*LINE##
 #
-# Modern 200-class gateways traced so far answer `*15*5*0`: N_CONF 15, BRAND 5
-# (Legrand BTicino), LINE 0 (undefined), whereas the legacy ETLinux 3.0.1 F453
+# Most modern 200-class gateways traced so far answer `*15*5*0`: N_CONF 15,
+# BRAND 5 (Legrand BTicino), LINE 0 (undefined); physical 3488 fw 3.2.5 answers
+# `*#1013**1*128*15*1*0##` (N_CONF 15, BRAND 1 BTicino, LINE 0), whereas the
+# legacy ETLinux 3.0.1 F453
 # (firmware 2.0.10, Discussion #856) answers `*#1013**1*16*0*1*0##` (N_CONF 0,
 # BRAND 1 BTicino, LINE 0). N_CONF 15 sits outside the ordinary 0..12 physical
 # configurator range and looks like the 0xF sentinel, so its gateway-specific
@@ -548,7 +551,8 @@ WHO1013_OBSERVED_OBJECT_MODELS: dict[str, tuple[str, ...]] = {
 }
 # WHO=1013 dimension 1, third value: BRAND (MHCatalogue.db EN_BRAND.brand_modobj).
 # Only values observed on real hardware are listed:
-#   1 -> BTicino (physical F453 fw 2.0.10, Discussion #856: *#1013**1*16*0*1*0##)
+#   1 -> BTicino (physical F453 fw 2.0.10, Discussion #856: *#1013**1*16*0*1*0##;
+#        physical 3488 fw 3.2.5: *#1013**1*128*15*1*0##)
 #   5 -> Legrand BTicino (F454, MH202, MyHomeServer1, F461: *15*5*0##; covers both houses)
 WHO1013_BRANDS: dict[str, str] = {
     "1": "BTicino",

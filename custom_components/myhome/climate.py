@@ -585,6 +585,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         # Zone: the operation last reported with its mode (``_ZONE_OPERATION``), None when the
         # zone is off or has not said.
         self._zone_operation: str | None = None
+        # True only when a seasonless 4xx/5xx zone mode (407/408/410/507/508/510) landed on
+        # HVACMode.AUTO before any season was known, so a trailing *4*1*Z## / *4*0*Z## replaces
+        # it without cancelling a real DIM 7 ``automatic`` mode (e.g. *#4*Z*7*3*0##).
+        self._seasonless_auto = False
         # Central unit: Home Assistant's last command and when its local echo stops being expected,
         # and the echo frame once seen (the same frame object can be delivered more than once).
         self._central_echo: tuple[str, float | None, float] | None = None
@@ -1676,7 +1680,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         side = self._season_side(self._season)
         if side is None or self._season_side(previous) in (None, side):
             return
-        if self._fan and self._fan_coil_sides.get(side, False):
+        if self._fan and self._fan_coil_sides and self._season_has_fan_coil():
             self._request_zone_dimension(11)
 
     def _ask_fan_coil_sides(self) -> None:
@@ -4007,6 +4011,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if mode is not None and mode in self._attr_hvac_modes:
             self._attr_hvac_mode = mode
             self._hvac_mode_restored = False  # the zone reported the mode it runs in
+            self._seasonless_auto = False
             if self._attr_hvac_action == HVACAction.OFF:
                 self._attr_hvac_action = HVACAction.IDLE
         temperature = message.set_temperature if state == "setpoint" else None
@@ -4785,11 +4790,13 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # same mode (live F455 + F461, 2026-11-08), and a stale restored AUTO is replaced.
             # An AUTO the zone itself reported (a MyHomeServer1 schedule, Dimension 7 context
             # automatic) is not cancelled: the season frame that follows it is its season.
-            # However, a standalone zone leaving protection or a preset (comfort/eco/manual from
-            # seasonless 4xx/5xx) must return to its season mode rather than stay trapped in AUTO.
+            # However, a standalone zone leaving protection, a preset (comfort/eco), or a
+            # seasonless 4xx/5xx fallback AUTO must return to its season mode rather than stay
+            # trapped in AUTO (while a real DIM 7 automatic mode such as *#4*Z*7*3*0## stays AUTO).
             standalone_mode = self._standalone and (
                 not (self._attr_hvac_mode == HVACMode.AUTO and not self._hvac_mode_restored)
-                or self._zone_operation in (*_ZONE_PROTECTION_OPERATIONS, "comfort", "eco", "manual")
+                or self._seasonless_auto
+                or self._zone_operation in (*_ZONE_PROTECTION_OPERATIONS, "comfort", "eco")
             )
             previous_season = self._season
             self._season = message.season
@@ -4803,7 +4810,11 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._refresh_hvac_modes()
             if (
                 self._zone_operation in (*_ZONE_PROTECTION_OPERATIONS, "comfort", "eco")
-                or (self._standalone and self._zone_operation == "manual")
+                or (
+                    self._standalone
+                    and self._zone_operation == "manual"
+                    and (self._attr_hvac_mode != HVACMode.AUTO or self._seasonless_auto)
+                )
             ):
                 # A zone in protection (102 / 202) or a preset (107 / 108 / 207 / 208) reports
                 # that mode frame in place of its season frame in D2 04 12 (bt_termo 0x5390;
@@ -4812,8 +4823,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 # the preset and is running a normal setpoint again. On a standalone zone,
                 # returning from seasonless 410 / 510 (manual) via *4*1*Z## / *4*0*Z## also
                 # leaves manual operation (central-managed zones keep "manual" because
-                # *4*110*#Z## is followed by *4*1*Z##).
+                # *4*110*#Z## is followed by *4*1*Z##, and DIM 7 *#4*Z*7*3*0## keeps AUTO).
                 self._zone_operation = None
+            self._seasonless_auto = False
             season_mode = HVACMode.HEAT if message.season == SEASON_HEATING else HVACMode.COOL
             prev_mode = self._attr_hvac_mode
             # A HEAT / COOL that Home Assistant restored, not one the zone reported since the
@@ -4967,6 +4979,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     and HVACMode.COOL in self._attr_hvac_modes
                 ):
                     season_fallback = HVACMode.COOL
+                self._seasonless_auto = False
                 if (
                     self._standalone
                     and raw_what in ("407", "408", "410", "507", "508", "510")
@@ -4975,6 +4988,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._attr_hvac_mode = season_fallback
                 elif HVACMode.AUTO in self._attr_hvac_modes:
                     self._attr_hvac_mode = HVACMode.AUTO
+                    if raw_what in ("407", "408", "410", "507", "508", "510"):
+                        self._seasonless_auto = True
                 elif season_fallback is not None:
                     self._attr_hvac_mode = season_fallback
                 elif HVACMode.HEAT in self._attr_hvac_modes:
@@ -4992,6 +5007,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._gateway_handler.log_id,
                     message.human_readable_log,
                 )
+                self._seasonless_auto = False
                 self._attr_hvac_mode = HVACMode.COOL
                 if self._attr_hvac_action == HVACAction.OFF:
                     self._attr_hvac_action = HVACAction.IDLE
@@ -5001,6 +5017,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._gateway_handler.log_id,
                     message.human_readable_log,
                 )
+                self._seasonless_auto = False
                 self._attr_hvac_mode = HVACMode.HEAT
                 if self._attr_hvac_action == HVACAction.OFF:
                     self._attr_hvac_action = HVACAction.IDLE
@@ -5010,6 +5027,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._gateway_handler.log_id,
                     message.human_readable_log,
                 )
+                self._seasonless_auto = False
                 self._restore_nominal_before_protection()
                 if self._is_four_zone_central:
                     self._apply_pending_master_dim12_for_idle()
@@ -5095,6 +5113,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._gateway_handler.log_id,
                     message.human_readable_log,
                 )
+                self._seasonless_auto = False
                 self._attr_hvac_mode = HVACMode.COOL
                 if self._attr_hvac_action == HVACAction.OFF:
                     self._attr_hvac_action = HVACAction.IDLE
@@ -5104,6 +5123,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._gateway_handler.log_id,
                     message.human_readable_log,
                 )
+                self._seasonless_auto = False
                 self._attr_hvac_mode = HVACMode.HEAT
                 if self._attr_hvac_action == HVACAction.OFF:
                     self._attr_hvac_action = HVACAction.IDLE
@@ -5113,6 +5133,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._gateway_handler.log_id,
                     message.human_readable_log,
                 )
+                self._seasonless_auto = False
                 self._restore_nominal_before_protection()
                 self._attr_hvac_mode = HVACMode.OFF
                 self._attr_hvac_action = HVACAction.OFF

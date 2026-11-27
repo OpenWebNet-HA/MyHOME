@@ -1,12 +1,14 @@
 """Startup requests the firmware forwards, per gateway (own-firmware-oracle verdicts, #185, #257, #674).
 
-- ``*#4*0##`` is refused (not forwarded to the bus) by F450, F454, F459, F460, F461, H4684,
-  MH200, MH202 and MyHomeServer1; F453, F453AV and MH200N forward it
-  (``results/<P>/<V>/oracle/full/trace-corpus.tsv``). The MH201 is not in the oracle: a
+- ``*#4*0##`` is refused or misrouted by all thirteen emulated gateway firmwares
+  (``3488``, ``F450``, ``F453``, ``F453AV``, ``F454``, ``F459``, ``F460``, ``F461``,
+  ``H4684``, ``MH200``, ``MH200N``, ``MH202`` and ``MyHomeServer1``; Gen B
+  ``F453``/``F453AV``/``MH200N`` misroute ``*#4*0##`` to non-existent zone 0 per
+  QUIRK-15 and stall with 0 replies). The MH201 is catalogued (not emulated): a
   physical MH201 3.3.6 answered ``*#4*0##`` with no zone frame (``issue_466`` sweep trace). Where it is refused, an SCS-only
   gateway's zones ask for their temperature one by one (``*#4*Z*0##``), which every
   emulated gateway forwards.
-- ``*#16*0*5##`` is refused by F450, F459, F460, F461, MH202 and MyHomeServer1
+- ``*#16*0*5##`` is refused by 3488, F450, F459, F460, F461, MH202 and MyHomeServer1
   (``results/<P>/<V>/oracle/full/sound-who16-source.tsv``).
 - A restored ``current_temperature`` is flagged ``current_temperature_restored`` until the
   zone reports again.
@@ -362,7 +364,7 @@ async def test_a_malformed_restored_temperature_is_ignored(hass):
     [
         ("MH200", True, False),  # listed in the fallback table, but the profile says the sweep is answered
         ("MH201", True, False),  # the #185 field-report entry yields to a stated profile flag too
-        ("F453", False, True),  # not in the table; the profile says the sweep is refused
+        ("F452", False, True),  # not in the table; the profile says the sweep is refused
         ("F461", False, False),  # polled with *#4*Z##: never a temperature poll
     ],
 )
