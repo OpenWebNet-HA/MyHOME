@@ -14,10 +14,12 @@ from custom_components.myhome.const import (
     INTEGRATION_VERSION,
 )
 from custom_components.myhome.websocket import (
+    WS_TYPE_CHECK_FRAME,
     _extract_gateway_info,
     _get_gateway_and_monitor,
     _matches_filter,
     async_setup_websocket_api,
+    ws_bus_monitor_check_frame,
     ws_bus_monitor_clear,
     ws_bus_monitor_history,
     ws_bus_monitor_info,
@@ -47,6 +49,7 @@ async def test_websocket_registration_idempotent(hass: HomeAssistant):
     assert "myhome/bus_monitor/send" in hass.data[websocket_api.DOMAIN]
     assert "myhome/bus_monitor/clear" in hass.data[websocket_api.DOMAIN]
     assert "myhome/bus_monitor/info" in hass.data[websocket_api.DOMAIN]
+    assert WS_TYPE_CHECK_FRAME in hass.data[websocket_api.DOMAIN]
 
     # Second call should be a no-op
     with patch("homeassistant.components.websocket_api.async_register_command") as mock_reg:
@@ -674,3 +677,426 @@ async def test_ws_cover_calibration_trace(hass: HomeAssistant, mock_ws_connectio
         await hass.async_block_till_done()
     trace.assert_called_once_with(gateway_mac="00:03:50:aa:bb:cc", hass=hass)
     mock_ws_connection.send_result.assert_called_once_with(77, {"mac": "00:03:50:aa:bb:cc", "frames": [{"raw": "*2*1*21##"}]})
+
+
+async def test_ws_check_frame_schema_and_non_admin_access(hass: HomeAssistant, attach_gateway):
+    """myhome/bus_monitor/check_frame schema validates input and is read-only for non-admin users."""
+    import voluptuous as vol
+
+    schema_check = ws_bus_monitor_check_frame._ws_schema
+    parsed_msg = schema_check(
+        {"id": 1, "type": WS_TYPE_CHECK_FRAME, "frame": "*1*1*12##", "mac": None}
+    )
+    assert parsed_msg["frame"] == "*1*1*12##"
+    assert parsed_msg["mac"] is None
+    with pytest.raises(vol.Invalid):
+        schema_check({"id": 2, "type": WS_TYPE_CHECK_FRAME})
+
+    from types import SimpleNamespace
+
+    gw = SimpleNamespace(
+        _model_key="F461",
+        mac="00:03:50:aa:bb:cc",
+        gateway=SimpleNamespace(model_name="F461", model="F461"),
+        config_entry=None,
+        _delegated_target=lambda _msg: None,
+        _failover_target=lambda _msg: None,
+    )
+    attach_gateway("00:03:50:aa:bb:cc", gw, BusMonitor(maxlen=5))
+
+    conn = MagicMock(spec=websocket_api.ActiveConnection)
+    conn.user.is_admin = False
+    conn.send_result = MagicMock()
+    conn.send_error = MagicMock()
+
+    ws_bus_monitor_check_frame(
+        hass,
+        conn,
+        {"id": 101, "type": WS_TYPE_CHECK_FRAME, "frame": "*1*1*12##"},
+    )
+    await hass.async_block_till_done()
+    conn.send_error.assert_not_called()
+    conn.send_result.assert_called_once()
+    msg_id, res = conn.send_result.call_args[0]
+    assert msg_id == 101
+    assert res["valid"] is True
+    assert res["blocked"] is False
+    assert res["severity"] is None
+    assert res["rule_id"] is None
+    assert res["target_model"] == "F461"
+
+
+async def test_ws_check_frame_blanket_gateway_delegated_warnings_and_not_found(
+    hass: HomeAssistant,
+    mock_ws_connection,
+    attach_gateway,
+):
+    """myhome/bus_monitor/check_frame reports blanket blocks, gateway blocks, delegation, warnings, and not_found."""
+    from types import SimpleNamespace
+
+    mh202 = SimpleNamespace(
+        _model_key="MH202",
+        mac="00:03:50:00:02:02",
+        gateway=SimpleNamespace(model_name="MH202", model="MH202"),
+        config_entry=None,
+        _delegated_target=lambda _msg: None,
+        _failover_target=lambda _msg: None,
+    )
+    f461 = SimpleNamespace(
+        _model_key="F461",
+        mac="00:03:50:00:04:61",
+        gateway=SimpleNamespace(model_name="F461", model="F461"),
+        config_entry=None,
+        _delegated_target=lambda msg: mh202 if getattr(msg, "who", None) == 4 else None,
+        _failover_target=lambda _msg: None,
+    )
+    h4684 = SimpleNamespace(
+        _model_key="H4684",
+        mac="00:03:50:00:46:84",
+        gateway=SimpleNamespace(model_name="H4684", model="H4684"),
+        config_entry=None,
+        _delegated_target=lambda _msg: None,
+        _failover_target=lambda _msg: None,
+    )
+    generic = SimpleNamespace(
+        _model_key="",
+        mac="00:03:50:00:99:99",
+        gateway=SimpleNamespace(model_name="Generic", model="Generic"),
+        config_entry=None,
+        _delegated_target=lambda _msg: None,
+        _failover_target=lambda _msg: None,
+    )
+
+    attach_gateway("00:03:50:00:04:61", f461, BusMonitor(maxlen=5))
+    attach_gateway("00:03:50:00:02:02", mh202, BusMonitor(maxlen=5))
+    attach_gateway("00:03:50:00:46:84", h4684, BusMonitor(maxlen=5))
+    attach_gateway("00:03:50:00:99:99", generic, BusMonitor(maxlen=5))
+
+    # 1. Blanket crash block
+    ws_bus_monitor_check_frame(
+        hass,
+        mock_ws_connection,
+        {"id": 1, "type": WS_TYPE_CHECK_FRAME, "mac": "00:03:50:00:04:61", "frame": "*#4*1*22##"},
+    )
+    await hass.async_block_till_done()
+    _, res1 = mock_ws_connection.send_result.call_args[0]
+    assert res1["blocked"] is True
+    assert res1["severity"] == "crash"
+    assert res1["scope"] == "blanket"
+    assert res1["rule_id"] == "who4_dim22_no_actuator"
+
+    # 2. Per-gateway crash block on H4684
+    mock_ws_connection.send_result.reset_mock()
+    ws_bus_monitor_check_frame(
+        hass,
+        mock_ws_connection,
+        {"id": 2, "type": WS_TYPE_CHECK_FRAME, "mac": "00:03:50:00:46:84", "frame": "*#13**10##"},
+    )
+    await hass.async_block_till_done()
+    _, res2 = mock_ws_connection.send_result.call_args[0]
+    assert res2["blocked"] is True
+    assert res2["severity"] == "crash"
+    assert res2["scope"] == "gateway"
+    assert res2["rule_id"] == "who13_network_dims_10_11_12"
+    assert res2["target_model"] == "H4684"
+    assert res2["delegated_from"] is None
+    assert "H4684" in res2["affected_models"]
+
+    # 3. Delegated target reporting: F461 delegating WHO 4 -> MH202
+    mock_ws_connection.send_result.reset_mock()
+    ws_bus_monitor_check_frame(
+        hass,
+        mock_ws_connection,
+        {"id": 3, "type": WS_TYPE_CHECK_FRAME, "mac": "00:03:50:00:04:61", "frame": "*#4*001##"},
+    )
+    await hass.async_block_till_done()
+    _, res3 = mock_ws_connection.send_result.call_args[0]
+    assert res3["blocked"] is True
+    assert res3["severity"] == "crash"
+    assert res3["rule_id"] == "mh202_who4_all_probes_001_099"
+    assert res3["target_model"] == "MH202"
+    assert res3["delegated_from"] == "F461"
+
+    # 4. Amber no-reply warning on H4684
+    mock_ws_connection.send_result.reset_mock()
+    ws_bus_monitor_check_frame(
+        hass,
+        mock_ws_connection,
+        {"id": 4, "type": WS_TYPE_CHECK_FRAME, "mac": "00:03:50:00:46:84", "frame": "*1*19*31##"},
+    )
+    await hass.async_block_till_done()
+    _, res4 = mock_ws_connection.send_result.call_args[0]
+    assert res4["valid"] is True
+    assert res4["blocked"] is False
+    assert res4["severity"] == "warning"
+    assert res4["rule_id"] == "noreply_who1_what19"
+
+    # 5. Amber warning on unknown (Generic) gateway for model-specific crash rule
+    mock_ws_connection.send_result.reset_mock()
+    ws_bus_monitor_check_frame(
+        hass,
+        mock_ws_connection,
+        {"id": 5, "type": WS_TYPE_CHECK_FRAME, "mac": "00:03:50:00:99:99", "frame": "*#13**10##"},
+    )
+    await hass.async_block_till_done()
+    _, res5 = mock_ws_connection.send_result.call_args[0]
+    assert res5["valid"] is True
+    assert res5["blocked"] is False
+    assert res5["severity"] == "warning"
+    assert res5["rule_id"] == "unknown_gateway_model_specific"
+    assert "H4684" in res5["affected_models"]
+    assert "MH200" in res5["affected_models"]
+
+    # 6. Unknown MAC -> ERR_NOT_FOUND
+    mock_ws_connection.send_error.reset_mock()
+    ws_bus_monitor_check_frame(
+        hass,
+        mock_ws_connection,
+        {"id": 6, "type": WS_TYPE_CHECK_FRAME, "mac": "00:03:50:ff:ff:ff", "frame": "*1*1*12##"},
+    )
+    await hass.async_block_till_done()
+    mock_ws_connection.send_error.assert_called_once()
+    err_args = mock_ws_connection.send_error.call_args[0]
+    assert err_args[0] == 6
+    assert err_args[1] == websocket_api.ERR_NOT_FOUND
+
+
+async def test_ws_info_includes_model_key_and_crash_protections(
+    hass: HomeAssistant,
+    mock_ws_connection,
+    attach_gateway,
+):
+    """myhome/bus_monitor/info includes normalized model_key and crash_protections metadata."""
+    from types import SimpleNamespace
+
+    monitor = BusMonitor(maxlen=50)
+    gw = SimpleNamespace(
+        _model_key="MH200N",
+        mac="00:03:50:11:22:33",
+        is_connected=True,
+        sending_workers=[],
+        send_buffer=None,
+        config_entry=SimpleNamespace(data={}),
+        gateway=SimpleNamespace(
+            model_name="MH200N",
+            model="MH200N",
+            manufacturer="BTicino S.p.A.",
+            firmware="2.0.1",
+            host="10.0.0.1",
+            port=20000,
+            profile=None,
+        ),
+        _delegated_target=lambda _msg: None,
+        _failover_target=lambda _msg: None,
+    )
+    attach_gateway("00:03:50:11:22:33", gw, monitor)
+
+    ws_bus_monitor_info(
+        hass,
+        mock_ws_connection,
+        {"id": 42, "type": "myhome/bus_monitor/info", "mac": "00:03:50:11:22:33"},
+    )
+    await hass.async_block_till_done()
+    mock_ws_connection.send_result.assert_called_once()
+    msg_id, result = mock_ws_connection.send_result.call_args[0]
+    assert msg_id == 42
+    gw_info = result["gateway"]
+    assert gw_info["model_key"] == "MH200N"
+    prot = gw_info["crash_protections"]
+    assert prot["model_key"] == "MH200N"
+    assert prot["model_known"] is True
+    assert prot["blanket_rule_count"] >= 6
+    rule_ids = {r["rule_id"] for r in prot["gateway_rules"]}
+    assert "who13_dim50" in rule_ids
+    assert "who22_bare_what_33_44_45" in rule_ids
+    assert isinstance(prot["delegated_peers"], list)
+
+
+async def test_ws_send_refuses_delegated_crash_frame_with_routing_context(
+    hass: HomeAssistant,
+    mock_ws_connection,
+    attach_gateway,
+):
+    """ws_bus_monitor_send refuses a delegated crash frame and names both target and primary gateways."""
+    from types import SimpleNamespace
+
+    mh202 = SimpleNamespace(
+        _model_key="MH202",
+        mac="00:03:50:00:02:02",
+        gateway=SimpleNamespace(model_name="MH202", model="MH202"),
+        config_entry=None,
+        _delegated_target=lambda _msg: None,
+        _failover_target=lambda _msg: None,
+    )
+    f461 = SimpleNamespace(
+        _model_key="F461",
+        mac="00:03:50:00:04:61",
+        gateway=SimpleNamespace(model_name="F461", model="F461"),
+        config_entry=None,
+        _delegated_target=lambda msg: mh202 if getattr(msg, "who", None) == 4 else None,
+        _failover_target=lambda _msg: None,
+        send=AsyncMock(),
+        send_status_request=AsyncMock(),
+    )
+    attach_gateway("00:03:50:00:04:61", f461, BusMonitor(maxlen=5))
+
+    ws_bus_monitor_send(
+        hass,
+        mock_ws_connection,
+        {
+            "id": 55,
+            "type": "myhome/bus_monitor/send",
+            "mac": "00:03:50:00:04:61",
+            "frame": "*#4*001##",
+        },
+    )
+    await hass.async_block_till_done()
+
+    mock_ws_connection.send_result.assert_not_called()
+    mock_ws_connection.send_error.assert_called_once()
+    err_id, err_code, err_msg = mock_ws_connection.send_error.call_args[0]
+    assert err_id == 55
+    assert err_code == websocket_api.ERR_INVALID_FORMAT
+    assert "MH202 (routed via F461)" in err_msg
+    f461.send.assert_not_awaited()
+    f461.send_status_request.assert_not_awaited()
+
+
+async def test_ws_info_unknown_and_onboarding_models_emit_empty_model_key(
+    hass: HomeAssistant,
+    mock_ws_connection,
+    attach_gateway,
+):
+    """Finding 2: _extract_gateway_info and ws_bus_monitor_info gate model_key on model_known."""
+    from types import SimpleNamespace
+
+    for idx, (gw_model, title, direct_key) in enumerate(
+        (
+            ("Custom (IP Gateway)", "Custom (IP Gateway) Gateway", ""),
+            ("Unknown model", "Unknown model Gateway", ""),
+            ("MyHOME Gateway", "MyHOME Gateway", ""),
+            ("Generic", "Basement Gateway", ""),
+            ("MyHOME 192.168.34.88", "MyHOME 192.168.34.88", ""),
+            ("ExperimentalX99", "ExperimentalX99 Gateway", "EXPERIMENTALX99"),
+        ),
+        start=1,
+    ):
+        mac = f"00:03:50:aa:bb:{idx:02x}"
+        gw = SimpleNamespace(
+            _model_key=direct_key,
+            mac=mac,
+            is_connected=True,
+            sending_workers=[],
+            send_buffer=None,
+            config_entry=SimpleNamespace(data={"name": gw_model}, title=title),
+            gateway=SimpleNamespace(
+                model_name=gw_model,
+                model=gw_model,
+                manufacturer="BTicino S.p.A.",
+                firmware="",
+                host="192.168.34.88",
+                port=20000,
+                profile=None,
+            ),
+            _delegated_target=lambda _msg: None,
+            _failover_target=lambda _msg: None,
+        )
+        info = _extract_gateway_info(gw)
+        assert info["model_key"] == ""
+        assert info["crash_protections"]["model_known"] is False
+        if not direct_key:
+            assert info["crash_protections"]["model_key"] == ""
+
+        attach_gateway(mac, gw, BusMonitor(maxlen=5))
+        mock_ws_connection.send_result.reset_mock()
+        ws_bus_monitor_info(
+            hass,
+            mock_ws_connection,
+            {"id": 200 + idx, "type": "myhome/bus_monitor/info", "mac": mac},
+        )
+        await hass.async_block_till_done()
+        _, res = mock_ws_connection.send_result.call_args[0]
+        assert res["gateway"]["model_key"] == ""
+        assert res["gateway"]["crash_protections"]["model_known"] is False
+
+
+async def test_ws_check_and_send_unparseable_crash_frames_report_crash_not_invalid_format(
+    hass: HomeAssistant,
+    mock_ws_connection,
+    attach_gateway,
+):
+    """Finding 4: Bare *#4*2*#22##, leading-zero dim 22, and bare *#18*51*#52## report crash reasons over WS."""
+    from types import SimpleNamespace
+
+    f461 = SimpleNamespace(
+        _model_key="F461",
+        mac="00:03:50:00:04:61",
+        gateway=SimpleNamespace(model_name="F461", model="F461"),
+        config_entry=None,
+        _delegated_target=lambda _msg: None,
+        _failover_target=lambda _msg: None,
+        send=AsyncMock(),
+        send_status_request=AsyncMock(),
+    )
+    attach_gateway("00:03:50:00:04:61", f461, BusMonitor(maxlen=5))
+
+    for idx, frame in enumerate(("*#4*2*#22##", "*#04*2*#22##", "*#4*2*#022##"), start=1):
+        mock_ws_connection.send_result.reset_mock()
+        ws_bus_monitor_check_frame(
+            hass,
+            mock_ws_connection,
+            {"id": 300 + idx, "type": WS_TYPE_CHECK_FRAME, "mac": "00:03:50:00:04:61", "frame": frame},
+        )
+        await hass.async_block_till_done()
+        _, check_res = mock_ws_connection.send_result.call_args[0]
+        assert check_res["blocked"] is True
+        assert check_res["severity"] == "crash"
+        assert check_res["rule_id"] == "who4_dim22_no_actuator"
+
+        mock_ws_connection.send_error.reset_mock()
+        ws_bus_monitor_send(
+            hass,
+            mock_ws_connection,
+            {"id": 400 + idx, "type": "myhome/bus_monitor/send", "mac": "00:03:50:00:04:61", "frame": frame},
+        )
+        await hass.async_block_till_done()
+        mock_ws_connection.send_error.assert_called_once_with(
+            400 + idx,
+            websocket_api.ERR_INVALID_FORMAT,
+            "WHO 4 dimension 22 in this form crashes the gateway's thermostat daemon "
+            "and is blocked for safety",
+        )
+
+    mock_ws_connection.send_error.reset_mock()
+    ws_bus_monitor_send(
+        hass,
+        mock_ws_connection,
+        {"id": 450, "type": "myhome/bus_monitor/send", "mac": "00:03:50:00:04:61", "frame": "*#18*51*#52##"},
+    )
+    await hass.async_block_till_done()
+    _, err_code, err_msg = mock_ws_connection.send_error.call_args[0]
+    assert err_code == websocket_api.ERR_INVALID_FORMAT
+    assert "Refusing to send *#18*51*#52## on F461:" in err_msg
+    f461.send.assert_not_awaited()
+
+    # Delegated peer resolution also applies to unparseable crash frames (*#4*001*#20## -> MH202)
+    mh202_peer = SimpleNamespace(
+        _model_key="MH202",
+        mac="00:03:50:00:02:02",
+        gateway=SimpleNamespace(model_name="MH202", model="MH202"),
+        config_entry=None,
+        _delegated_target=lambda _msg: None,
+        _failover_target=lambda _msg: None,
+    )
+    f461._delegated_target = lambda msg: mh202_peer if getattr(msg, "who", None) == 4 else None
+    mock_ws_connection.send_error.reset_mock()
+    ws_bus_monitor_send(
+        hass,
+        mock_ws_connection,
+        {"id": 451, "type": "myhome/bus_monitor/send", "mac": "00:03:50:00:04:61", "frame": "*#4*001*#20##"},
+    )
+    await hass.async_block_till_done()
+    _, del_err_code, del_err_msg = mock_ws_connection.send_error.call_args[0]
+    assert del_err_code == websocket_api.ERR_INVALID_FORMAT
+    assert "MH202 (routed via F461)" in del_err_msg
+    f461.send.assert_not_awaited()

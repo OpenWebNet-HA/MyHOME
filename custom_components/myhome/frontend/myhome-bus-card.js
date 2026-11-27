@@ -66,6 +66,12 @@ class MyHomeBusCard extends HTMLElement {
     this._isSubscribing = false;
     this._watchedConnection = null;
     this._onConnectionReady = null;
+    this._checkTimeout = null;
+    this._checkSeq = 0;
+    this._configSeq = 0;
+    this._lastCheck = null;
+    this._isSending = false;
+    this._hasSendError = false;
   }
 
   static getStubConfig() {
@@ -101,6 +107,16 @@ class MyHomeBusCard extends HTMLElement {
       Number.isFinite(parsedMax) && parsedMax > 0
         ? Math.floor(parsedMax)
         : DEFAULT_MAX_FRAMES;
+    if (this._checkTimeout) {
+      clearTimeout(this._checkTimeout);
+      this._checkTimeout = null;
+    }
+    this._configSeq++;
+    this._sendArmed = false;
+    this._isSending = false;
+    this._checkSeq++;
+    this._lastCheck = null;
+    this._hasSendError = false;
     this._render();
   }
 
@@ -134,6 +150,14 @@ class MyHomeBusCard extends HTMLElement {
     if (this._retryTimeout) {
       clearTimeout(this._retryTimeout);
       this._retryTimeout = null;
+    }
+    if (this._checkTimeout) {
+      clearTimeout(this._checkTimeout);
+      this._checkTimeout = null;
+    }
+    if (this._bannerTimeout) {
+      clearTimeout(this._bannerTimeout);
+      this._bannerTimeout = null;
     }
     if (this._unsub) {
       try { this._unsub(); } catch (e) {}
@@ -589,7 +613,8 @@ class MyHomeBusCard extends HTMLElement {
         }
         .stats-bar {
           display: flex;
-          gap: 16px;
+          flex-wrap: wrap;
+          gap: 8px 16px;
           font-size: 0.8rem;
           color: var(--secondary-text-color);
           margin-bottom: 12px;
@@ -741,6 +766,33 @@ class MyHomeBusCard extends HTMLElement {
         .arm-bar label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 600; white-space: nowrap; }
         .arm-bar .arm-text { flex-grow: 1; opacity: 0.9; }
         .sender-bar button:disabled, .sender-bar input:disabled { opacity: 0.45; cursor: not-allowed; }
+        .sender-bar input.frame-blocked {
+          border-color: #d32f2f;
+          box-shadow: 0 0 0 1px rgba(211, 47, 47, 0.35);
+          background: rgba(244, 67, 54, 0.08);
+        }
+        .send-safety-notice {
+          display: none;
+          margin-top: 8px;
+          padding: 8px 12px;
+          border-radius: 6px;
+          font-size: 0.8rem;
+          line-height: 1.45;
+          word-break: break-word;
+        }
+        .send-safety-notice code {
+          font-size: 0.78rem;
+        }
+        .safety-notice-blocked {
+          background: rgba(244, 67, 54, 0.14);
+          color: #c62828;
+          border: 1px solid rgba(211, 47, 47, 0.45);
+        }
+        .safety-notice-warning {
+          background: rgba(255, 152, 0, 0.14);
+          color: #e65100;
+          border: 1px solid rgba(239, 108, 0, 0.45);
+        }
         .btn-sweep {
           background: #1976d2;
           color: #fff;
@@ -831,7 +883,7 @@ class MyHomeBusCard extends HTMLElement {
           <h4>💾 Export / 📋 Copy</h4>
           <p>Both use the frames <strong>currently shown</strong> (WHO / WHERE / direction filters applied). The file is named <code>myhome_&lt;trace|sweep&gt;_&lt;gateway&gt;_&lt;filter&gt;_&lt;time&gt;.json</code> and starts with a <code>capture</code> block describing what it is. Clear the filters to export the whole buffer.</p>
           <h4>⚠️ Transmit frame</h4>
-          <p>The bar at the bottom writes a raw OpenWebNet frame to the bus - this <strong>can</strong> switch loads, move shutters, arm or disarm the alarm. It stays disabled until you tick <em>I understand the risk</em>. Trace and Sweep never use it.</p>
+          <p>The bar at the bottom writes a raw OpenWebNet frame to the bus - this <strong>can</strong> switch loads, move shutters, arm or disarm the alarm. It stays disabled until you tick <em>I understand the risk</em>. Frames proven by the Firmware Oracle to crash the active gateway model are automatically blocked before transmission, and frames that may stall replies show a caution notice. Trace and Sweep never use it.</p>
           <p style="opacity:0.8">Time stamps are shown in your browser's local time; exports keep UTC.</p>
         </div>
 
@@ -842,6 +894,7 @@ class MyHomeBusCard extends HTMLElement {
           <div>RX: <span id="stat-rx" class="stat-val">0</span></div>
           <div>TX: <span id="stat-tx" class="stat-val">0</span></div>
           <div>Queue: <span id="stat-queue" class="stat-val">0</span></div>
+          <div id="stat-gateway-wrap" title="Active target gateway">Gateway: <span id="stat-gateway" class="stat-val">Unknown</span></div>
           <div style="margin-left: auto; font-size: 0.75rem; opacity: 0.85;">MyHOME <span id="stat-version" class="stat-val">v${this._escapeHtml(CARD_VERSION)}</span></div>
         </div>
 
@@ -871,12 +924,14 @@ class MyHomeBusCard extends HTMLElement {
           <input type="text" id="send-frame" placeholder="Transmit frame (e.g. *1*1*12##)..." disabled />
           <button id="btn-send" disabled>Send</button>
         </div>
+        <div id="send-safety-notice" class="send-safety-notice" role="status" aria-live="polite"></div>
       </ha-card>
     `;
 
     this._bindEvents();
     this._updateBadge();
     this._updateFrameList();
+    this._updateStats();
   }
 
   _bindEvents() {
@@ -903,6 +958,7 @@ class MyHomeBusCard extends HTMLElement {
       this._updateFrameList();
     });
     root.getElementById("btn-send")?.addEventListener("click", () => this._sendCustomFrame());
+    root.getElementById("send-frame")?.addEventListener("input", () => this._scheduleFrameCheck());
     root.getElementById("send-frame")?.addEventListener("keydown", (e) => {
       if (e.key === "Enter") this._sendCustomFrame();
     });
@@ -956,13 +1012,242 @@ class MyHomeBusCard extends HTMLElement {
   _toggleArmed(armed) {
     this._sendArmed = !!armed;
     const root = this.shadowRoot;
+    const input = root && root.getElementById("send-frame");
+    const btn = root && root.getElementById("btn-send");
+    const bar = root && root.getElementById("arm-bar");
+
+    if (this._checkTimeout) {
+      clearTimeout(this._checkTimeout);
+      this._checkTimeout = null;
+    }
+    this._checkSeq++;
+    this._lastCheck = null;
+
+    if (input) input.disabled = !this._sendArmed;
+    if (bar) bar.classList.toggle("armed", this._sendArmed);
+
+    if (!this._sendArmed) {
+      this._clearSafetyNotice();
+      if (btn) btn.disabled = true;
+      return;
+    }
+
+    this._clearSafetyNotice();
+    this._syncSendButtonState();
+    if (input) input.focus();
+
+    // Refresh gateway info asynchronously so late WHO 13/1013 identification updates the badge.
+    this._refreshGatewayInfo();
+
+    // If input already contains a frame when arming, run backend preflight immediately.
+    const prefilled = input ? String(input.value || "").trim() : "";
+    if (prefilled) {
+      this._runFrameCheck(prefilled);
+    }
+  }
+
+  async _refreshGatewayInfo() {
+    if (!this._hass) return;
+    try {
+      const infoRes = await this._hass.callWS(
+        this._wsPayload("myhome/bus_monitor/info")
+      );
+      if (infoRes && typeof infoRes === "object") {
+        let changed = false;
+        if (infoRes.gateway) {
+          this._gatewayInfo = infoRes.gateway;
+          changed = true;
+        }
+        if (infoRes.stats) {
+          this._stats = Object.assign({}, this._stats, infoRes.stats);
+          changed = true;
+        }
+        if (changed) this._updateStats();
+      }
+    } catch (err) {
+      console.debug("MyHOME Bus Monitor: Failed to refresh gateway info", err);
+    }
+  }
+
+  _syncSendButtonState() {
+    const root = this.shadowRoot;
+    if (!root) return;
     const input = root.getElementById("send-frame");
     const btn = root.getElementById("btn-send");
-    const bar = root.getElementById("arm-bar");
-    if (input) input.disabled = !this._sendArmed;
-    if (btn) btn.disabled = !this._sendArmed;
-    if (bar) bar.classList.toggle("armed", this._sendArmed);
-    if (this._sendArmed && input) input.focus();
+    const raw = input ? String(input.value || "").trim() : "";
+    const isBlocked = !!(
+      raw &&
+      this._lastCheck &&
+      this._lastCheck.frame === raw &&
+      this._lastCheck.result &&
+      this._lastCheck.result.blocked === true
+    );
+    if (btn) {
+      btn.disabled = !this._sendArmed || this._isSending || isBlocked;
+    }
+    if (input) {
+      input.classList.toggle("frame-blocked", this._sendArmed && (isBlocked || this._hasSendError));
+    }
+  }
+
+  _clearSafetyNotice() {
+    this._hasSendError = false;
+    const root = this.shadowRoot;
+    if (!root) return;
+    const notice = root.getElementById("send-safety-notice");
+    if (notice) {
+      notice.style.display = "none";
+      notice.className = "send-safety-notice";
+      notice.innerHTML = "";
+    }
+    const input = root.getElementById("send-frame");
+    if (input) input.classList.remove("frame-blocked");
+  }
+
+  _showSendError(errMsg) {
+    this._hasSendError = true;
+    const root = this.shadowRoot;
+    if (!root) return;
+    const notice = root.getElementById("send-safety-notice");
+    if (notice) {
+      notice.className = "send-safety-notice safety-notice-blocked";
+      notice.innerHTML = `<strong>⛔ Frame rejected:</strong> ${this._escapeHtml(errMsg)}`;
+      notice.style.display = "block";
+    }
+    const input = root.getElementById("send-frame");
+    if (input && this._sendArmed) {
+      input.classList.add("frame-blocked");
+    }
+  }
+
+  _applySafetyVerdict(frame, res) {
+    const root = this.shadowRoot;
+    if (!root) return;
+    const notice = root.getElementById("send-safety-notice");
+    this._hasSendError = false;
+
+    if (res && res.blocked === true) {
+      const target = res.target_model ? String(res.target_model).trim() : "";
+      const delegated = res.delegated_from ? String(res.delegated_from).trim() : "";
+      const isInvalid = res.severity === "invalid";
+      let heading = "Blocked";
+      if (!isInvalid && target) {
+        heading = delegated
+          ? `Blocked for ${target} (routed via ${delegated})`
+          : `Blocked for ${target}`;
+      }
+      const reason = res.reason
+        ? String(res.reason)
+        : "This frame is blocked because it can crash the gateway.";
+      const refHtml = res.oracle_ref
+        ? ` <code>(${this._escapeHtml(res.oracle_ref)})</code>`
+        : "";
+      if (notice) {
+        notice.className = "send-safety-notice safety-notice-blocked";
+        notice.innerHTML = `<strong>⛔ ${this._escapeHtml(heading)}:</strong> ${this._escapeHtml(reason)}${refHtml}`;
+        notice.style.display = "block";
+      }
+      this._syncSendButtonState();
+      return;
+    }
+
+    if (res && res.severity === "warning") {
+      const target = res.target_model ? String(res.target_model).trim() : "";
+      const delegated = res.delegated_from ? String(res.delegated_from).trim() : "";
+      const heading = target && delegated
+        ? `Caution (routed to ${target} via ${delegated})`
+        : "Caution";
+      const reason = res.reason
+        ? String(res.reason)
+        : "This frame may stall replies or crash specific gateway models.";
+      let modelsHtml = "";
+      if (
+        Array.isArray(res.affected_models) &&
+        res.affected_models.length > 0 &&
+        !res.affected_models.some((m) => reason.includes(String(m)))
+      ) {
+        modelsHtml = ` <span>(Affected models: ${this._escapeHtml(res.affected_models.join(", "))})</span>`;
+      }
+      const refHtml = res.oracle_ref
+        ? ` <code>(${this._escapeHtml(res.oracle_ref)})</code>`
+        : "";
+      if (notice) {
+        notice.className = "send-safety-notice safety-notice-warning";
+        notice.innerHTML = `<strong>⚠️ ${this._escapeHtml(heading)}:</strong> ${this._escapeHtml(reason)}${modelsHtml}${refHtml}`;
+        notice.style.display = "block";
+      }
+      this._syncSendButtonState();
+      return;
+    }
+
+    this._clearSafetyNotice();
+    this._syncSendButtonState();
+  }
+
+  _scheduleFrameCheck() {
+    if (this._checkTimeout) {
+      clearTimeout(this._checkTimeout);
+      this._checkTimeout = null;
+    }
+    if (!this._sendArmed) return;
+    const root = this.shadowRoot;
+    const input = root && root.getElementById("send-frame");
+    const frame = input ? String(input.value || "").trim() : "";
+
+    if (!frame) {
+      this._checkSeq++;
+      this._lastCheck = null;
+      this._clearSafetyNotice();
+      this._syncSendButtonState();
+      return;
+    }
+
+    if (this._lastCheck && this._lastCheck.frame === frame) {
+      this._syncSendButtonState();
+      return;
+    }
+
+    // Input changed: clear stale block/warning state immediately until backend validates the new frame.
+    this._checkSeq++;
+    this._lastCheck = null;
+    this._clearSafetyNotice();
+    this._syncSendButtonState();
+
+    this._checkTimeout = setTimeout(() => {
+      this._checkTimeout = null;
+      this._runFrameCheck(frame);
+    }, 150);
+  }
+
+  async _runFrameCheck(frame) {
+    if (!this._sendArmed || !this._hass) return null;
+    const clean = String(frame || "").trim();
+    if (!clean) {
+      this._lastCheck = null;
+      this._clearSafetyNotice();
+      this._syncSendButtonState();
+      return null;
+    }
+
+    const seq = ++this._checkSeq;
+    try {
+      const res = await this._hass.callWS(
+        this._wsPayload("myhome/bus_monitor/check_frame", { frame: clean })
+      );
+      if (seq !== this._checkSeq || !this._sendArmed) return null;
+      const input = this.shadowRoot && this.shadowRoot.getElementById("send-frame");
+      const current = input ? String(input.value || "").trim() : "";
+      if (current !== clean) return null;
+
+      this._lastCheck = { frame: clean, result: res || {} };
+      this._applySafetyVerdict(clean, res || {});
+      return res || {};
+    } catch (err) {
+      if (seq === this._checkSeq) {
+        console.debug("MyHOME Bus Monitor: Frame safety preflight failed", err);
+      }
+      return null;
+    }
   }
 
   _showBanner(className, html, timeoutMs) {
@@ -1010,18 +1295,70 @@ class MyHomeBusCard extends HTMLElement {
   }
 
   async _sendCustomFrame() {
-    if (!this._sendArmed) return;
-    const input = this.shadowRoot.getElementById("send-frame");
-    const frame = input ? input.value.trim() : "";
+    if (!this._sendArmed || this._isSending) return;
+    const root = this.shadowRoot;
+    const input = root && root.getElementById("send-frame");
+    const frame = input ? String(input.value || "").trim() : "";
     if (!frame || !this._hass) return;
 
+    if (this._checkTimeout) {
+      clearTimeout(this._checkTimeout);
+      this._checkTimeout = null;
+    }
+
+    if (
+      this._lastCheck &&
+      this._lastCheck.frame === frame &&
+      this._lastCheck.result &&
+      this._lastCheck.result.blocked === true
+    ) {
+      this._applySafetyVerdict(frame, this._lastCheck.result);
+      return;
+    }
+
+    const configSeq = this._configSeq;
+    this._checkSeq++;
+    this._isSending = true;
+    this._syncSendButtonState();
     try {
       await this._hass.callWS(
         this._wsPayload("myhome/bus_monitor/send", { frame: frame })
       );
-      if (input) input.value = "";
+      if (configSeq !== this._configSeq) return;
+      const curInput = this.shadowRoot && this.shadowRoot.getElementById("send-frame");
+      if (curInput) curInput.value = "";
+      this._checkSeq++;
+      this._lastCheck = null;
+      this._clearSafetyNotice();
     } catch (err) {
-      alert(`Error sending frame: ${err && err.message ? err.message : err}`);
+      if (configSeq !== this._configSeq) return;
+      const errMsg = (err && typeof err === "object" && err.message)
+        ? String(err.message)
+        : String(err || "Unknown error");
+      this._checkSeq++;
+      if (this._sendArmed) {
+        if (err && typeof err === "object" && err.code === "invalid_format") {
+          this._lastCheck = {
+            frame,
+            result: { blocked: true, reason: errMsg },
+          };
+        } else {
+          this._lastCheck = null;
+        }
+        this._showSendError(errMsg);
+      } else {
+        this._lastCheck = null;
+      }
+      this._showBanner(
+        "banner-warning",
+        `<span><strong>⚠️ Frame rejected:</strong> ${this._escapeHtml(errMsg)}</span>`,
+        8000
+      );
+    } finally {
+      if (configSeq === this._configSeq) {
+        this._isSending = false;
+        this._syncSendButtonState();
+      }
     }
   }
 
@@ -1033,12 +1370,63 @@ class MyHomeBusCard extends HTMLElement {
     const rx = root.getElementById("stat-rx");
     const tx = root.getElementById("stat-tx");
     const queue = root.getElementById("stat-queue");
+    const gwEl = root.getElementById("stat-gateway");
+    const gwWrap = root.getElementById("stat-gateway-wrap");
     const ver = root.getElementById("stat-version");
     if (buf) buf.textContent = this._frames.length;
     if (max) max.textContent = this._maxDisplayFrames;
     if (rx) rx.textContent = this._stats.total_rx;
     if (tx) tx.textContent = this._stats.total_tx;
-    if (queue) queue.textContent = (this._gatewayInfo && this._gatewayInfo.queue_depth != null) ? this._gatewayInfo.queue_depth : 0;
+    const gw = this._gatewayInfo || {};
+    if (queue) queue.textContent = gw.queue_depth != null ? gw.queue_depth : 0;
+    if (gwEl || gwWrap) {
+      const cp = gw.crash_protections;
+      const knownKey =
+        (!cp || cp.model_known !== false) &&
+        gw.model_key &&
+        String(gw.model_key).trim();
+      const rawModel =
+        knownKey ||
+        (gw.model && String(gw.model).trim()) ||
+        "Unknown";
+      const fw = gw.firmware && String(gw.firmware).trim();
+      const hasFw = fw && fw.toLowerCase() !== "unknown";
+      const gwLabel = hasFw ? `${rawModel} (${fw})` : rawModel;
+      let gwTooltip = `Target gateway: ${gwLabel}`;
+      if (cp && typeof cp === "object") {
+        const blanketCount = Number(cp.blanket_rule_count) || 0;
+        const gwRules = Array.isArray(cp.gateway_rules) ? cp.gateway_rules : [];
+        const totalGuards = blanketCount + gwRules.length;
+        if (gwRules.length > 0) {
+          gwTooltip += ` — ${totalGuards} crash guards active (${blanketCount} blanket, ${gwRules.length} ${rawModel}-specific)`;
+        } else if (cp.model_known) {
+          gwTooltip += ` — ${blanketCount} blanket crash guards active`;
+        } else {
+          gwTooltip += ` — ${blanketCount} blanket crash guards active (gateway model unknown; model-specific crash frames warn)`;
+        }
+        if (Array.isArray(cp.delegated_peers) && cp.delegated_peers.length > 0) {
+          const peerLabels = cp.delegated_peers
+            .map((p) => {
+              if (typeof p === "string") return p.trim();
+              if (p && typeof p === "object") {
+                return String(p.model_key || p.model || p.mac || "").trim();
+              }
+              return "";
+            })
+            .filter(Boolean);
+          if (peerLabels.length > 0) {
+            gwTooltip += `; delegated peers: ${peerLabels.join(", ")}`;
+          }
+        }
+      }
+      if (gwEl) {
+        gwEl.textContent = gwLabel;
+        gwEl.title = gwTooltip;
+      }
+      if (gwWrap) {
+        gwWrap.title = gwTooltip;
+      }
+    }
     if (ver && this._gatewayInfo) {
       const intVer = this._gatewayInfo.integration_version || CARD_VERSION;
       const owndVer = this._gatewayInfo.ownd_version;
@@ -1272,8 +1660,8 @@ ${framesText}
           if (infoRes.gateway) this._gatewayInfo = infoRes.gateway;
           if (infoRes.stats) {
             this._stats = Object.assign({}, this._stats, infoRes.stats);
-            this._updateStats();
           }
+          if (infoRes.gateway || infoRes.stats) this._updateStats();
         }
       } catch (err) {
         console.debug("MyHOME Bus Monitor: Falling back to cached gateway telemetry", err);
@@ -1408,8 +1796,8 @@ ${framesText}
           if (infoRes.gateway) this._gatewayInfo = infoRes.gateway;
           if (infoRes.stats) {
             this._stats = Object.assign({}, this._stats, infoRes.stats);
-            this._updateStats();
           }
+          if (infoRes.gateway || infoRes.stats) this._updateStats();
         }
       } catch (err) {
         // Continue with available state if backend call fails

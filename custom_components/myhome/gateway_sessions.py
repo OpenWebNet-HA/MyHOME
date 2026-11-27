@@ -24,6 +24,7 @@ from OWNd.message import OWNCommand, OWNGatewayEvent, OWNMessage
 from .actuator_lock import actuator_locks_of
 from .const import LOGGER, area_of_where, is_apl_address
 from .expose import is_exposed_on_bus
+from .frame_safety import evaluate_frame_safety
 from .gateway_confirm import echo_watchdog_of
 from .gateway_events import GatewayEventDispatcher
 from .where_grammar import (
@@ -1854,6 +1855,21 @@ class CommandWorkerPool:
                         task["message"],
                         worker_id,
                     )
+                    raw_frame = str(task["message"])
+                    crash_verdict = evaluate_frame_safety(
+                        self.handler, raw_frame, follow_routing=False
+                    )
+                    if crash_verdict.blocked and crash_verdict.severity == "crash":
+                        LOGGER.error(
+                            "%s Refusing to transmit crash frame `%s` on %s (%s): %s",
+                            self.log_id,
+                            raw_frame,
+                            crash_verdict.target_model or "gateway",
+                            crash_verdict.rule_id,
+                            crash_verdict.reason,
+                        )
+                        _cancel_written(task, not_written=True)
+                        continue
                     # Reopening a closed session (e.g. after COMMAND_SESSION_IDLE_TIMEOUT
                     # or a prior failed send) calls `connect()` directly, preserving
                     # OWNd's full MAX_CONNECT_ATTEMPTS=5 (~13.3 s) retry loop when

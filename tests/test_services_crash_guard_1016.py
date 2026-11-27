@@ -223,12 +223,16 @@ def test_mh202_all_probes_crash_regex_and_classifier_boundaries() -> None:
         "*#4*0#1*20##",
         "*#4*#0#1##",
         "*#4*#0#1*#14*0215*3##",
-        "*#4*000##",
+        "*#4*000*0##",
         "*#4*0100*0##",
         "*#4*0105*0##",
     ):
         assert _MH202_ALL_PROBES_CRASH_RE.fullmatch(safe_frame) is None
         assert _is_mh202_who4_crash_frame(safe_frame) is False
+
+    # *#4*000## is dimensionless status (crashes MH202) while *#4*000*0## stays safe
+    assert _MH202_ALL_PROBES_CRASH_RE.fullmatch("*#4*000##") is None
+    assert _is_mh202_who4_crash_frame("*#4*000##") is True
 
     # Dimensionless 3-token and 4-token actuator forms on MH202
     assert _is_mh202_who4_crash_frame("*#4*3#1#2##") is True

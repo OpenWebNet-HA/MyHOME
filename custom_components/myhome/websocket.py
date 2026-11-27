@@ -28,7 +28,7 @@ from homeassistant.const import CONF_HOST, CONF_MAC, CONF_NAME, CONF_PORT
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
-from OWNd.message import OWNMessage, OWNSignaling
+from OWNd.message import OWNMessage
 
 from .bus_monitor import BusFrame, BusMonitor
 from .const import (
@@ -39,18 +39,14 @@ from .const import (
     INTEGRATION_VERSION,
 )
 from .data import get_runtime_data
-from .services import (
-    destructive_frame_reason,
-    gateway_crash_frame_reason,
-    is_refused_dimension_22,
-    is_valid_ascii_own_frame,
-)
+from .frame_safety import active_gateway_protections, evaluate_frame_safety
 
 _LOGGER = logging.getLogger(__name__)
 
 WS_TYPE_HISTORY = "myhome/bus_monitor/history"
 WS_TYPE_STREAM = "myhome/bus_monitor/stream"
 WS_TYPE_SEND = "myhome/bus_monitor/send"
+WS_TYPE_CHECK_FRAME = "myhome/bus_monitor/check_frame"
 WS_TYPE_CLEAR = "myhome/bus_monitor/clear"
 WS_TYPE_INFO = "myhome/bus_monitor/info"
 WS_TYPE_CALIBRATION_TRACE = "myhome/cover/calibration_trace"
@@ -84,6 +80,12 @@ SCHEMA_WS_STREAM: dict[Any, Any] = {
 
 SCHEMA_WS_SEND: dict[Any, Any] = {
     vol.Required("type"): WS_TYPE_SEND,
+    vol.Required("frame"): cv.string,
+    vol.Optional("mac"): vol.Any(cv.string, None),
+}
+
+SCHEMA_WS_CHECK_FRAME: dict[Any, Any] = {
+    vol.Required("type"): WS_TYPE_CHECK_FRAME,
     vol.Required("frame"): cv.string,
     vol.Optional("mac"): vol.Any(cv.string, None),
 }
@@ -191,8 +193,11 @@ def _extract_gateway_info(gw: Optional[Any], ownd_version: str = "unknown") -> d
         except Exception:  # pragma: no cover - defensive against mocks
             identification = {}
 
+    protections = active_gateway_protections(gw)
+
     return {
         "model": model,
+        "model_key": protections["model_key"] if protections["model_known"] else "",
         "manufacturer": manufacturer,
         "firmware": firmware,
         "host": host,
@@ -203,6 +208,7 @@ def _extract_gateway_info(gw: Optional[Any], ownd_version: str = "unknown") -> d
         "queue_depth": queue_depth,
         "is_connected": is_connected,
         "identification": identification,
+        "crash_protections": protections,
         "integration_version": INTEGRATION_VERSION,
         "ownd_version": ownd_version,
     }
@@ -348,6 +354,27 @@ async def ws_bus_monitor_stream(
     connection.send_result(msg["id"])
 
 
+@websocket_command(SCHEMA_WS_CHECK_FRAME)
+@async_response
+async def ws_bus_monitor_check_frame(
+    hass: HomeAssistant,
+    connection: ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Evaluate an OpenWebNet frame against blanket and target-gateway safety rules."""
+    gateway, _ = _get_gateway_and_monitor(hass, msg.get("mac"))
+    if gateway is None:
+        connection.send_error(
+            msg["id"],
+            ERR_NOT_FOUND,
+            "No active MyHOME gateway found",
+        )
+        return
+
+    verdict = evaluate_frame_safety(gateway, msg["frame"])
+    connection.send_result(msg["id"], verdict.to_dict())
+
+
 @require_admin
 @websocket_command(SCHEMA_WS_SEND)
 @async_response
@@ -367,37 +394,30 @@ async def ws_bus_monitor_send(
         return
 
     frame_str = msg["frame"].strip()
-    if not is_valid_ascii_own_frame(frame_str):
+    verdict = evaluate_frame_safety(gateway, frame_str)
+    if verdict.blocked:
+        if verdict.severity == "invalid":
+            connection.send_error(
+                msg["id"],
+                ERR_INVALID_FORMAT,
+                f"Invalid OpenWebNet frame format: {frame_str}",
+            )
+            return
+        if verdict.rule_id == "who4_dim22_no_actuator":
+            connection.send_error(
+                msg["id"],
+                ERR_INVALID_FORMAT,
+                "WHO 4 dimension 22 in this form crashes the gateway's thermostat daemon "
+                "and is blocked for safety",
+            )
+            return
+        target_desc = verdict.target_model or "gateway"
+        if verdict.delegated_from:
+            target_desc = f"{target_desc} (routed via {verdict.delegated_from})"
         connection.send_error(
             msg["id"],
             ERR_INVALID_FORMAT,
-            f"Invalid OpenWebNet frame format: {frame_str}",
-        )
-        return
-
-    # Safety guard: a WHO 4 dimension 22 frame whose WHERE carries no actuator token
-    # (zone, general, central unit) crashes the thermostat daemon on F461 / F454 /
-    # MH200N-class gateways; a live F461 rebooted ~3 minutes later
-    # (tests/fixtures/traces/f461_live_2026-10-15). The published split form
-    # *#4*3#Z#N*22## passes once the installed OWNd can tell the forms apart
-    # (services.is_refused_dimension_22).
-    if is_refused_dimension_22(frame_str):
-        connection.send_error(
-            msg["id"],
-            ERR_INVALID_FORMAT,
-            "WHO 4 dimension 22 in this form crashes the gateway's thermostat daemon "
-            "and is blocked for safety",
-        )
-        return
-
-    destructive_reason = destructive_frame_reason(frame_str) or gateway_crash_frame_reason(
-        gateway, frame_str
-    )
-    if destructive_reason is not None:
-        connection.send_error(
-            msg["id"],
-            ERR_INVALID_FORMAT,
-            f"Refusing to send {frame_str}: {destructive_reason}",
+            f"Refusing to send {frame_str} on {target_desc}: {verdict.reason}",
         )
         return
 
@@ -405,13 +425,6 @@ async def ws_bus_monitor_send(
         parsed = OWNMessage.parse(frame_str)
         if parsed is None:
             parsed = OWNMessage(frame_str)
-        if isinstance(parsed, OWNSignaling) or not getattr(parsed, "is_valid", False):
-            connection.send_error(
-                msg["id"],
-                ERR_INVALID_FORMAT,
-                f"Invalid OpenWebNet frame format: {frame_str}",
-            )
-            return
         is_read = bool(
             getattr(parsed, "is_status_request", False)
             or getattr(parsed, "is_dimension_request", False)
@@ -524,6 +537,7 @@ def async_setup_websocket_api(hass: HomeAssistant) -> None:
 
     websocket_api.async_register_command(hass, ws_bus_monitor_history)
     websocket_api.async_register_command(hass, ws_bus_monitor_stream)
+    websocket_api.async_register_command(hass, ws_bus_monitor_check_frame)
     websocket_api.async_register_command(hass, ws_bus_monitor_send)
     websocket_api.async_register_command(hass, ws_bus_monitor_clear)
     websocket_api.async_register_command(hass, ws_bus_monitor_info)
