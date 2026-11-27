@@ -2382,11 +2382,21 @@ def check_service_and_icon_parity(
                         local_consts[target.id] = node.value.value
 
         for node in ast.walk(tree):
-            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            if not isinstance(node, ast.Call):
                 continue
-            attr = node.func.attr
-            if attr == "async_register" and len(node.args) >= 2:
-                svc_node = node.args[1]
+            call_name = (
+                node.func.attr
+                if isinstance(node.func, ast.Attribute)
+                else node.func.id
+                if isinstance(node.func, ast.Name)
+                else None
+            )
+            if (
+                call_name == "async_register"
+                and isinstance(node.func, ast.Attribute)
+                and len(node.args) >= 2
+            ):
+                svc_node: ast.expr | None = node.args[1]
                 svc_name = (
                     svc_node.value
                     if isinstance(svc_node, ast.Constant) and isinstance(svc_node.value, str)
@@ -2407,7 +2417,35 @@ def check_service_and_icon_parity(
                         node.lineno,
                         f"Service registration for {svc_name or '<unknown>'!r} must specify a non-None schema",
                     )
-            elif attr == "async_register_entity_service" and len(node.args) >= 1:
+            elif call_name == "async_register_admin_service":
+                svc_node = node.args[2] if len(node.args) >= 3 else None
+                schema_arg = node.args[4] if len(node.args) >= 5 else None
+                for kw in node.keywords:
+                    if kw.arg == "service":
+                        svc_node = kw.value
+                    elif kw.arg == "schema":
+                        schema_arg = kw.value
+                svc_name = (
+                    svc_node.value
+                    if isinstance(svc_node, ast.Constant) and isinstance(svc_node.value, str)
+                    else local_consts.get(svc_node.id)
+                    if isinstance(svc_node, ast.Name)
+                    else None
+                )
+                if svc_name:
+                    registered_services.add(svc_name)
+                if schema_arg is None or (isinstance(schema_arg, ast.Constant) and schema_arg.value is None):
+                    checker.log_error(
+                        "RULE_SERVICE_ICON_PARITY",
+                        py_file,
+                        node.lineno,
+                        f"Admin service registration for {svc_name or '<unknown>'!r} must specify a non-None schema",
+                    )
+            elif (
+                call_name == "async_register_entity_service"
+                and isinstance(node.func, ast.Attribute)
+                and len(node.args) >= 1
+            ):
                 svc_node = node.args[0]
                 svc_name = (
                     svc_node.value

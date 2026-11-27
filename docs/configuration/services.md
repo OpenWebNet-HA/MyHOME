@@ -9,7 +9,7 @@ This document provides a comprehensive reference for all custom services registe
 <!-- SERVICES_TABLE_START -->
 | Service | Target | Description |
 | :--- | :--- | :--- |
-| [`myhome.send_message`](#1-myhomesend_message) | Gateway | Send an arbitrary (but valid) OpenWebNet message to the gateway. |
+| [`myhome.send_message`](#1-myhomesend_message) | Gateway | Send an arbitrary (but valid) OpenWebNet message to the gateway (administrators only). |
 | [`myhome.turn_on_timed`](#2-myhometurn_on_timed) | `light`, `switch` | Turn on a light or switch with a hardware-offloaded SCS bus timer that turns off automatically even if Home Assistant restarts. |
 | [`myhome.sync_time`](#3-myhomesync_time) | Gateway | Synchronize gateway's time to HA local time. |
 | [`myhome.start_sending_instant_power`](#4-myhomestart_sending_instant_power) | `sensor` | Get automatic instant power draw updates for a sensor. |
@@ -32,7 +32,7 @@ This document provides a comprehensive reference for all custom services registe
 
 ## 1. `myhome.send_message`
 
-Sends an arbitrary, valid OpenWebNet message through the gateway command session. The integration validates syntax, dispatches the frame, and logs the transaction to the Bus Monitor.
+Sends an arbitrary, valid OpenWebNet message through the gateway command session. The integration validates syntax, dispatches the frame, and logs the transaction to the Bus Monitor. Interactive calls require a Home Assistant **administrator** account (matching the `myhome/bus_monitor/send` WebSocket command): non-administrator users receive `Unauthorized`, while automations and system calls without a user context remain allowed.
 
 > [!WARNING]
 > **`WHO = 4` Dimension 22 Firmware Crash Guard (`is_refused_dimension_22`)**:
