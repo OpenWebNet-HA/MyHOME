@@ -390,3 +390,52 @@ The first time the integration reads a valid `myhome.yaml` section for a gateway
 ### How to resolve
 This notice is informational. Once you have verified your entities in Home Assistant, you can archive or remove `myhome.yaml` and dismiss the notice.
 
+---
+
+## Cover Actuator Run-Time Cutoff
+
+**Repair Key**: `cover_calibration_cutoff`  
+**Severity**: `WARNING`  
+**Auto-Resolving**: Yes (clears automatically once travel times are saved, reset, or re-calibrated)  
+**Fixable via UI**: Yes (Guided Start → Stop Repair Flow)
+
+### What it means
+During automated on-bus travel-time calibration (`button.<cover>_calibrate_travel_time`, `button.<gateway>_calibrate_all_covers`, or `myhome.calibrate_cover`), the cover actuator did not report a stop frame at the physical end stop and instead ran until its hardware run-time cutoff timer expired (for example `~60 s` at factory default `M=0`, `~120 s` at `M=1`, or another whole-minute configurator step).
+
+Because saving the actuator's relay cutoff as the cover's travel time would produce inaccurate position estimates, MyHOME rejects the measurement, logs a clean warning, posts a persistent notification, and creates this fixable Repair Issue.
+
+### How to resolve
+1. **Guided Start → Stop Repair Flow (Recommended)**:
+   - Open **Settings → System → Repairs** and click **Fix** on the issue card.
+   - Choose one of three options:
+     - **Guided Start → Stop measurement**: Verifies the cover is available, unlocked (`WHO = 14`), and not already calibrating, then drives the cover closed (disabling early timer settle under a `180 s` failsafe so tall covers never settle prematurely), stops immediately when you click **Submit** at the bottom end stop, optionally reuses the closing time or performs the same timed opening measurement, and lets you review and save the exact durations (`1.0–300.0 s`) directly (`calibration_source: manual`). Closing the dialog mid-run automatically stops the motor.
+     - **Enter travel times manually**: Enter known `travel_time_down` and `travel_time_up` values (`1.0–300.0 s`).
+     - **Reset to default**: Clears stored calibration and returns to `myhome.yaml` or the `25 s` default.
+2. **Manual Service Action**:
+   - Time a closing and opening run manually using the cover's `last_run_seconds` attribute and call `myhome.set_cover_travel_time` (see [Covers → Method 3](../configuration/covers.md#method-3-set-explicit-travel-time-via-service-action)).
+
+### How it clears
+Automatically deleted (along with the cover's calibration persistent notification) as soon as travel times are saved via the Repair Flow or `myhome.set_cover_travel_time`, reset via `myhome.reset_cover_travel_time`, or replaced by a subsequent successful calibration.
+
+---
+
+## Legacy Cover Cutoff Travel Time Detected
+
+**Repair Key**: `cover_legacy_calibration_cutoff`  
+**Severity**: `WARNING`  
+**Auto-Resolving**: Yes (clears automatically once travel times are saved, reset, or re-calibrated)  
+**Fixable via UI**: Yes (Guided Start → Stop Repair Flow)
+
+### What it means
+At startup or entry reload, MyHOME inspects persisted `cover_travel_times` entries whose `source` is unset (saved by an older release before the cutoff guard) or `"measured"`. When a stored closing (`down`) or opening (`up`) duration matches a whole-minute actuator cutoff window (such as `59–65 s` for factory `M=0` `60 s` or `119–130 s` for `M=1` `120 s`), the saved duration is likely the actuator's hardware relay timer rather than the cover's real physical travel time.
+
+Entries saved with `source: "manual"` or `source: "copied"`, native `Dimension 10` position-reporting covers, disabled or deleted entities, ignored addresses, and `slat_time`- or `min_motor_pulse`-only records are never flagged.
+
+### How to resolve
+1. Open **Settings → System → Repairs** and click **Fix** on the issue card to launch the interactive **Guided Start → Stop** Repair Flow (time the cover interactively with safety checks for availability, `WHO = 14` actuator lock, and active calibration, enter exact manual travel times, or reset to default).
+2. Alternatively, call `myhome.set_cover_travel_time` with the cover's measured travel times or `myhome.reset_cover_travel_time`.
+
+### How it clears
+Automatically deleted (and any calibration persistent notification dismissed) as soon as the cover's travel times are saved manually (`source: "manual"`), re-calibrated cleanly, reset to default, or when the cover entity is removed, promoted to native `Dimension 10` positioning, or added to **Ignored addresses**.
+
+

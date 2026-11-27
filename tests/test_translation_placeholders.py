@@ -90,3 +90,96 @@ def test_no_single_quoted_placeholders(relative_path: str) -> None:
         key for key, text in _strings(COMPONENT / relative_path).items() if SINGLE_QUOTED_PLACEHOLDER.search(text)
     )
     assert not offending, f"{relative_path}: single-quoted placeholders break ICU/hassfest: {offending}"
+
+
+def test_unconfigured_timezone_real_newlines_and_localized_strings() -> None:
+    """Verify unconfigured_timezone newlines/localization and fixed PR #1028 keys in nl/fr/it."""
+    english = _strings(COMPONENT / "strings.json")
+    service_keys = (
+        "services.sync_time.fields.gateway.description",
+        "services.send_message.name",
+        "services.send_message.fields.gateway.description",
+        "services.send_message.fields.message.name",
+        "services.send_message.fields.message.description",
+        "services.start_sending_instant_power.name",
+        "services.start_sending_instant_power.description",
+        "services.start_sending_instant_power.fields.entity_id.name",
+        "services.start_sending_instant_power.fields.entity_id.description",
+        "services.stop_sending_instant_power.name",
+        "services.stop_sending_instant_power.description",
+        "services.stop_sending_instant_power.fields.entity_id.name",
+        "services.stop_sending_instant_power.fields.entity_id.description",
+    )
+    cover_keys = (
+        "exceptions.cover_position_unknown.message",
+        "device_automation.trigger_type.centralized_shutter_open",
+        "device_automation.trigger_type.centralized_shutter_close",
+        "device_automation.trigger_type.centralized_shutter_stop",
+    )
+    expected_localized: dict[str, tuple[str, ...]] = {
+        "nl": (
+            "config.flow_title",
+            "config.step.custom.data.address",
+            "config.step.custom.data.port",
+            "config.error.password_retry",
+            "options.step.user.data.address",
+            "options.error.invalid_worker_count",
+            *service_keys,
+            *cover_keys,
+        ),
+        "fr": (
+            "options.error.invalid_worker_count",
+            *cover_keys,
+        ),
+        "it": (
+            *service_keys,
+            *cover_keys,
+        ),
+    }
+    cover_wording_rules: dict[str, tuple[tuple[str, ...], str]] = {
+        "nl": (("raambedekking",), "rolluik"),
+        "fr": (("ouverture", "ouvrant"), "volet"),
+        "it": (("copertur",), "tapparell"),
+    }
+
+    for language in ("nl", "fr", "it"):
+        translated = _strings(COMPONENT / "translations" / f"{language}.json")
+
+        # No literal double-escaped newlines anywhere in the catalog.
+        escaped_newlines = sorted(key for key, text in translated.items() if "\\n" in text)
+        assert not escaped_newlines, f"{language}: literal \\\\n found in {escaped_newlines}"
+
+        # issues.unconfigured_timezone must use real paragraph breaks and be localized.
+        tz_title = translated["issues.unconfigured_timezone.title"]
+        tz_desc = translated["issues.unconfigured_timezone.description"]
+        assert tz_title != english["issues.unconfigured_timezone.title"], (
+            f"{language}: issues.unconfigured_timezone.title is still English"
+        )
+        assert tz_desc != english["issues.unconfigured_timezone.description"], (
+            f"{language}: issues.unconfigured_timezone.description is still English"
+        )
+        assert "\n\n" in tz_desc, (
+            f"{language}: issues.unconfigured_timezone.description missing real paragraph break"
+        )
+        assert "\\n" not in tz_desc, (
+            f"{language}: issues.unconfigured_timezone.description contains literal \\\\n"
+        )
+
+        # Fixed PR #1028 keys must be localized (not identical to English).
+        untranslated = [key for key in expected_localized[language] if translated[key] == english[key]]
+        assert not untranslated, f"{language}: untranslated keys matching English: {untranslated}"
+
+        # PR #1028 cover keys must use generic cover wording instead of shutter-specific wording.
+        expected_stems, forbidden_stem = cover_wording_rules[language]
+        for key in cover_keys:
+            lowered = translated[key].lower()
+            assert any(stem in lowered for stem in expected_stems), (
+                f"{language}: {key} should contain one of {expected_stems!r}: {translated[key]!r}"
+            )
+            assert forbidden_stem not in lowered, (
+                f"{language}: {key} should not contain {forbidden_stem!r}: {translated[key]!r}"
+            )
+
+    assert " and " not in _strings(COMPONENT / "translations" / "nl.json")[
+        "options.error.invalid_worker_count"
+    ]

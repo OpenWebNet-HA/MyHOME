@@ -1,7 +1,7 @@
 {
   "title": "MyHome",
   "config": {
-    "flow_title": "MyHome {name} Gateway ({host})",
+    "flow_title": "MyHome-gateway {name} ({host})",
     "step": {
       "user": {
         "title": "Kies uw \"MyHome\" gateway",
@@ -28,8 +28,8 @@
         "title": "Manuele gateway informatie",
         "description": "Vul de informatie in voor uw gateway\n\nMyHOME houdt één permanente eventverbinding open, plus één verbinding per commandoworker (standaard 1). Een gateway accepteert maar een handvol gelijktijdige OpenWebNet-verbindingen (5 bij een F455, minder bij een MH200N), gedeeld met alles wat er verbinding mee maakt: de Legrand/BTicino Home+Project-app, andere Home Assistant-installaties, andere integraties. Als de verbindingen op zijn, wordt MyHOME of de andere client geweigerd of verbroken. Sluit clients die u niet nodig hebt en houd het aantal commandoworkers laag.",
         "data": {
-          "address": "IP address",
-          "port": "Port"
+          "address": "IP-adres",
+          "port": "Poort"
         }
       },
       "custom_manual": {
@@ -70,10 +70,10 @@
     },
     "error": {
       "invalid_port": "Ongeldig poortnummer",
-      "invalid_ip": "Ongeldig IP address",
-      "invalid_mac": "Ongeldig MAC address",
+      "invalid_ip": "Ongeldig IP-adres",
+      "invalid_mac": "Ongeldig MAC-adres",
       "invalid_password": "Ongeldig wachtwoord",
-      "password_retry": "Gateway refusing password negotiation, wait 60s before retrying.",
+      "password_retry": "De gateway weigert de wachtwoordonderhandeling, wacht 60 s voordat u het opnieuw probeert.",
       "password_error": "Ongeldig wachtwoord",
       "primary_gateway_required": "Voor de rollen secundair en stand-by op een gedeelde bus moet een primaire gateway worden gekozen.",
       "primary_gateway_not_found": "De gekozen primaire gateway is niet gevonden.",
@@ -116,7 +116,7 @@
             "who": "WHO-subsysteem"
           },
           "data_description": {
-            "who": "WHO 1 (verlichting/schakelaar) en WHO 2 (rolluiken) bieden keuzelijsten voor A en PL plus een optionele ruwe WHERE-overschrijving; WHO 4, 13 en 18 tonen alleen hun eigen velden."
+            "who": "WHO 1 (verlichting/schakelaars) en WHO 2 (raambedekkingen) bieden keuzelijsten voor A en PL plus een optionele ruwe WHERE-overschrijving; WHO 4, 13 en 18 tonen alleen hun eigen velden."
           }
         },
         "reconfigure": {
@@ -165,7 +165,7 @@
           }
         },
         "who_2": {
-          "title": "WHO 2 — Automatisering / Rolluik",
+          "title": "WHO 2 — Automatisering / Raambedekking",
           "description": "Kies Zone (A) en Punt (PL) zoals geconfigureerd in MyHOME_Suite (bijv. A = 3, PL = 1 of A = 8, PL = 12), of laat ze leeg en vul hieronder een ruw OpenWebNet WHERE-adres in.",
           "data": {
             "area": "Zone (A, 0–10)",
@@ -188,7 +188,7 @@
             "interface": "Optionele F422 lokale businterface (#4#01–#4#09 of #4#11–#4#15) voor routering naar een lokale bus.",
             "where": "Optioneel veld voor gevorderde gebruikers (bijv. 31, 08, 0812, 0012, 1008 of 31#4#01). Indien ingevuld overschrijft dit A, PL en Interface.",
             "entity_id": "Home Assistant cover-bronentiteit (optioneel als hieronder aangepaste acties zijn ingesteld).",
-            "attribute": "Optioneel attribuut zoals 'current_position' om rolluikposities te spiegelen.",
+            "attribute": "Optioneel attribuut zoals 'current_position' om de positie van raambedekkingen te spiegelen.",
             "turn_on_action": "Optionele aangepaste actiereeks bij een inkomend OMHOOG / open-commando vanaf de bus.",
             "turn_off_action": "Optionele aangepaste actiereeks bij een inkomend OMLAAG / sluit-commando vanaf de bus."
           }
@@ -324,7 +324,7 @@
           "source_3_tuner": "Bron 3 is een tuner (F500): voegt een radio-entiteit toe met zenders, frequentie en RDS",
           "source_4_name": "Bron 4 — naam van wat op matrix-ingang S4 is aangesloten (leeg laten als er niets op zit)",
           "source_4_tuner": "Bron 4 is een tuner (F500): voegt een radio-entiteit toe met zenders, frequentie en RDS",
-          "address": "IP address",
+          "address": "IP-adres",
           "name": "Gatewaymodel",
           "password": "Wachtwoord",
           "command_worker_count": "Aantal open command sessies",
@@ -377,13 +377,13 @@
       }
     },
     "error": {
-      "invalid_ip": "Ongeldig IP address",
-      "invalid_worker_count": "Aantal workers moet tussen 1 and 10 zijn",
+      "invalid_ip": "Ongeldig IP-adres",
+      "invalid_worker_count": "Aantal workers moet tussen 1 en 10 liggen",
       "worker_count_above_gateway_limit": "De {model} accepteert maximaal {session_limit} gelijktijdige command sessie(s); met meer reageert hij niet meer.",
       "invalid_standalone_zone": "Zelfstandige thermostaten moeten zonenummers van 1 tot 99 zijn, gescheiden door komma's (bijv. 2, 7).",
       "invalid_config_path": "Ongeldig path voor configuratie bestand",
-      "invalid_password": "Ongeldig password",
-      "password_error": "Ongeldig password",
+      "invalid_password": "Ongeldig wachtwoord",
+      "password_error": "Ongeldig wachtwoord",
       "not_a_media_player": "Moet een media_player-entiteit zijn (bijv. media_player.cambridge_audio_cxn)",
       "companion_same_as_decoder": "De begeleidende streaming-entiteit moet een andere entiteit zijn dan de decoder zelf.",
       "companion_without_decoder": "Een begeleidende streaming-entiteit kan alleen worden geconfigureerd voor een slot met een decoderentiteit.",
@@ -411,31 +411,31 @@
       "fields": {
         "gateway": {
           "name": "Gateway",
-          "description": "The gateway's MAC address, as present in the config."
+          "description": "Het MAC-adres van de gateway, zoals opgenomen in de configuratie."
         }
       }
     },
     "send_message": {
-      "name": "Send message",
+      "name": "Bericht verzenden",
       "description": "Stuur een willekeurig (maar geldig) OpenWebNet-bericht naar de gateway (alleen voor beheerders).",
       "fields": {
         "gateway": {
           "name": "Gateway",
-          "description": "The gateway's MAC address, as present in the config."
+          "description": "Het MAC-adres van de gateway, zoals opgenomen in de configuratie."
         },
         "message": {
-          "name": "Message",
-          "description": "Valid OpenWebNet message."
+          "name": "Bericht",
+          "description": "Geldig OpenWebNet-bericht."
         }
       }
     },
     "start_sending_instant_power": {
-      "name": "Start sending instant power",
-      "description": "Get automatic instant power draw updates for a sensor.",
+      "name": "Verzenden van actueel vermogen starten",
+      "description": "Ontvang automatische updates van het actuele vermogensverbruik voor een sensor.",
       "fields": {
         "entity_id": {
-          "name": "Entity",
-          "description": "Name(s) of entities that will start sending instant power information."
+          "name": "Entiteit",
+          "description": "Naam of namen van entiteiten die beginnen met het verzenden van actuele vermogensinformatie."
         },
         "duration": {
           "name": "Tijdsduur",
@@ -444,12 +444,12 @@
       }
     },
     "stop_sending_instant_power": {
-      "name": "Stop sending instant power",
-      "description": "Stop automatic instant power draw updates for a sensor.",
+      "name": "Verzenden van actueel vermogen stoppen",
+      "description": "Stop automatische updates van het actuele vermogensverbruik voor een sensor.",
       "fields": {
         "entity_id": {
-          "name": "Entity",
-          "description": "Name(s) of entities that will stop sending instant power information."
+          "name": "Entiteit",
+          "description": "Naam of namen van entiteiten die stoppen met het verzenden van actuele vermogensinformatie."
         }
       }
     },
@@ -485,7 +485,7 @@
     },
     "sweep_bus": {
       "name": "Busstatus scannen",
-      "description": "Voert een alleen-lezen statusverzoek uit over alle bussubsystemen (verlichting, rolluiken, klimaatregeling, klok en gatewaydiagnostiek) om de diagnostische ringbuffer te vullen.",
+      "description": "Voert een alleen-lezen statusverzoek uit over alle bussubsystemen (verlichting, raambedekkingen, klimaatregeling, klok en gatewaydiagnostiek) om de diagnostische ringbuffer te vullen.",
       "fields": {
         "gateway": {
           "name": "Gateway",
@@ -526,12 +526,12 @@
       }
     },
     "calibrate_cover": {
-      "name": "Looptijd rolluik kalibreren",
-      "description": "Meet de op- en neerwaartse looptijden van een tijdgestuurd rolluik op de SCS-bus en slaat ze op: het rolluik gaat helemaal omhoog, dan helemaal omlaag (getimed) en daarna weer helemaal omhoog (getimed). Rolluiken worden per gateway één voor één gekalibreerd."
+      "name": "Looptijd raambedekking kalibreren",
+      "description": "Meet de op- en neerwaartse looptijden van een tijdgestuurde raambedekking op de SCS-bus en slaat ze op: de raambedekking gaat helemaal omhoog, dan helemaal omlaag (getimed) en daarna weer helemaal omhoog (getimed). Raambedekkingen worden per gateway één voor één gekalibreerd."
     },
     "stop_cover_calibration": {
-      "name": "Rolluikkalibratie stoppen",
-      "description": "Stopt de lopende looptijdkalibratie en annuleert de wachtende; het bewegende rolluik wordt gestopt en er wordt niets opgeslagen.",
+      "name": "Kalibratie raambedekking stoppen",
+      "description": "Stopt de lopende looptijdkalibratie en annuleert de wachtende; de bewegende raambedekking wordt gestopt en er wordt niets opgeslagen.",
       "fields": {
         "gateway": {
           "name": "Gateway",
@@ -540,8 +540,8 @@
       }
     },
     "set_cover_travel_time": {
-      "name": "Looptijd rolluik instellen",
-      "description": "Slaat de fysieke looptijden van een tijdgestuurd rolluik handmatig op in plaats van ze op de bus te kalibreren.",
+      "name": "Looptijd raambedekking instellen",
+      "description": "Slaat de fysieke looptijden van een tijdgestuurde raambedekking handmatig op in plaats van ze op de bus te kalibreren.",
       "fields": {
         "travel_time": {
           "name": "Looptijd",
@@ -557,11 +557,11 @@
         },
         "slat_time": {
           "name": "Kanteltijd lamellen",
-          "description": "Seconden die de lamellen van een jaloezie nodig hebben voor een volledige kanteling (0.5-10). Alleen gebruikt door rolluiken met slat_tilt ingeschakeld."
+          "description": "Seconden die de lamellen van een jaloezie nodig hebben voor een volledige kanteling (0,5–10). Alleen gebruikt door raambedekkingen waarbij slat_tilt is ingeschakeld."
         },
         "copied_from": {
           "name": "Gekopieerd van",
-          "description": "Het rolluik waarvan deze tijden zijn overgenomen; de bron wordt dan gemeld als \"copied\" in plaats van \"manual\"."
+          "description": "De raambedekking waarvan deze tijden zijn overgenomen; de bron wordt dan gemeld als \"copied\" in plaats van \"manual\"."
         },
         "min_motor_pulse": {
           "name": "Minimale motorpulsduur",
@@ -570,7 +570,7 @@
       }
     },
     "reset_cover_travel_time": {
-      "name": "Looptijd rolluik terugzetten",
+      "name": "Looptijd raambedekking terugzetten",
       "description": "Vergeet de gemeten of handmatig ingestelde looptijden en valt terug op travel_time uit myhome.yaml of de standaardwaarde van 25 s."
     },
     "send_scenario_plus_command": {
@@ -618,8 +618,8 @@
       "description": "Verwarmingszone {device} op {gateway} heeft bij twee herstarts op rij niet geantwoord op het statusverzoek, dus MyHOME vraagt er bij het opstarten niet meer naar (elk onbeantwoord verzoek kost de commandowachtrij van de gateway enkele seconden). Als de zone niet meer bestaat, verwijder dan het apparaat of de entiteit in Home Assistant. Bestaat de zone nog wel, dan verdwijnt deze melding zodra de zone weer een frame stuurt en wordt deze na een week opnieuw bevraagd."
     },
     "unconfigured_timezone": {
-      "title": "Unconfigured timezone on MyHOME gateway ({gateway})",
-      "description": "The MyHOME gateway {gateway} is reporting an unconfigured timezone (999). This will cause incorrect timestamps in the bus monitor and potentially alarm logs.\\n\\nPlease log into the gateway web UI or MyHOME Suite and configure a valid timezone, then restart the gateway."
+      "title": "Niet-geconfigureerde tijdzone op MyHOME-gateway ({gateway})",
+      "description": "De MyHOME-gateway {gateway} meldt een niet-geconfigureerde tijdzone (tijdelijke code '999'). Dit kan fouten veroorzaken bij het verwerken van datum en tijd of leiden tot weggevallen diagnostische berichten van de gateway.\n\nLog in op de webinterface van de gateway of in MyHOME Suite, configureer een geldige tijdzone en herstart de gateway."
     },
     "unknown_gateway_model": {
       "title": "Onbekende apparaattypecode voor gateway ({code})",
@@ -700,6 +700,138 @@
     "legacy_yaml_imported": {
       "title": "Verouderde myhome.yaml geïmporteerd voor {gateway}",
       "description": "De apparaatconfiguratie in `myhome.yaml` voor {gateway} is gekopieerd naar de configuratie-opties van Home Assistant. Zolang `myhome.yaml` bestaat, blijft dat bestand leidend en volgt de kopie de wijzigingen. Wordt het bestand verwijderd of onleesbaar, dan houden de apparaten de configuratie van de laatste kopie."
+    },
+    "cover_calibration_cutoff": {
+      "title": "{name}: actuator stopte op de looptijdgrens van {limit} s",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Looptijd raambedekking instellen",
+            "description": "De automatische kalibratie stopte na {seconds} s op de looptijdgrens van {limit} s van de actuator in plaats van op de fysieke eindstop.\n\nKies hoe u **{name}** wilt kalibreren:",
+            "menu_options": {
+              "timed_close_ready": "Begeleide Start → Stop-meting",
+              "manual_entry": "Looptijden handmatig invoeren",
+              "reset_default": "Terugzetten naar standaard looptijd"
+            }
+          },
+          "timed_close_ready": {
+            "title": "Stap 1 van 2: Klaar om sluiten te meten",
+            "description": "Zorg dat **{name}** helemaal open staat en klik op **Verzenden** om het sluiten te starten. Klik direct opnieuw op **Verzenden** zodra de raambedekking de onderste eindstop bereikt."
+          },
+          "timed_close_stop": {
+            "title": "Stap 1 van 2: Bezig met sluiten — klik op Verzenden bij de eindstop",
+            "description": "**{name}** is aan het sluiten. Klik op **Verzenden** zodra de onderste eindstop is bereikt (als u dit venster sluit, stopt de motor direct)."
+          },
+          "timed_open_ready": {
+            "title": "Stap 2 van 2: Klaar om openen te meten",
+            "description": "Gemeten sluittijd voor **{name}**: **{down} s**.\n\nKlik op **Verzenden** om het openen te starten en te meten, of vink het vakje hieronder aan om **{down} s** voor beide richtingen te gebruiken.",
+            "data": {
+              "reuse_down_for_up": "Sluittijd ook gebruiken voor openen (openingsmeting overslaan)"
+            }
+          },
+          "timed_open_stop": {
+            "title": "Stap 2 van 2: Bezig met openen — klik op Verzenden bij de eindstop",
+            "description": "**{name}** is aan het openen. Klik op **Verzenden** zodra de bovenste eindstop is bereikt (als u dit venster sluit, stopt de motor direct)."
+          },
+          "manual_entry": {
+            "title": "Looptijden raambedekking invoeren",
+            "description": "Voer de volledige sluit- en openingslooptijd (in seconden) voor **{name}** in.",
+            "data": {
+              "travel_time_down": "Looptijd omlaag (seconden)",
+              "travel_time_up": "Looptijd omhoog (seconden)"
+            }
+          },
+          "confirm_save": {
+            "title": "Looptijden controleren en opslaan",
+            "description": "Gemeten looptijden voor **{name}**: sluiten **{down} s**, openen **{up} s**.\n\nPas zo nodig aan en klik op **Verzenden** om op te slaan.",
+            "data": {
+              "travel_time_down": "Looptijd omlaag (seconden)",
+              "travel_time_up": "Looptijd omhoog (seconden)"
+            }
+          },
+          "reset_default": {
+            "title": "Looptijd raambedekking terugzetten",
+            "description": "Klik op **Verzenden** om de opgeslagen looptijden voor **{name}** te wissen en terug te keren naar `myhome.yaml` of de standaardwaarde van 25 s."
+          }
+        },
+        "abort": {
+          "cover_missing": "De raambedekkingsentiteit is niet langer beschikbaar.",
+          "cover_unavailable": "De raambedekking of de bijbehorende gateway is momenteel niet beschikbaar. Herstel de gatewayverbinding en probeer het opnieuw.",
+          "cover_locked": "De actuator van deze raambedekking is vergrendeld (WHO=14). Ontgrendel de raambedekking voordat u een begeleide meting start.",
+          "calibration_in_progress": "Er is al een andere kalibratie of begeleide meting actief voor deze raambedekking of gateway.",
+          "cover_reports_position": "Deze raambedekking meldt zelf haar positie; looptijdkalibratie is niet van toepassing en de verouderde instelling is gewist.",
+          "save_failed": "Opslaan van de looptijden van de raambedekking is mislukt."
+        },
+        "error": {
+          "invalid_travel_time": "Voer geldige looptijden binnen het toegestane bereik in."
+        }
+      }
+    },
+    "cover_legacy_calibration_cutoff": {
+      "title": "{name}: opgeslagen looptijd komt overeen met een looptijdgrens van de actuator",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Looptijd raambedekking instellen",
+            "description": "De opgeslagen looptijden zijn {down} s (sluiten) en {up} s (openen), wat overeenkomt met een looptijdgrens van de actuator.\n\nKies hoe u **{name}** wilt kalibreren:",
+            "menu_options": {
+              "timed_close_ready": "Begeleide Start → Stop-meting",
+              "manual_entry": "Looptijden handmatig invoeren",
+              "reset_default": "Terugzetten naar standaard looptijd"
+            }
+          },
+          "timed_close_ready": {
+            "title": "Stap 1 van 2: Klaar om sluiten te meten",
+            "description": "Zorg dat **{name}** helemaal open staat en klik op **Verzenden** om het sluiten te starten. Klik direct opnieuw op **Verzenden** zodra de raambedekking de onderste eindstop bereikt."
+          },
+          "timed_close_stop": {
+            "title": "Stap 1 van 2: Bezig met sluiten — klik op Verzenden bij de eindstop",
+            "description": "**{name}** is aan het sluiten. Klik op **Verzenden** zodra de onderste eindstop is bereikt (als u dit venster sluit, stopt de motor direct)."
+          },
+          "timed_open_ready": {
+            "title": "Stap 2 van 2: Klaar om openen te meten",
+            "description": "Gemeten sluittijd voor **{name}**: **{down} s**.\n\nKlik op **Verzenden** om het openen te starten en te meten, of vink het vakje hieronder aan om **{down} s** voor beide richtingen te gebruiken.",
+            "data": {
+              "reuse_down_for_up": "Sluittijd ook gebruiken voor openen (openingsmeting overslaan)"
+            }
+          },
+          "timed_open_stop": {
+            "title": "Stap 2 van 2: Bezig met openen — klik op Verzenden bij de eindstop",
+            "description": "**{name}** is aan het openen. Klik op **Verzenden** zodra de bovenste eindstop is bereikt (als u dit venster sluit, stopt de motor direct)."
+          },
+          "manual_entry": {
+            "title": "Looptijden raambedekking invoeren",
+            "description": "Voer de volledige sluit- en openingslooptijd (in seconden) voor **{name}** in.",
+            "data": {
+              "travel_time_down": "Looptijd omlaag (seconden)",
+              "travel_time_up": "Looptijd omhoog (seconden)"
+            }
+          },
+          "confirm_save": {
+            "title": "Looptijden controleren en opslaan",
+            "description": "Gemeten looptijden voor **{name}**: sluiten **{down} s**, openen **{up} s**.\n\nPas zo nodig aan en klik op **Verzenden** om op te slaan.",
+            "data": {
+              "travel_time_down": "Looptijd omlaag (seconden)",
+              "travel_time_up": "Looptijd omhoog (seconden)"
+            }
+          },
+          "reset_default": {
+            "title": "Looptijd raambedekking terugzetten",
+            "description": "Klik op **Verzenden** om de opgeslagen looptijden voor **{name}** te wissen en terug te keren naar `myhome.yaml` of de standaardwaarde van 25 s."
+          }
+        },
+        "abort": {
+          "cover_missing": "De raambedekkingsentiteit is niet langer beschikbaar.",
+          "cover_unavailable": "De raambedekking of de bijbehorende gateway is momenteel niet beschikbaar. Herstel de gatewayverbinding en probeer het opnieuw.",
+          "cover_locked": "De actuator van deze raambedekking is vergrendeld (WHO=14). Ontgrendel de raambedekking voordat u een begeleide meting start.",
+          "calibration_in_progress": "Er is al een andere kalibratie of begeleide meting actief voor deze raambedekking of gateway.",
+          "cover_reports_position": "Deze raambedekking meldt zelf haar positie; looptijdkalibratie is niet van toepassing en de verouderde instelling is gewist.",
+          "save_failed": "Opslaan van de looptijden van de raambedekking is mislukt."
+        },
+        "error": {
+          "invalid_travel_time": "Voer geldige looptijden binnen het toegestane bereik in."
+        }
+      }
     }
   },
   "exceptions": {
@@ -758,10 +890,10 @@
       "message": "{name}: geen stopstatus van de actuator binnen {timeout} s - mogelijk meldt hij geen status; stel travel_time handmatig in"
     },
     "calibration_actuator_cutoff_open": {
-      "message": "{name}: de openingsloop eindigde na {seconds} s, op de looptijdgrens van {limit} s van de actuator, niet op de eindstop; de actuator kan dit rolluik niet meten - gebruik de stopwatch (Stop & Save) of stel travel_time handmatig in"
+      "message": "{name}: de openingsloop eindigde na {seconds} s, op de looptijdgrens van {limit} s van de actuator, niet op de eindstop; de actuator kan deze raambedekking niet automatisch meten — gebruik de begeleide handmatige meting in Instellingen -> Systeem -> Reparaties, of meet een beweging handmatig (last_run_seconds) en sla deze op met myhome.set_cover_travel_time"
     },
     "calibration_actuator_cutoff_close": {
-      "message": "{name}: de sluitloop eindigde na {seconds} s, op de looptijdgrens van {limit} s van de actuator, niet op de eindstop; de actuator kan dit rolluik niet meten - gebruik de stopwatch (Stop & Save) of stel travel_time handmatig in"
+      "message": "{name}: de sluitloop eindigde na {seconds} s, op de looptijdgrens van {limit} s van de actuator, niet op de eindstop; de actuator kan deze raambedekking niet automatisch meten — gebruik de begeleide handmatige meting in Instellingen -> Systeem -> Reparaties, of meet een beweging handmatig (last_run_seconds) en sla deze op met myhome.set_cover_travel_time"
     },
     "cover_reports_position": {
       "message": "{name} meldt zijn positie (Dimension 10 / advanced: true); looptijdkalibratie is daarop niet van toepassing. Als dit een standaard tijdgestuurde actuator is (bijv. F411) die dimensie 10 niet ondersteunt, stel dan advanced: false in of verwijder advanced: true uit myhome.yaml."
@@ -776,7 +908,7 @@
       "message": "{name}: onwaarschijnlijke openingsloop van {seconds} s; niet opgeslagen"
     },
     "travel_time_missing": {
-      "message": "Geef ten minste travel_time, travel_time_down/up of min_motor_pulse op"
+      "message": "Geef ten minste travel_time, travel_time_down/up, slat_time of min_motor_pulse op"
     },
     "travel_time_out_of_range": {
       "message": "{field} moet tussen {min} s en {max} s liggen"
@@ -788,7 +920,7 @@
       "message": "{entity_id} wordt gekalibreerd; probeer het opnieuw wanneer dat klaar is"
     },
     "cover_position_unknown": {
-      "message": "{name}: de positie is onbekend totdat het rolluik eenmaal volledig is geopend of gesloten"
+      "message": "{name}: de positie is onbekend totdat de raambedekking eenmaal volledig is geopend of gesloten"
     },
     "cover_tilt_position_unknown": {
       "message": "{name}: de hoek van de lamellen is onbekend totdat de lamellen eenmaal volledig zijn open- of dichtgekanteld"
@@ -947,7 +1079,7 @@
         "name": "Looptijd kalibreren"
       },
       "calibrate_all_covers": {
-        "name": "Alle rolluiken kalibreren"
+        "name": "Alle raambedekkingen kalibreren"
       },
       "tuner_seek_up": {
         "name": "Vooruit zoeken"
@@ -998,7 +1130,7 @@
     "delegated_whos": {
       "options": {
         "1": "1 - Verlichting",
-        "2": "2 - Rolluiken / zonwering",
+        "2": "2 - Automatisering / raambedekkingen",
         "4": "4 - Thermoregeling",
         "5": "5 - Inbraakalarm",
         "6": "6 - Deurintercom",
@@ -1014,7 +1146,7 @@
     "expose_who": {
       "options": {
         "1": "WHO 1 — Verlichting / Schakelaar / Virtuele actuator",
-        "2": "WHO 2 — Automatisering / Rolluik",
+        "2": "WHO 2 — Automatisering / Raambedekking",
         "4": "WHO 4 — Temperatuursensor (Dimensie 0)",
         "13": "WHO 13 — Busklok & zomertijdsynchronisatie",
         "18": "WHO 18 — Energie- / vermogensmeter"
@@ -1067,9 +1199,9 @@
       "rotary_cw_fast": "\"{subtype}\" snel met de klok mee gedraaid",
       "rotary_ccw_slow": "\"{subtype}\" langzaam tegen de klok in gedraaid",
       "rotary_ccw_fast": "\"{subtype}\" snel tegen de klok in gedraaid",
-      "centralized_shutter_open": "Centraal OPEN-commando voor rolluiken ontvangen",
-      "centralized_shutter_close": "Centraal SLUIT-commando voor rolluiken ontvangen",
-      "centralized_shutter_stop": "Centraal STOP-commando voor rolluiken ontvangen"
+      "centralized_shutter_open": "Centraal OPEN-commando voor raambedekking ontvangen",
+      "centralized_shutter_close": "Centraal SLUIT-commando voor raambedekking ontvangen",
+      "centralized_shutter_stop": "Centraal STOP-commando voor raambedekking ontvangen"
     },
     "trigger_subtype": {
       "button_0": "Knop 0",

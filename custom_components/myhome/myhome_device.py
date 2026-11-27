@@ -10,7 +10,8 @@ if TYPE_CHECKING:
     from .gateway import MyHOMEGatewayHandler
 
 from homeassistant.const import STATE_UNAVAILABLE
-from homeassistant.core import HomeAssistant, State, callback
+from homeassistant.core import Event, HomeAssistant, State, callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import Entity
@@ -122,14 +123,40 @@ class MyHOMEEntity(RestoreEntity):
                 model=self._model,
             )
 
+    def _resolve_device_name(self, dev_entry: Any) -> str:
+        """Return the live user-facing name from ``dev_entry``, or ``_device_name``."""
+        if dev_entry is not None:
+            for attr in ("name_by_user", "name"):
+                candidate = getattr(dev_entry, attr, None)
+                if isinstance(candidate, str) and candidate:
+                    return candidate
+        return self._device_name
+
+    @property
+    def _live_device_name(self) -> str:
+        """Return the device's current registry name, falling back to ``_device_name``."""
+        return self._resolve_device_name(getattr(self, "device_entry", None))
+
     @property
     def _display_name(self) -> str:
         """Device name plus entity name, for log lines and error messages.
 
-        Mirrors the friendly name Home Assistant builds; before the platform's
-        translations are loaded the entity part falls back to the translation
-        key or device class it will be named after.
+        Mirrors the friendly name Home Assistant builds across HA 2026.8 through
+        2026.12+: user-assigned entity names (and HA 2026.11+ ``compat_name``)
+        take precedence, followed by live device registry names
+        (``name_by_user`` / ``name``), falling back to ``_device_name``. Before
+        the platform's translations are loaded the entity part falls back to the
+        translation key or device class it will be named after.
         """
+        if (reg_entry := getattr(self, "registry_entry", None)) is not None:
+            reg_name = getattr(reg_entry, "name", None)
+            if isinstance(reg_name, str) and reg_name:
+                return reg_name
+            compat_name = getattr(reg_entry, "compat_name", None)
+            if isinstance(compat_name, str) and compat_name:
+                return compat_name
+
+        device_name = self._live_device_name
         try:
             own = self.name
         except AttributeError:  # translation lookup needs a platform; not added yet
@@ -139,7 +166,7 @@ class MyHOMEEntity(RestoreEntity):
             device_class = getattr(self, "device_class", None) if self._name_from_device_class else None
             raw = key or (str(device_class) if device_class else None)
             own = raw.replace("_", " ").capitalize() if raw else None
-        return f"{self._device_name} {own}" if own else self._device_name
+        return f"{device_name} {own}" if own else device_name
 
     def _publish_state(self) -> None:
         """Write the entity state once the entity is live in Home Assistant.
@@ -364,12 +391,59 @@ class MyHOMEEntity(RestoreEntity):
         )
         self._availability_listener_registered = True
 
+    @callback
+    def _register_device_rename_listener(self, initial_name: str) -> None:
+        """Keep ``DeviceHealth`` address names synced with live device registry renames."""
+        target_hass = self.hass or self._hass
+        dev_entry = getattr(self, "device_entry", None)
+        device_id = getattr(dev_entry, "id", None)
+        bus = getattr(target_hass, "bus", None)
+        async_listen = getattr(bus, "async_listen", None)
+        if (
+            target_hass is None
+            or not isinstance(device_id, str)
+            or not device_id
+            or not callable(async_listen)
+        ):
+            return
+
+        last_name = initial_name
+
+        @callback
+        def _handle_device_registry_updated(event: Event[Any]) -> None:
+            nonlocal last_name
+            data = getattr(event, "data", None)
+            if not isinstance(data, Mapping):
+                return
+            if data.get("action") != "update" or data.get("device_id") != device_id:
+                return
+            try:
+                dev_reg = dr.async_get(target_hass)
+                updated_device = dev_reg.async_get(device_id) if dev_reg is not None else None
+            except Exception:
+                return
+            if updated_device is None:
+                return
+            new_name = self._resolve_device_name(updated_device)
+            if new_name == last_name:
+                return
+            last_name = new_name
+            health, address = self._device_health(), self._health_address
+            if health is not None and address is not None:
+                health.name_address(*address, new_name, owner=self._health_owner)
+
+        unsub = async_listen(dr.EVENT_DEVICE_REGISTRY_UPDATED, _handle_device_registry_updated)
+        if callable(unsub):
+            self.async_on_remove(unsub)
+
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
         self._register_availability_listener()
         health, address = self._device_health(), self._health_address
         if health is not None and address is not None:
-            health.name_address(*address, self._device_name, owner=self._health_owner)
+            live_name = self._live_device_name
+            health.name_address(*address, live_name, owner=self._health_owner)
+            self._register_device_rename_listener(live_name)
         await super().async_added_to_hass()
         try:
             last_state = await self.async_get_last_state()

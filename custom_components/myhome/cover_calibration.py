@@ -11,6 +11,9 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    CALIBRATION_CUTOFF_EARLY,
+    CALIBRATION_CUTOFF_LATE_PER_MIN,
+    CALIBRATION_CUTOFFS,
     CONF_COVER_TRAVEL_TIMES,
     DOMAIN,
     LOGGER,
@@ -115,15 +118,28 @@ class CalibrationInterrupted(HomeAssistantError):
         )
 
 
+def _actuator_cutoff(seconds: float) -> float | None:
+    """Return the actuator run-time limit a calibration run of ``seconds`` ended at, if any."""
+    for limit in CALIBRATION_CUTOFFS:
+        late = (limit / 60.0) * CALIBRATION_CUTOFF_LATE_PER_MIN
+        if limit - CALIBRATION_CUTOFF_EARLY <= seconds <= limit + late:
+            return limit
+    return None
+
+
 class CalibrationCutoff(HomeAssistantError):
     """A calibration run ended at the actuator's run-time limit, not at the end stop."""
 
     def __init__(self, name: str, direction: str, seconds: float, limit: float) -> None:
+        self.name = name
+        self.direction = direction
+        self.seconds = seconds
         self.limit = limit
         msg = (
             f"{name}: the {direction} run ended after {seconds:.1f} s, at the actuator's {limit:.0f} s "
-            "run-time limit, not at the end stop; the actuator cannot measure this shutter "
-            "- use the stopwatch (Stop & Save) or set travel_time manually"
+            "run-time limit, not at the end stop; the actuator cannot measure this cover automatically — "
+            "use the guided manual timing flow in Settings -> System -> Repairs, or time a run manually "
+            "(last_run_seconds) and save it with myhome.set_cover_travel_time"
         )
         placeholders = {"name": name, "seconds": f"{seconds:.1f}", "limit": f"{limit:.0f}"}
         if direction == "close":
@@ -153,6 +169,8 @@ class CoverCalibrationHub:
         self._lock: asyncio.Lock | None = None
         self._active_cover: Any | None = None
         self._queued_covers: set[Any] = set()
+        self._stop_generation: int = 0
+        self._active_batch_gen: int | None = None
         self._register()
 
     def _register(self) -> None:
@@ -246,6 +264,31 @@ class CoverCalibrationHub:
         """Return set of covers waiting for calibration lock on this gateway."""
         return self._queued_covers
 
+    @property
+    def stop_generation(self) -> int:
+        """Return the monotonic counter incremented on every async_stop() call."""
+        return self._stop_generation
+
+    @property
+    def is_batch_running(self) -> bool:
+        """Return True if a sequential batch calibration is currently active."""
+        return self._active_batch_gen is not None
+
+    def begin_batch(self) -> int:
+        """Start tracking a sequential batch calibration and return its stop generation."""
+        gen = self._stop_generation
+        self._active_batch_gen = gen
+        return gen
+
+    def end_batch(self, gen: int) -> None:
+        """Clear the active batch marker if it still belongs to ``gen``."""
+        if self._active_batch_gen == gen:
+            self._active_batch_gen = None
+
+    def is_batch_stopped(self, gen: int) -> bool:
+        """Return True if async_stop() was called since begin_batch() returned ``gen``."""
+        return self._stop_generation != gen
+
     def record_frame(self, direction: str, raw: str, **extra: Any) -> None:
         """Record a calibration frame to this hub's trace buffer."""
         now = dt_util.utcnow()
@@ -264,8 +307,10 @@ class CoverCalibrationHub:
         return list(self.trace)
 
     async def async_stop(self) -> bool:
-        """Stop active and queued calibrations on this gateway."""
-        stopped_any = False
+        """Stop active, queued, and batch calibrations on this gateway."""
+        self._stop_generation += 1
+        stopped_any = self._active_batch_gen is not None
+        self._active_batch_gen = None
         queued = list(self.queued_covers)
         self.queued_covers.clear()
         for c in queued:
@@ -292,6 +337,8 @@ class CoverCalibrationHub:
         """Clean up all references when gateway unloads."""
         self._active_cover = None
         self._queued_covers.clear()
+        self._stop_generation = 0
+        self._active_batch_gen = None
         self._lock = None
         self.trace.clear()
         self._unregister()

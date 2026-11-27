@@ -116,7 +116,7 @@
             "who": "Sottosistema WHO"
           },
           "data_description": {
-            "who": "WHO 1 (luci/interruttori) e WHO 2 (tapparelle) offrono i selettori A / PL più un campo WHERE manuale opzionale; WHO 4, 13 e 18 mostrano solo i propri campi."
+            "who": "WHO 1 (luci/interruttori) e WHO 2 (coperture) offrono i selettori A / PL più un campo WHERE manuale opzionale; WHO 4, 13 e 18 mostrano solo i propri campi."
           }
         },
         "reconfigure": {
@@ -165,7 +165,7 @@
           }
         },
         "who_2": {
-          "title": "WHO 2 — Automazione / Tapparella",
+          "title": "WHO 2 — Automazione / Copertura",
           "description": "Scegli Ambiente (A) e Punto (PL) come configurati in MyHOME_Suite (es. A = 3, PL = 1 oppure A = 8, PL = 12), oppure lasciali vuoti e inserisci sotto un indirizzo WHERE OpenWebNet diretto.",
           "data": {
             "area": "Ambiente (A, 0–10)",
@@ -188,7 +188,7 @@
             "interface": "Interfaccia bus locale F422 opzionale (#4#01–#4#09 o #4#11–#4#15) per il routing verso un bus locale.",
             "where": "Campo opzionale per utenti esperti (es. 31, 08, 0812, 0012, 1008 o 31#4#01). Se compilato, prevale su A, PL e Interfaccia.",
             "entity_id": "Entità cover sorgente Home Assistant (opzionale se sono configurate azioni personalizzate qui sotto).",
-            "attribute": "Attributo opzionale come 'current_position' per rispecchiare la posizione della tapparella.",
+            "attribute": "Attributo opzionale come 'current_position' per rispecchiare la posizione della copertura.",
             "turn_on_action": "Sequenza di azioni personalizzata eseguita alla ricezione di un comando SU / apertura dal bus.",
             "turn_off_action": "Sequenza di azioni personalizzata eseguita alla ricezione di un comando GIÙ / chiusura dal bus."
           }
@@ -411,31 +411,31 @@
       "fields": {
         "gateway": {
           "name": "Gateway",
-          "description": "The gateway's MAC address, as present in the config."
+          "description": "L'indirizzo MAC del gateway, come presente nella configurazione."
         }
       }
     },
     "send_message": {
-      "name": "Send message",
+      "name": "Invia messaggio",
       "description": "Invia un messaggio OpenWebNet arbitrario (ma valido) al gateway (solo amministratori).",
       "fields": {
         "gateway": {
           "name": "Gateway",
-          "description": "The gateway's MAC address, as present in the config."
+          "description": "L'indirizzo MAC del gateway, come presente nella configurazione."
         },
         "message": {
-          "name": "Message",
-          "description": "Valid OpenWebNet message."
+          "name": "Messaggio",
+          "description": "Messaggio OpenWebNet valido."
         }
       }
     },
     "start_sending_instant_power": {
-      "name": "Start sending instant power",
-      "description": "Get automatic instant power draw updates for a sensor.",
+      "name": "Avvia invio potenza istantanea",
+      "description": "Ricevi aggiornamenti automatici della potenza istantanea assorbita per un sensore.",
       "fields": {
         "entity_id": {
-          "name": "Entity",
-          "description": "Name(s) of entities that will start sending instant power information."
+          "name": "Entità",
+          "description": "Nome/i delle entità che inizieranno a inviare informazioni sulla potenza istantanea."
         },
         "duration": {
           "name": "Durata",
@@ -444,12 +444,12 @@
       }
     },
     "stop_sending_instant_power": {
-      "name": "Stop sending instant power",
-      "description": "Stop automatic instant power draw updates for a sensor.",
+      "name": "Interrompi invio potenza istantanea",
+      "description": "Interrompi gli aggiornamenti automatici della potenza istantanea assorbita per un sensore.",
       "fields": {
         "entity_id": {
-          "name": "Entity",
-          "description": "Name(s) of entities that will stop sending instant power information."
+          "name": "Entità",
+          "description": "Nome/i delle entità che smetteranno di inviare informazioni sulla potenza istantanea."
         }
       }
     },
@@ -485,7 +485,7 @@
     },
     "sweep_bus": {
       "name": "Scansione stato bus",
-      "description": "Esegue una richiesta di stato in sola lettura su tutti i sottosistemi del bus (luci, tapparelle, termoregolazione, orologio e diagnostica del gateway) per popolare il buffer circolare di diagnostica.",
+      "description": "Esegue una richiesta di stato in sola lettura su tutti i sottosistemi del bus (luci, coperture, termoregolazione, orologio e diagnostica del gateway) per popolare il buffer circolare di diagnostica.",
       "fields": {
         "gateway": {
           "name": "Gateway",
@@ -526,12 +526,12 @@
       }
     },
     "calibrate_cover": {
-      "name": "Calibra il tempo di corsa della tapparella",
-      "description": "Misura i tempi di corsa in salita e in discesa di una tapparella temporizzata sul bus SCS e li salva: la tapparella viene portata tutta su, poi tutta giù (cronometrata), poi di nuovo tutta su (cronometrata). Le tapparelle vengono calibrate una alla volta per gateway."
+      "name": "Calibra il tempo di corsa della copertura",
+      "description": "Misura i tempi di corsa in apertura e in chiusura di una copertura temporizzata sul bus SCS e li salva: la copertura viene portata tutta aperta, poi tutta chiusa (misurata), poi di nuovo tutta aperta (misurata). Le coperture vengono calibrate una alla volta per gateway."
     },
     "stop_cover_calibration": {
-      "name": "Interrompi la calibrazione delle tapparelle",
-      "description": "Interrompe la calibrazione del tempo di corsa in corso e annulla quelle in coda; la tapparella in movimento viene fermata e non viene salvato nulla.",
+      "name": "Interrompi la calibrazione delle coperture",
+      "description": "Interrompe la calibrazione del tempo di corsa in corso e annulla quelle in coda; la copertura in movimento viene fermata e non viene salvato nulla.",
       "fields": {
         "gateway": {
           "name": "Gateway",
@@ -540,8 +540,8 @@
       }
     },
     "set_cover_travel_time": {
-      "name": "Imposta il tempo di corsa della tapparella",
-      "description": "Salva manualmente i tempi di corsa fisici di una tapparella temporizzata invece di calibrarli sul bus.",
+      "name": "Imposta il tempo di corsa della copertura",
+      "description": "Salva manualmente i tempi di corsa fisici di una copertura temporizzata invece di calibrarli sul bus.",
       "fields": {
         "travel_time": {
           "name": "Tempo di corsa",
@@ -557,11 +557,11 @@
         },
         "slat_time": {
           "name": "Tempo di orientamento lamelle",
-          "description": "Secondi necessari alle lamelle di una veneziana per una rotazione completa (0.5-10). Usato solo dalle tapparelle con slat_tilt abilitato."
+          "description": "Secondi necessari alle lamelle di una veneziana per una rotazione completa (0.5-10). Usato solo dalle coperture con slat_tilt abilitato."
         },
         "copied_from": {
           "name": "Copiato da",
-          "description": "La tapparella da cui sono stati presi questi tempi; la sorgente viene quindi indicata come \"copied\" invece di \"manual\"."
+          "description": "La copertura da cui sono stati presi questi tempi; la sorgente viene quindi indicata come \"copied\" invece di \"manual\"."
         },
         "min_motor_pulse": {
           "name": "Soglia minima di avvio motore",
@@ -570,7 +570,7 @@
       }
     },
     "reset_cover_travel_time": {
-      "name": "Reimposta il tempo di corsa della tapparella",
+      "name": "Reimposta il tempo di corsa della copertura",
       "description": "Dimentica i tempi di corsa misurati o impostati manualmente e torna al travel_time di myhome.yaml o al valore predefinito di 25 s."
     },
     "send_scenario_plus_command": {
@@ -618,8 +618,8 @@
       "description": "La zona di riscaldamento {device} su {gateway} non ha risposto alla richiesta di stato per due riavvii consecutivi, quindi MyHOME ha smesso di interrogarla all'avvio (ogni richiesta senza risposta costa diversi secondi alla coda comandi del gateway). Se la zona non esiste più, rimuovi il relativo dispositivo o entità in Home Assistant. Se esiste ancora, questo avviso si risolve automaticamente appena la zona invia un frame e verrà nuovamente interrogata dopo una settimana."
     },
     "unconfigured_timezone": {
-      "title": "Unconfigured timezone on MyHOME gateway ({gateway})",
-      "description": "The MyHOME gateway {gateway} is reporting an unconfigured timezone (999). This will cause incorrect timestamps in the bus monitor and potentially alarm logs.\\n\\nPlease log into the gateway web UI or MyHOME Suite and configure a valid timezone, then restart the gateway."
+      "title": "Fuso orario non configurato sul gateway MyHOME ({gateway})",
+      "description": "Il gateway MyHOME {gateway} segnala un fuso orario non configurato (codice segnaposto '999'). Ciò può causare errori nell'analisi di data e ora o la perdita di messaggi diagnostici del gateway.\n\nAccedi all'interfaccia web del gateway o a MyHOME Suite, configura un fuso orario valido e riavvia il gateway."
     },
     "unknown_gateway_model": {
       "title": "Codice tipo dispositivo gateway sconosciuto ({code})",
@@ -700,6 +700,138 @@
     "legacy_yaml_imported": {
       "title": "Configurazione myhome.yaml importata per {gateway}",
       "description": "La configurazione dei dispositivi in `myhome.yaml` per {gateway} è stata copiata nelle opzioni della voce di configurazione di Home Assistant. Finché `myhome.yaml` esiste resta il riferimento e la copia ne segue le modifiche. Se il file viene rimosso o diventa illeggibile, i dispositivi mantengono la configurazione dell'ultima copia."
+    },
+    "cover_calibration_cutoff": {
+      "title": "{name}: l'attuatore si è fermato al limite di {limit} s",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Imposta il tempo di corsa della copertura",
+            "description": "La calibrazione automatica è terminata dopo {seconds} s al limite di {limit} s dell'attuatore anziché al finecorsa fisico.\n\nScegli come calibrare **{name}**:",
+            "menu_options": {
+              "timed_close_ready": "Misurazione guidata Avvia → Ferma",
+              "manual_entry": "Inserisci manualmente i tempi di corsa",
+              "reset_default": "Reimposta al tempo di corsa predefinito"
+            }
+          },
+          "timed_close_ready": {
+            "title": "Passaggio 1 di 2: pronto per misurare la chiusura",
+            "description": "Assicurati che la copertura **{name}** sia completamente aperta, quindi fai clic su **Invia** per avviare la chiusura. Preparati a fare di nuovo clic su **Invia** non appena raggiunge il finecorsa inferiore."
+          },
+          "timed_close_stop": {
+            "title": "Passaggio 1 di 2: chiusura in corso — fai clic su Invia al finecorsa",
+            "description": "**{name}** si sta chiudendo. Fai clic su **Invia** non appena raggiunge il finecorsa inferiore (chiudere questa finestra ferma subito il motore)."
+          },
+          "timed_open_ready": {
+            "title": "Passaggio 2 di 2: pronto per misurare l'apertura",
+            "description": "Tempo di chiusura misurato per **{name}**: **{down} s**.\n\nFai clic su **Invia** per avviare l'apertura e misurare la salita, oppure seleziona la casella qui sotto per riutilizzare **{down} s** in entrambe le direzioni.",
+            "data": {
+              "reuse_down_for_up": "Riutilizza il tempo di chiusura per l'apertura (salta la misurazione in salita)"
+            }
+          },
+          "timed_open_stop": {
+            "title": "Passaggio 2 di 2: apertura in corso — fai clic su Invia al finecorsa",
+            "description": "**{name}** si sta aprendo. Fai clic su **Invia** non appena raggiunge il finecorsa superiore (chiudere questa finestra ferma subito il motore)."
+          },
+          "manual_entry": {
+            "title": "Inserisci i tempi di corsa della copertura",
+            "description": "Inserisci i tempi completi di chiusura e apertura (in secondi) per **{name}**.",
+            "data": {
+              "travel_time_down": "Tempo di corsa in chiusura (secondi)",
+              "travel_time_up": "Tempo di corsa in apertura (secondi)"
+            }
+          },
+          "confirm_save": {
+            "title": "Verifica e salva i tempi di corsa",
+            "description": "Tempi di corsa misurati per **{name}**: chiusura **{down} s**, apertura **{up} s**.\n\nModificali se necessario e fai clic su **Invia** per salvare.",
+            "data": {
+              "travel_time_down": "Tempo di corsa in chiusura (secondi)",
+              "travel_time_up": "Tempo di corsa in apertura (secondi)"
+            }
+          },
+          "reset_default": {
+            "title": "Reimposta il tempo di corsa della copertura",
+            "description": "Fai clic su **Invia** per cancellare i tempi di corsa salvati per **{name}** e tornare a `myhome.yaml` o al valore predefinito di 25 s."
+          }
+        },
+        "abort": {
+          "cover_missing": "L'entità copertura non è più disponibile.",
+          "cover_unavailable": "La copertura o il relativo gateway non è attualmente disponibile. Riconnetti il gateway e riprova.",
+          "cover_locked": "L'attuatore della copertura è attualmente bloccato (WHO=14). Sbloccalo prima di avviare la misurazione guidata.",
+          "calibration_in_progress": "Un'altra calibrazione o sessione di misurazione guidata è già attiva per questa copertura o questo gateway.",
+          "cover_reports_position": "Questa copertura segnala nativamente la propria posizione; la calibrazione del tempo di corsa non si applica e la voce obsoleta è stata rimossa.",
+          "save_failed": "Impossibile salvare i tempi di corsa della copertura."
+        },
+        "error": {
+          "invalid_travel_time": "Inserisci tempi di corsa validi entro l'intervallo consentito."
+        }
+      }
+    },
+    "cover_legacy_calibration_cutoff": {
+      "title": "{name}: il tempo di corsa salvato corrisponde a un limite dell'attuatore",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Imposta il tempo di corsa della copertura",
+            "description": "I tempi di corsa salvati sono {down} s (chiusura) e {up} s (apertura), valori che corrispondono a un limite dell'attuatore.\n\nScegli come calibrare **{name}**:",
+            "menu_options": {
+              "timed_close_ready": "Misurazione guidata Avvia → Ferma",
+              "manual_entry": "Inserisci manualmente i tempi di corsa",
+              "reset_default": "Reimposta al tempo di corsa predefinito"
+            }
+          },
+          "timed_close_ready": {
+            "title": "Passaggio 1 di 2: pronto per misurare la chiusura",
+            "description": "Assicurati che la copertura **{name}** sia completamente aperta, quindi fai clic su **Invia** per avviare la chiusura. Preparati a fare di nuovo clic su **Invia** non appena raggiunge il finecorsa inferiore."
+          },
+          "timed_close_stop": {
+            "title": "Passaggio 1 di 2: chiusura in corso — fai clic su Invia al finecorsa",
+            "description": "**{name}** si sta chiudendo. Fai clic su **Invia** non appena raggiunge il finecorsa inferiore (chiudere questa finestra ferma subito il motore)."
+          },
+          "timed_open_ready": {
+            "title": "Passaggio 2 di 2: pronto per misurare l'apertura",
+            "description": "Tempo di chiusura misurato per **{name}**: **{down} s**.\n\nFai clic su **Invia** per avviare l'apertura e misurare la salita, oppure seleziona la casella qui sotto per riutilizzare **{down} s** in entrambe le direzioni.",
+            "data": {
+              "reuse_down_for_up": "Riutilizza il tempo di chiusura per l'apertura (salta la misurazione in salita)"
+            }
+          },
+          "timed_open_stop": {
+            "title": "Passaggio 2 di 2: apertura in corso — fai clic su Invia al finecorsa",
+            "description": "**{name}** si sta aprendo. Fai clic su **Invia** non appena raggiunge il finecorsa superiore (chiudere questa finestra ferma subito il motore)."
+          },
+          "manual_entry": {
+            "title": "Inserisci i tempi di corsa della copertura",
+            "description": "Inserisci i tempi completi di chiusura e apertura (in secondi) per **{name}**.",
+            "data": {
+              "travel_time_down": "Tempo di corsa in chiusura (secondi)",
+              "travel_time_up": "Tempo di corsa in apertura (secondi)"
+            }
+          },
+          "confirm_save": {
+            "title": "Verifica e salva i tempi di corsa",
+            "description": "Tempi di corsa misurati per **{name}**: chiusura **{down} s**, apertura **{up} s**.\n\nModificali se necessario e fai clic su **Invia** per salvare.",
+            "data": {
+              "travel_time_down": "Tempo di corsa in chiusura (secondi)",
+              "travel_time_up": "Tempo di corsa in apertura (secondi)"
+            }
+          },
+          "reset_default": {
+            "title": "Reimposta il tempo di corsa della copertura",
+            "description": "Fai clic su **Invia** per cancellare i tempi di corsa salvati per **{name}** e tornare a `myhome.yaml` o al valore predefinito di 25 s."
+          }
+        },
+        "abort": {
+          "cover_missing": "L'entità copertura non è più disponibile.",
+          "cover_unavailable": "La copertura o il relativo gateway non è attualmente disponibile. Riconnetti il gateway e riprova.",
+          "cover_locked": "L'attuatore della copertura è attualmente bloccato (WHO=14). Sbloccalo prima di avviare la misurazione guidata.",
+          "calibration_in_progress": "Un'altra calibrazione o sessione di misurazione guidata è già attiva per questa copertura o questo gateway.",
+          "cover_reports_position": "Questa copertura segnala nativamente la propria posizione; la calibrazione del tempo di corsa non si applica e la voce obsoleta è stata rimossa.",
+          "save_failed": "Impossibile salvare i tempi di corsa della copertura."
+        },
+        "error": {
+          "invalid_travel_time": "Inserisci tempi di corsa validi entro l'intervallo consentito."
+        }
+      }
     }
   },
   "exceptions": {
@@ -758,10 +890,10 @@
       "message": "{name}: nessuno stato di arresto dall'attuatore entro {timeout} s - potrebbe non segnalare lo stato; imposta travel_time manualmente"
     },
     "calibration_actuator_cutoff_open": {
-      "message": "{name}: la corsa di apertura è terminata dopo {seconds} s, al limite del tempo di funzionamento di {limit} s dell'attuatore, non al finecorsa; l'attuatore non può misurare questa tapparella - usa il cronometro (Stop & Save) oppure imposta travel_time manualmente"
+      "message": "{name}: la corsa di apertura è terminata dopo {seconds} s, al limite del tempo di funzionamento di {limit} s dell'attuatore, non al finecorsa; l'attuatore non può misurare automaticamente questa copertura — usa il flusso guidato di misurazione manuale in Impostazioni -> Sistema -> Riparazioni, oppure misura una corsa manualmente (last_run_seconds) e salvala con myhome.set_cover_travel_time"
     },
     "calibration_actuator_cutoff_close": {
-      "message": "{name}: la corsa di chiusura è terminata dopo {seconds} s, al limite del tempo di funzionamento di {limit} s dell'attuatore, non al finecorsa; l'attuatore non può misurare questa tapparella - usa il cronometro (Stop & Save) oppure imposta travel_time manualmente"
+      "message": "{name}: la corsa di chiusura è terminata dopo {seconds} s, al limite del tempo di funzionamento di {limit} s dell'attuatore, non al finecorsa; l'attuatore non può misurare automaticamente questa copertura — usa il flusso guidato di misurazione manuale in Impostazioni -> Sistema -> Riparazioni, oppure misura una corsa manualmente (last_run_seconds) e salvala con myhome.set_cover_travel_time"
     },
     "cover_reports_position": {
       "message": "{name} segnala la propria posizione (Dimension 10 / advanced: true); la calibrazione del tempo di corsa non si applica. Se si tratta di un attuatore temporizzato standard (es. F411) che non supporta la dimensione 10, impostare advanced: false o rimuovere advanced: true da myhome.yaml."
@@ -776,7 +908,7 @@
       "message": "{name}: corsa di apertura non plausibile di {seconds} s; non salvata"
     },
     "travel_time_missing": {
-      "message": "Specifica almeno travel_time, travel_time_down/up oppure min_motor_pulse"
+      "message": "Specifica almeno travel_time, travel_time_down/up, slat_time oppure min_motor_pulse"
     },
     "travel_time_out_of_range": {
       "message": "{field} deve essere compreso tra {min} s e {max} s"
@@ -788,7 +920,7 @@
       "message": "{entity_id} è in fase di calibrazione; riprova quando sarà terminata"
     },
     "cover_position_unknown": {
-      "message": "{name}: la posizione è sconosciuta finché la tapparella non ha eseguito almeno una volta una corsa completa di apertura o chiusura"
+      "message": "{name}: la posizione è sconosciuta finché la copertura non ha eseguito almeno una volta una corsa completa di apertura o chiusura"
     },
     "cover_tilt_position_unknown": {
       "message": "{name}: l'inclinazione delle lamelle è sconosciuta finché le lamelle non sono state orientate almeno una volta in apertura o chiusura completa"
@@ -947,7 +1079,7 @@
         "name": "Calibra il tempo di corsa"
       },
       "calibrate_all_covers": {
-        "name": "Calibra tutte le tapparelle"
+        "name": "Calibra tutte le coperture"
       },
       "tuner_seek_up": {
         "name": "Ricerca avanti"
@@ -998,7 +1130,7 @@
     "delegated_whos": {
       "options": {
         "1": "1 - Illuminazione",
-        "2": "2 - Tapparelle / tende",
+        "2": "2 - Automazione / coperture",
         "4": "4 - Termoregolazione",
         "5": "5 - Antifurto",
         "6": "6 - Citofonia",
@@ -1014,7 +1146,7 @@
     "expose_who": {
       "options": {
         "1": "WHO 1 — Illuminazione / Interruttore / Attuatore virtuale",
-        "2": "WHO 2 — Automazione / Tapparella",
+        "2": "WHO 2 — Automazione / Copertura",
         "4": "WHO 4 — Sonda di temperatura (Dimensione 0)",
         "13": "WHO 13 — Orologio bus e sincronizzazione DST",
         "18": "WHO 18 — Contatore energia / potenza"
@@ -1067,9 +1199,9 @@
       "rotary_cw_fast": "\"{subtype}\" ruotato rapidamente in senso orario",
       "rotary_ccw_slow": "\"{subtype}\" ruotato lentamente in senso antiorario",
       "rotary_ccw_fast": "\"{subtype}\" ruotato rapidamente in senso antiorario",
-      "centralized_shutter_open": "Ricevuto il comando centralizzato APRI delle tapparelle",
-      "centralized_shutter_close": "Ricevuto il comando centralizzato CHIUDI delle tapparelle",
-      "centralized_shutter_stop": "Ricevuto il comando centralizzato STOP delle tapparelle"
+      "centralized_shutter_open": "Ricevuto il comando centralizzato APRI delle coperture",
+      "centralized_shutter_close": "Ricevuto il comando centralizzato CHIUDI delle coperture",
+      "centralized_shutter_stop": "Ricevuto il comando centralizzato STOP delle coperture"
     },
     "trigger_subtype": {
       "button_0": "Pulsante 0",

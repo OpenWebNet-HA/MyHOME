@@ -116,7 +116,7 @@
             "who": "Sous-système WHO"
           },
           "data_description": {
-            "who": "WHO 1 (éclairage/interrupteur) et WHO 2 (volets) proposent des sélecteurs A / PL ainsi qu'un champ WHERE brut optionnel ; WHO 4, 13 et 18 n'affichent que leurs propres champs."
+            "who": "WHO 1 (éclairage/interrupteur) et WHO 2 (ouvertures) proposent des sélecteurs A / PL ainsi qu'un champ WHERE brut optionnel ; WHO 4, 13 et 18 n'affichent que leurs propres champs."
           }
         },
         "reconfigure": {
@@ -165,7 +165,7 @@
           }
         },
         "who_2": {
-          "title": "WHO 2 — Automatisme / Volet",
+          "title": "WHO 2 — Automatisme / Ouverture",
           "description": "Choisissez la Zone (A) et le Point (PL) configurés dans MyHOME_Suite (ex. A = 3, PL = 1 ou A = 8, PL = 12), ou laissez-les vides pour saisir une adresse WHERE OpenWebNet brute ci-dessous.",
           "data": {
             "area": "Zone (A, 0–10)",
@@ -188,7 +188,7 @@
             "interface": "Interface de bus local F422 optionnelle (#4#01–#4#09 ou #4#11–#4#15) pour le routage vers un bus local.",
             "where": "Champ optionnel pour utilisateurs avancés (ex. 31, 08, 0812, 0012, 1008 ou 31#4#01). Lorsqu'il est renseigné, il remplace A, PL et Interface.",
             "entity_id": "Entité cover source Home Assistant (optionnelle si des actions personnalisées sont configurées ci-dessous).",
-            "attribute": "Attribut optionnel tel que 'current_position' pour refléter la position du volet.",
+            "attribute": "Attribut optionnel tel que 'current_position' pour refléter la position de l'ouverture.",
             "turn_on_action": "Séquence d'actions personnalisée exécutée lors d'une commande MONTÉE / ouverture reçue du bus.",
             "turn_off_action": "Séquence d'actions personnalisée exécutée lors d'une commande DESCENTE / fermeture reçue du bus."
           }
@@ -378,7 +378,7 @@
     },
     "error": {
       "invalid_ip": "Adresse IP invalide",
-      "invalid_worker_count": "Workers must be between 1 and 10",
+      "invalid_worker_count": "Le nombre de workers doit être compris entre 1 et 10",
       "worker_count_above_gateway_limit": "Le {model} accepte au maximum {session_limit} session(s) de commande simultanée(s) ; au-delà, il cesse de répondre.",
       "invalid_standalone_zone": "Les thermostats autonomes doivent être des numéros de zone compris entre 1 et 99, séparés par des virgules (ex. 2, 7).",
       "invalid_config_path": "Fichier de configuration inexistant à ce chemin",
@@ -485,7 +485,7 @@
     },
     "sweep_bus": {
       "name": "Balayage de l'état du bus",
-      "description": "Déclenche une interrogation en lecture seule de tous les sous-systèmes du bus (éclairage, volets, régulation thermique, horloge et diagnostic de la passerelle) pour alimenter le tampon circulaire de diagnostic.",
+      "description": "Déclenche une interrogation en lecture seule de tous les sous-systèmes du bus (éclairage, ouvertures, régulation thermique, horloge et diagnostic de la passerelle) pour alimenter le tampon circulaire de diagnostic.",
       "fields": {
         "gateway": {
           "name": "Passerelle",
@@ -544,12 +544,12 @@
       }
     },
     "calibrate_cover": {
-      "name": "Calibrer le temps de course du volet",
-      "description": "Mesure les temps de course en montée et en descente d'un volet temporisé sur le bus SCS et les enregistre : le volet est entièrement monté, puis entièrement descendu (chronométré), puis de nouveau entièrement monté (chronométré). Les volets sont calibrés un par un pour chaque passerelle."
+      "name": "Calibrer le temps de course de l'ouverture",
+      "description": "Mesure les temps de course en ouverture et en fermeture d'une ouverture temporisée sur le bus SCS et les enregistre : elle est amenée en fin de course haute, puis fermée complètement (mesurée), puis ouverte complètement (mesurée). Les ouvertures sont calibrées une par une pour chaque passerelle."
     },
     "stop_cover_calibration": {
-      "name": "Arrêter la calibration des volets",
-      "description": "Arrête la calibration du temps de course en cours et annule celles en attente ; le volet en mouvement est arrêté et rien n'est enregistré.",
+      "name": "Arrêter la calibration des ouvertures",
+      "description": "Arrête la calibration du temps de course en cours et annule celles en attente ; l'ouverture en mouvement est arrêtée et rien n'est enregistré.",
       "fields": {
         "gateway": {
           "name": "Passerelle",
@@ -558,8 +558,8 @@
       }
     },
     "set_cover_travel_time": {
-      "name": "Définir le temps de course du volet",
-      "description": "Enregistre manuellement les temps de course physiques d'un volet temporisé au lieu de les calibrer sur le bus.",
+      "name": "Définir le temps de course de l'ouverture",
+      "description": "Enregistre manuellement les temps de course physiques d'une ouverture temporisée au lieu de les calibrer sur le bus.",
       "fields": {
         "travel_time": {
           "name": "Temps de course",
@@ -575,11 +575,11 @@
         },
         "slat_time": {
           "name": "Temps d'orientation des lames",
-          "description": "Secondes nécessaires aux lames d'un store vénitien pour une rotation complète (0.5-10). Utilisé uniquement par les volets ayant slat_tilt activé."
+          "description": "Secondes nécessaires aux lames d'un store vénitien pour une rotation complète (0.5-10). Utilisé uniquement par les ouvertures ayant slat_tilt activé."
         },
         "copied_from": {
           "name": "Copié depuis",
-          "description": "Le volet dont ces temps ont été repris ; la source est alors indiquée comme \"copied\" au lieu de \"manual\"."
+          "description": "L'ouverture dont ces temps ont été repris ; la source est alors indiquée comme \"copied\" au lieu de \"manual\"."
         },
         "min_motor_pulse": {
           "name": "Seuil de démarrage du moteur",
@@ -588,7 +588,7 @@
       }
     },
     "reset_cover_travel_time": {
-      "name": "Réinitialiser le temps de course du volet",
+      "name": "Réinitialiser le temps de course de l'ouverture",
       "description": "Oublie les temps de course mesurés ou définis manuellement et revient au travel_time de myhome.yaml ou à la valeur par défaut de 25 s."
     },
     "cancel_cover_request": {
@@ -618,8 +618,8 @@
       "description": "La zone de chauffage {device} sur {gateway} n'a pas répondu à sa demande d'état lors de deux redémarrages consécutifs ; MyHOME a donc cessé de l'interroger au démarrage (chaque requête sans réponse bloque la file de commandes de la passerelle pendant plusieurs secondes). Si la zone n'existe plus, supprimez son appareil ou son entité dans Home Assistant. Si elle existe toujours, ce problème disparaîtra dès qu'elle émettra une trame, et elle sera de nouveau interrogée au bout d'une semaine."
     },
     "unconfigured_timezone": {
-      "title": "Unconfigured timezone on MyHOME gateway ({gateway})",
-      "description": "The MyHOME gateway {gateway} is reporting an unconfigured timezone (999). This will cause incorrect timestamps in the bus monitor and potentially alarm logs.\\n\\nPlease log into the gateway web UI or MyHOME Suite and configure a valid timezone, then restart the gateway."
+      "title": "Fuseau horaire non configuré sur la passerelle MyHOME ({gateway})",
+      "description": "La passerelle MyHOME {gateway} signale un fuseau horaire non configuré (code par défaut « 999 »). Cela peut provoquer des erreurs d'analyse de la date et de l'heure ou la perte de messages de diagnostic de la passerelle.\n\nVeuillez vous connecter à l'interface web de la passerelle ou à MyHOME Suite pour configurer un fuseau horaire valide, puis redémarrez la passerelle."
     },
     "unknown_gateway_model": {
       "title": "Code de type d'appareil de passerelle inconnu ({code})",
@@ -700,6 +700,138 @@
     "legacy_yaml_imported": {
       "title": "Configuration myhome.yaml importée pour {gateway}",
       "description": "La configuration des appareils de `myhome.yaml` pour {gateway} a été copiée dans les options de l'entrée de configuration Home Assistant. Tant que `myhome.yaml` existe, il reste la référence et la copie suit ses modifications. Si le fichier est supprimé ou devient illisible, les appareils conservent la configuration de la dernière copie."
+    },
+    "cover_calibration_cutoff": {
+      "title": "{name} : l'actionneur s'est arrêté à la limite de {limit} s",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Définir le temps de course de l'ouverture",
+            "description": "La calibration automatique s'est arrêtée après {seconds} s à la limite de temps de marche de {limit} s de l'actionneur plutôt qu'en butée physique.\n\nChoisissez comment calibrer **{name}** :",
+            "menu_options": {
+              "timed_close_ready": "Mesure guidée Démarrer → Arrêter",
+              "manual_entry": "Saisir les temps de course manuellement",
+              "reset_default": "Réinitialiser au temps de course par défaut"
+            }
+          },
+          "timed_close_ready": {
+            "title": "Étape 1 sur 2 : prêt à mesurer la fermeture",
+            "description": "Assurez-vous que l'ouverture **{name}** est complètement ouverte, puis cliquez sur **Valider** pour lancer la fermeture. Préparez-vous à cliquer de nouveau sur **Valider** dès que la butée basse est atteinte."
+          },
+          "timed_close_stop": {
+            "title": "Étape 1 sur 2 : fermeture en cours — cliquez sur Valider en butée",
+            "description": "**{name}** se ferme. Cliquez sur **Valider** dès que la butée basse est atteinte (fermer cette fenêtre arrête immédiatement le moteur)."
+          },
+          "timed_open_ready": {
+            "title": "Étape 2 sur 2 : prêt à mesurer l'ouverture",
+            "description": "Temps de fermeture mesuré pour **{name}** : **{down} s**.\n\nCliquez sur **Valider** pour lancer l'ouverture et mesurer la montée, ou cochez la case ci-dessous pour réutiliser **{down} s** dans les deux sens.",
+            "data": {
+              "reuse_down_for_up": "Réutiliser le temps de fermeture pour l'ouverture (ignorer la mesure en montée)"
+            }
+          },
+          "timed_open_stop": {
+            "title": "Étape 2 sur 2 : ouverture en cours — cliquez sur Valider en butée",
+            "description": "**{name}** s'ouvre. Cliquez sur **Valider** dès que la butée haute est atteinte (fermer cette fenêtre arrête immédiatement le moteur)."
+          },
+          "manual_entry": {
+            "title": "Saisir les temps de course de l'ouverture",
+            "description": "Saisissez les temps complets de fermeture et d'ouverture (en secondes) pour **{name}**.",
+            "data": {
+              "travel_time_down": "Temps de course en fermeture (secondes)",
+              "travel_time_up": "Temps de course en ouverture (secondes)"
+            }
+          },
+          "confirm_save": {
+            "title": "Vérifier et enregistrer les temps de course",
+            "description": "Temps de course mesurés pour **{name}** : fermeture **{down} s**, ouverture **{up} s**.\n\nAjustez si nécessaire puis cliquez sur **Valider** pour enregistrer.",
+            "data": {
+              "travel_time_down": "Temps de course en fermeture (secondes)",
+              "travel_time_up": "Temps de course en ouverture (secondes)"
+            }
+          },
+          "reset_default": {
+            "title": "Réinitialiser le temps de course de l'ouverture",
+            "description": "Cliquez sur **Valider** pour effacer les temps de course enregistrés pour **{name}** et revenir à `myhome.yaml` ou à la valeur par défaut de 25 s."
+          }
+        },
+        "abort": {
+          "cover_missing": "L'entité d'ouverture n'est plus disponible.",
+          "cover_unavailable": "L'ouverture ou sa passerelle est actuellement indisponible. Rétablissez la connexion de la passerelle et réessayez.",
+          "cover_locked": "L'actionneur de l'ouverture est actuellement verrouillé (WHO=14). Déverrouillez-le avant de lancer une mesure guidée.",
+          "calibration_in_progress": "Une autre calibration ou session de mesure guidée est déjà en cours pour cette ouverture ou cette passerelle.",
+          "cover_reports_position": "Cette ouverture signale nativement sa position ; la calibration du temps de course ne s'applique pas et l'entrée obsolète a été supprimée.",
+          "save_failed": "Échec de l'enregistrement des temps de course de l'ouverture."
+        },
+        "error": {
+          "invalid_travel_time": "Veuillez saisir des temps de course valides dans la plage autorisée."
+        }
+      }
+    },
+    "cover_legacy_calibration_cutoff": {
+      "title": "{name} : le temps de course enregistré correspond à une limite de l'actionneur",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Définir le temps de course de l'ouverture",
+            "description": "Les temps de course enregistrés sont de {down} s (fermeture) et {up} s (ouverture), ce qui correspond à une limite de l'actionneur.\n\nChoisissez comment calibrer **{name}** :",
+            "menu_options": {
+              "timed_close_ready": "Mesure guidée Démarrer → Arrêter",
+              "manual_entry": "Saisir les temps de course manuellement",
+              "reset_default": "Réinitialiser au temps de course par défaut"
+            }
+          },
+          "timed_close_ready": {
+            "title": "Étape 1 sur 2 : prêt à mesurer la fermeture",
+            "description": "Assurez-vous que l'ouverture **{name}** est complètement ouverte, puis cliquez sur **Valider** pour lancer la fermeture. Préparez-vous à cliquer de nouveau sur **Valider** dès que la butée basse est atteinte."
+          },
+          "timed_close_stop": {
+            "title": "Étape 1 sur 2 : fermeture en cours — cliquez sur Valider en butée",
+            "description": "**{name}** se ferme. Cliquez sur **Valider** dès que la butée basse est atteinte (fermer cette fenêtre arrête immédiatement le moteur)."
+          },
+          "timed_open_ready": {
+            "title": "Étape 2 sur 2 : prêt à mesurer l'ouverture",
+            "description": "Temps de fermeture mesuré pour **{name}** : **{down} s**.\n\nCliquez sur **Valider** pour lancer l'ouverture et mesurer la montée, ou cochez la case ci-dessous pour réutiliser **{down} s** dans les deux sens.",
+            "data": {
+              "reuse_down_for_up": "Réutiliser le temps de fermeture pour l'ouverture (ignorer la mesure en montée)"
+            }
+          },
+          "timed_open_stop": {
+            "title": "Étape 2 sur 2 : ouverture en cours — cliquez sur Valider en butée",
+            "description": "**{name}** s'ouvre. Cliquez sur **Valider** dès que la butée haute est atteinte (fermer cette fenêtre arrête immédiatement le moteur)."
+          },
+          "manual_entry": {
+            "title": "Saisir les temps de course de l'ouverture",
+            "description": "Saisissez les temps complets de fermeture et d'ouverture (en secondes) pour **{name}**.",
+            "data": {
+              "travel_time_down": "Temps de course en fermeture (secondes)",
+              "travel_time_up": "Temps de course en ouverture (secondes)"
+            }
+          },
+          "confirm_save": {
+            "title": "Vérifier et enregistrer les temps de course",
+            "description": "Temps de course mesurés pour **{name}** : fermeture **{down} s**, ouverture **{up} s**.\n\nAjustez si nécessaire puis cliquez sur **Valider** pour enregistrer.",
+            "data": {
+              "travel_time_down": "Temps de course en fermeture (secondes)",
+              "travel_time_up": "Temps de course en ouverture (secondes)"
+            }
+          },
+          "reset_default": {
+            "title": "Réinitialiser le temps de course de l'ouverture",
+            "description": "Cliquez sur **Valider** pour effacer les temps de course enregistrés pour **{name}** et revenir à `myhome.yaml` ou à la valeur par défaut de 25 s."
+          }
+        },
+        "abort": {
+          "cover_missing": "L'entité d'ouverture n'est plus disponible.",
+          "cover_unavailable": "L'ouverture ou sa passerelle est actuellement indisponible. Rétablissez la connexion de la passerelle et réessayez.",
+          "cover_locked": "L'actionneur de l'ouverture est actuellement verrouillé (WHO=14). Déverrouillez-le avant de lancer une mesure guidée.",
+          "calibration_in_progress": "Une autre calibration ou session de mesure guidée est déjà en cours pour cette ouverture ou cette passerelle.",
+          "cover_reports_position": "Cette ouverture signale nativement sa position ; la calibration du temps de course ne s'applique pas et l'entrée obsolète a été supprimée.",
+          "save_failed": "Échec de l'enregistrement des temps de course de l'ouverture."
+        },
+        "error": {
+          "invalid_travel_time": "Veuillez saisir des temps de course valides dans la plage autorisée."
+        }
+      }
     }
   },
   "exceptions": {
@@ -758,10 +890,10 @@
       "message": "{name} : aucun état d'arrêt de l'actionneur dans les {timeout} s - il ne signale peut-être pas son état ; définissez travel_time manuellement"
     },
     "calibration_actuator_cutoff_open": {
-      "message": "{name} : la course d'ouverture s'est terminée après {seconds} s, à la limite de temps de marche de {limit} s de l'actionneur, pas en butée ; l'actionneur ne peut pas mesurer ce volet - utilisez le chronomètre (Stop & Save) ou définissez travel_time manuellement"
+      "message": "{name} : la course d'ouverture s'est terminée après {seconds} s, à la limite de temps de marche de {limit} s de l'actionneur, pas en butée ; l'actionneur ne peut pas mesurer cette ouverture automatiquement — utilisez le flux guidé de mesure manuelle dans Paramètres -> Système -> Réparations, ou mesurez une course manuellement (last_run_seconds) et enregistrez-la avec myhome.set_cover_travel_time"
     },
     "calibration_actuator_cutoff_close": {
-      "message": "{name} : la course de fermeture s'est terminée après {seconds} s, à la limite de temps de marche de {limit} s de l'actionneur, pas en butée ; l'actionneur ne peut pas mesurer ce volet - utilisez le chronomètre (Stop & Save) ou définissez travel_time manuellement"
+      "message": "{name} : la course de fermeture s'est terminée après {seconds} s, à la limite de temps de marche de {limit} s de l'actionneur, pas en butée ; l'actionneur ne peut pas mesurer cette ouverture automatiquement — utilisez le flux guidé de mesure manuelle dans Paramètres -> Système -> Réparations, ou mesurez une course manuellement (last_run_seconds) et enregistrez-la avec myhome.set_cover_travel_time"
     },
     "cover_reports_position": {
       "message": "{name} signale sa position (Dimension 10 / advanced: true) ; la calibration du temps de course ne s'y applique pas. S'il s'agit d'un actionneur temporisé standard (ex. F411) qui ne prend pas en charge la dimension 10, définissez advanced: false ou retirez advanced: true dans myhome.yaml."
@@ -776,7 +908,7 @@
       "message": "{name} : course d'ouverture invraisemblable de {seconds} s ; non enregistrée"
     },
     "travel_time_missing": {
-      "message": "Au moins travel_time, travel_time_down/up ou min_motor_pulse doit être indiqué"
+      "message": "Au moins travel_time, travel_time_down/up, slat_time ou min_motor_pulse doit être indiqué"
     },
     "travel_time_out_of_range": {
       "message": "{field} doit être compris entre {min} s et {max} s"
@@ -788,7 +920,7 @@
       "message": "{entity_id} est en cours de calibration ; réessayez lorsqu'elle sera terminée"
     },
     "cover_position_unknown": {
-      "message": "{name} : la position est inconnue tant que le volet n'a pas effectué une ouverture ou une fermeture complète au moins une fois"
+      "message": "{name} : la position est inconnue tant que l'ouverture n'a pas été complètement ouverte ou fermée au moins une fois"
     },
     "cover_tilt_position_unknown": {
       "message": "{name} : l'inclinaison des lames est inconnue tant que les lames n'ont pas été orientées en ouverture ou en fermeture complète au moins une fois"
@@ -947,7 +1079,7 @@
         "name": "Calibrer le temps de course"
       },
       "calibrate_all_covers": {
-        "name": "Calibrer tous les volets"
+        "name": "Calibrer toutes les ouvertures"
       },
       "tuner_seek_up": {
         "name": "Recherche avant"
@@ -998,7 +1130,7 @@
     "delegated_whos": {
       "options": {
         "1": "1 - Éclairage",
-        "2": "2 - Volets / stores",
+        "2": "2 - Automatisme / ouvertures",
         "4": "4 - Thermorégulation",
         "5": "5 - Alarme anti-intrusion",
         "6": "6 - Portier",
@@ -1014,7 +1146,7 @@
     "expose_who": {
       "options": {
         "1": "WHO 1 — Éclairage / Interrupteur / Actionneur virtuel",
-        "2": "WHO 2 — Automatisme / Volet",
+        "2": "WHO 2 — Automatisme / Ouverture",
         "4": "WHO 4 — Sonde de température (Dimension 0)",
         "13": "WHO 13 — Horloge du bus et heure d'été",
         "18": "WHO 18 — Compteur d'énergie / puissance"
@@ -1067,9 +1199,9 @@
       "rotary_cw_fast": "« {subtype} » tourné rapidement dans le sens horaire",
       "rotary_ccw_slow": "« {subtype} » tourné lentement dans le sens antihoraire",
       "rotary_ccw_fast": "« {subtype} » tourné rapidement dans le sens antihoraire",
-      "centralized_shutter_open": "Commande centralisée d'OUVERTURE de volet reçue",
-      "centralized_shutter_close": "Commande centralisée de FERMETURE de volet reçue",
-      "centralized_shutter_stop": "Commande centralisée d'ARRÊT de volet reçue"
+      "centralized_shutter_open": "Commande centralisée d'OUVERTURE des ouvrants reçue",
+      "centralized_shutter_close": "Commande centralisée de FERMETURE des ouvrants reçue",
+      "centralized_shutter_stop": "Commande centralisée d'ARRÊT des ouvrants reçue"
     },
     "trigger_subtype": {
       "button_0": "Bouton 0",

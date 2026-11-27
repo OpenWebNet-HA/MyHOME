@@ -188,7 +188,7 @@
             "interface": "Optional F422 local-bus interface (#4#01–#4#09 or #4#11–#4#15) when routing to a local bus.",
             "where": "Optional power-user override (e.g. 31, 08, 0812, 0012, 1008, or 31#4#01). When filled, overrides A, PL, and Interface.",
             "entity_id": "Source Home Assistant cover entity (optional if custom actions are configured below).",
-            "attribute": "Optional attribute such as 'current_position' to mirror shutter positions.",
+            "attribute": "Optional attribute such as 'current_position' to mirror cover positions.",
             "turn_on_action": "Optional custom action sequence run on incoming bus UP / raise commands.",
             "turn_off_action": "Optional custom action sequence run on incoming bus DOWN / lower commands."
           }
@@ -700,6 +700,138 @@
           "companion_still_missing": "A DLNA Digital Media Renderer entity was not found for this device. Please configure DLNA and try again."
         }
       }
+    },
+    "cover_calibration_cutoff": {
+      "title": "{name}: actuator stopped at {limit} s run-time limit",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Set cover travel time",
+            "description": "Auto-calibration ended after {seconds} s at the actuator's {limit} s run-time limit rather than the physical end stop.\n\nChoose how you want to calibrate **{name}**:",
+            "menu_options": {
+              "timed_close_ready": "Guided Start → Stop measurement",
+              "manual_entry": "Enter travel times manually",
+              "reset_default": "Reset to default travel time"
+            }
+          },
+          "timed_close_ready": {
+            "title": "Step 1 of 2: Ready to time closing",
+            "description": "Make sure **{name}** is fully open, then click **Submit** to start closing it. Be ready to click **Submit** again the instant it reaches the bottom end stop."
+          },
+          "timed_close_stop": {
+            "title": "Step 1 of 2: Closing — click Submit at end stop",
+            "description": "**{name}** is closing. Click **Submit** the instant it reaches the bottom end stop (closing this dialog stops the motor immediately)."
+          },
+          "timed_open_ready": {
+            "title": "Step 2 of 2: Ready to time opening",
+            "description": "Measured closing time for **{name}**: **{down} s**.\n\nClick **Submit** to start opening and time the upward run, or tick the box below to reuse **{down} s** for both directions.",
+            "data": {
+              "reuse_down_for_up": "Reuse closing time for opening (skip upward run)"
+            }
+          },
+          "timed_open_stop": {
+            "title": "Step 2 of 2: Opening — click Submit at end stop",
+            "description": "**{name}** is opening. Click **Submit** the instant it reaches the top end stop (closing this dialog stops the motor immediately)."
+          },
+          "manual_entry": {
+            "title": "Enter cover travel times",
+            "description": "Enter the full closing and opening travel times (in seconds) for **{name}**.",
+            "data": {
+              "travel_time_down": "Travel time down (seconds)",
+              "travel_time_up": "Travel time up (seconds)"
+            }
+          },
+          "confirm_save": {
+            "title": "Review and save travel times",
+            "description": "Measured travel times for **{name}**: closing **{down} s**, opening **{up} s**.\n\nAdjust if needed and click **Submit** to save.",
+            "data": {
+              "travel_time_down": "Travel time down (seconds)",
+              "travel_time_up": "Travel time up (seconds)"
+            }
+          },
+          "reset_default": {
+            "title": "Reset cover travel time",
+            "description": "Click **Submit** to clear the stored travel times for **{name}** and return to `myhome.yaml` or the 25 s default."
+          }
+        },
+        "abort": {
+          "cover_missing": "The cover entity is no longer available.",
+          "cover_unavailable": "The cover or its gateway is currently unavailable. Reconnect the gateway and try again.",
+          "cover_locked": "The cover actuator is currently locked (WHO=14). Unlock the cover before running guided timing.",
+          "calibration_in_progress": "Another calibration or guided timing session is already active for this cover or gateway.",
+          "cover_reports_position": "This cover reports its position natively; travel-time calibration does not apply and the stale entry was cleared.",
+          "save_failed": "Failed to save cover travel times."
+        },
+        "error": {
+          "invalid_travel_time": "Enter valid travel times within the allowed range."
+        }
+      }
+    },
+    "cover_legacy_calibration_cutoff": {
+      "title": "{name}: saved travel time matches an actuator cutoff",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Set cover travel time",
+            "description": "Stored travel times are {down} s (closing) and {up} s (opening), which matches an actuator run-time limit.\n\nChoose how you want to calibrate **{name}**:",
+            "menu_options": {
+              "timed_close_ready": "Guided Start → Stop measurement",
+              "manual_entry": "Enter travel times manually",
+              "reset_default": "Reset to default travel time"
+            }
+          },
+          "timed_close_ready": {
+            "title": "Step 1 of 2: Ready to time closing",
+            "description": "Make sure **{name}** is fully open, then click **Submit** to start closing it. Be ready to click **Submit** again the instant it reaches the bottom end stop."
+          },
+          "timed_close_stop": {
+            "title": "Step 1 of 2: Closing — click Submit at end stop",
+            "description": "**{name}** is closing. Click **Submit** the instant it reaches the bottom end stop (closing this dialog stops the motor immediately)."
+          },
+          "timed_open_ready": {
+            "title": "Step 2 of 2: Ready to time opening",
+            "description": "Measured closing time for **{name}**: **{down} s**.\n\nClick **Submit** to start opening and time the upward run, or tick the box below to reuse **{down} s** for both directions.",
+            "data": {
+              "reuse_down_for_up": "Reuse closing time for opening (skip upward run)"
+            }
+          },
+          "timed_open_stop": {
+            "title": "Step 2 of 2: Opening — click Submit at end stop",
+            "description": "**{name}** is opening. Click **Submit** the instant it reaches the top end stop (closing this dialog stops the motor immediately)."
+          },
+          "manual_entry": {
+            "title": "Enter cover travel times",
+            "description": "Enter the full closing and opening travel times (in seconds) for **{name}**.",
+            "data": {
+              "travel_time_down": "Travel time down (seconds)",
+              "travel_time_up": "Travel time up (seconds)"
+            }
+          },
+          "confirm_save": {
+            "title": "Review and save travel times",
+            "description": "Measured travel times for **{name}**: closing **{down} s**, opening **{up} s**.\n\nAdjust if needed and click **Submit** to save.",
+            "data": {
+              "travel_time_down": "Travel time down (seconds)",
+              "travel_time_up": "Travel time up (seconds)"
+            }
+          },
+          "reset_default": {
+            "title": "Reset cover travel time",
+            "description": "Click **Submit** to clear the stored travel times for **{name}** and return to `myhome.yaml` or the 25 s default."
+          }
+        },
+        "abort": {
+          "cover_missing": "The cover entity is no longer available.",
+          "cover_unavailable": "The cover or its gateway is currently unavailable. Reconnect the gateway and try again.",
+          "cover_locked": "The cover actuator is currently locked (WHO=14). Unlock the cover before running guided timing.",
+          "calibration_in_progress": "Another calibration or guided timing session is already active for this cover or gateway.",
+          "cover_reports_position": "This cover reports its position natively; travel-time calibration does not apply and the stale entry was cleared.",
+          "save_failed": "Failed to save cover travel times."
+        },
+        "error": {
+          "invalid_travel_time": "Enter valid travel times within the allowed range."
+        }
+      }
     }
   },
   "exceptions": {
@@ -767,10 +899,10 @@
       "message": "{name}: no stop status from the actuator within {timeout} s - it may not report status; set travel_time manually"
     },
     "calibration_actuator_cutoff_open": {
-      "message": "{name}: the open run ended after {seconds} s, at the actuator's {limit} s run-time limit, not at the end stop; the actuator cannot measure this shutter - use the stopwatch (Stop & Save) or set travel_time manually"
+      "message": "{name}: the open run ended after {seconds} s, at the actuator's {limit} s run-time limit, not at the end stop; the actuator cannot measure this cover automatically — use the guided manual timing flow in Settings -> System -> Repairs, or time a run manually (last_run_seconds) and save it with myhome.set_cover_travel_time"
     },
     "calibration_actuator_cutoff_close": {
-      "message": "{name}: the close run ended after {seconds} s, at the actuator's {limit} s run-time limit, not at the end stop; the actuator cannot measure this shutter - use the stopwatch (Stop & Save) or set travel_time manually"
+      "message": "{name}: the close run ended after {seconds} s, at the actuator's {limit} s run-time limit, not at the end stop; the actuator cannot measure this cover automatically — use the guided manual timing flow in Settings -> System -> Repairs, or time a run manually (last_run_seconds) and save it with myhome.set_cover_travel_time"
     },
     "cover_reports_position": {
       "message": "{name} reports its position (Dimension 10 / advanced: true); travel-time calibration does not apply to it. If this is a standard timed actuator (e.g. F411) that does not support Dimension 10, set advanced: false or remove advanced: true in myhome.yaml."
@@ -785,7 +917,7 @@
       "message": "{name}: implausible up run of {seconds} s; not stored"
     },
     "travel_time_missing": {
-      "message": "At least travel_time, travel_time_down/up, or min_motor_pulse must be specified"
+      "message": "At least travel_time, travel_time_down/up, slat_time, or min_motor_pulse must be specified"
     },
     "travel_time_out_of_range": {
       "message": "{field} must be between {min} s and {max} s"
@@ -998,7 +1130,7 @@
     "delegated_whos": {
       "options": {
         "1": "1 - Lighting",
-        "2": "2 - Covers / shutters",
+        "2": "2 - Automation / covers",
         "4": "4 - Thermoregulation",
         "5": "5 - Burglar alarm",
         "6": "6 - Door entry",
@@ -1067,9 +1199,9 @@
       "rotary_cw_fast": "\"{subtype}\" turned clockwise quickly",
       "rotary_ccw_slow": "\"{subtype}\" turned counter-clockwise slowly",
       "rotary_ccw_fast": "\"{subtype}\" turned counter-clockwise quickly",
-      "centralized_shutter_open": "Centralized shutter OPEN command received",
-      "centralized_shutter_close": "Centralized shutter CLOSE command received",
-      "centralized_shutter_stop": "Centralized shutter STOP command received"
+      "centralized_shutter_open": "Centralized cover OPEN command received",
+      "centralized_shutter_close": "Centralized cover CLOSE command received",
+      "centralized_shutter_stop": "Centralized cover STOP command received"
     },
     "trigger_subtype": {
       "button_0": "Button 0",

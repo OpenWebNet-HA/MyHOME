@@ -37,6 +37,7 @@ from homeassistant.const import (
 from homeassistant.core import CALLBACK_TYPE, HassJob, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_platform
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import (
@@ -69,9 +70,6 @@ from .access_policy import (
 from .actuator_lock import actuator_locks_of, apply_actuator_lock_state, split_point_key
 from .const import (
     BUS_ROUTING,
-    CALIBRATION_CUTOFF_EARLY,
-    CALIBRATION_CUTOFF_LATE_PER_MIN,
-    CALIBRATION_CUTOFFS,
     CALIBRATION_MAX_MOTOR_PULSE,
     CALIBRATION_MAX_RUN,
     CALIBRATION_MIN_MOTOR_PULSE,
@@ -127,6 +125,7 @@ from .cover_calibration import (
     CalibrationCutoff,
     CalibrationInterrupted,
     CoverCalibrationHub,
+    _actuator_cutoff,
     _calibration_lock,
     _gateway_key,
     _normalize_mac,
@@ -184,7 +183,12 @@ from .gateway import (
     MyHOMEGatewayHandler,
     gateway_emits_cover_pre_move_stop,
 )
+from .ignored import IgnoredAddresses
 from .myhome_device import MyHOMEEntity
+from .repairs import (
+    async_delete_cover_cutoff_issue,
+    async_sync_legacy_cover_cutoff_issues,
+)
 from .where_grammar import (
     automation_dim10_info,
     canonical_point_spelling,
@@ -421,13 +425,166 @@ def is_native_point_cover(
     return False
 
 
-def _actuator_cutoff(seconds: float) -> float | None:
-    """Return the actuator run-time limit a calibration run of ``seconds`` ended at, if any."""
-    for limit in CALIBRATION_CUTOFFS:
-        late = (limit / 60.0) * CALIBRATION_CUTOFF_LATE_PER_MIN
-        if limit - CALIBRATION_CUTOFF_EARLY <= seconds <= limit + late:
-            return limit
+def _legacy_zero_padded_key(device_id: str) -> str | None:
+    """Return the legacy 4-digit ``00XX`` key for canonical ``01``..``09`` covers, if any."""
+    base, sep, rest = str(device_id).partition("#")
+    if len(base) == 2 and base[0] == "0" and base[1] != "0":
+        return f"00{base}{sep}{rest}"
     return None
+
+
+def _canonical_from_zero_padded(device_id: str) -> str | None:
+    """Return canonical ``0X`` key when ``device_id`` is a legacy 4-digit ``000X`` cover key."""
+    base, sep, rest = str(device_id).partition("#")
+    if len(base) == 4 and base.startswith("00") and base[2] == "0" and base[3] != "0":
+        return f"{base[2:]}{sep}{rest}"
+    return None
+
+
+def async_sync_cover_calibration_issues(
+    hass: HomeAssistant | None, config_entry: ConfigEntry | None
+) -> None:
+    """Sync fixable legacy-cutoff repair issues for stored cover travel times."""
+    from .cover_scope import CoverScope
+
+    if (
+        hass is None
+        or config_entry is None
+        or not isinstance(getattr(config_entry, "entry_id", None), str)
+    ):
+        return
+    options = getattr(config_entry, "options", None)
+    stored = options.get(CONF_COVER_TRAVEL_TIMES) if isinstance(options, Mapping) else None
+    if not isinstance(stored, Mapping):
+        stored = {}
+
+    ignored = IgnoredAddresses.from_config_entry(config_entry)
+    runtime = get_runtime_data(config_entry)
+    live_covers: dict[str, Any] = {}
+    if runtime is not None:
+        raw_covers = runtime.entities.get(PLATFORM)
+        if isinstance(raw_covers, Mapping):
+            for dev_key, cov in raw_covers.items():
+                if str(getattr(cov, "_who", "2")) == "2":
+                    live_covers[str(dev_key)] = cov
+
+    entry_data = getattr(config_entry, "data", None)
+    entry_mac = str(entry_data.get(CONF_MAC, "")) if isinstance(entry_data, Mapping) else ""
+    gw_mac = runtime.mac if runtime is not None else entry_mac
+
+    # Build map of active (non-deleted, non-disabled) WHO=2 covers -> (entity_id, live_name)
+    active_covers: dict[str, tuple[str | None, str]] = {}
+    disabled_cover_ids: set[str] = set()
+    ent_reg: er.EntityRegistry | None = None
+    registered_any = False
+    try:
+        ent_reg = er.async_get(hass)
+        dev_reg = dr.async_get(hass)
+        for reg_entry in er.async_entries_for_config_entry(ent_reg, config_entry.entry_id):
+            if reg_entry.domain != PLATFORM or not reg_entry.unique_id:
+                continue
+            registered_any = True
+            who, dev_id = parse_unique_id(reg_entry.unique_id, gw_mac, entry_mac)
+            entry_who = who if who is not None else "2"
+            if entry_who != "2" or not dev_id:
+                continue
+            if reg_entry.disabled_by is not None:
+                disabled_cover_ids.add(dev_id)
+                continue
+            live_cov = live_covers.get(dev_id)
+            dev_entry = dev_reg.async_get(reg_entry.device_id) if reg_entry.device_id else None
+            compat_name = getattr(reg_entry, "compat_name", None)
+            cover_name = (
+                reg_entry.name
+                or (compat_name if isinstance(compat_name, str) and compat_name else None)
+                or ((dev_entry.name_by_user or dev_entry.name) if dev_entry is not None else None)
+                or (getattr(live_cov, "_display_name", None) if live_cov is not None else None)
+                or reg_entry.original_name
+                or f"Cover {Address.from_device_id(dev_id).suffix}"
+            )
+            active_covers[dev_id] = (reg_entry.entity_id, str(cover_name))
+    except Exception as err:  # pragma: no cover - defensive for minimal test harnesses
+        LOGGER.debug("Could not enumerate cover registry for cutoff issue sync: %s", err)
+
+    for dev_id, live_cov in live_covers.items():
+        if dev_id in active_covers or dev_id in disabled_cover_ids:
+            continue
+        cov_reg = getattr(live_cov, "registry_entry", None)
+        if cov_reg is not None and getattr(cov_reg, "disabled_by", None) is not None:
+            continue
+        cov_eid = getattr(live_cov, "entity_id", None)
+        if registered_any and ent_reg is not None and cov_eid and ent_reg.async_get(cov_eid) is None:
+            continue
+        cover_name = (
+            getattr(live_cov, "_display_name", None)
+            or f"Cover {Address.from_device_id(dev_id).suffix}"
+        )
+        active_covers[dev_id] = (cov_eid, str(cover_name))
+
+    flagged: list[dict[str, Any]] = []
+    seen_dev_keys: set[str] = set()
+    for raw_dev_id, record in stored.items():
+        if not isinstance(record, Mapping):
+            continue
+        if record.get("source") not in (None, "measured"):
+            continue
+        raw_down = record.get("down")
+        raw_up = record.get("up")
+        down_val = (
+            float(raw_down)
+            if isinstance(raw_down, (int, float)) and not isinstance(raw_down, bool)
+            else None
+        )
+        up_val = (
+            float(raw_up)
+            if isinstance(raw_up, (int, float)) and not isinstance(raw_up, bool)
+            else None
+        )
+        if down_val is None and up_val is None:
+            continue
+        down_cutoff = _actuator_cutoff(down_val) if down_val is not None else None
+        up_cutoff = _actuator_cutoff(up_val) if up_val is not None else None
+        if down_cutoff is None and up_cutoff is None:
+            continue
+
+        dev_key = str(raw_dev_id)
+        if (canonical := _canonical_from_zero_padded(dev_key)) is not None:
+            if canonical in stored:
+                continue
+            if dev_key not in active_covers and canonical in active_covers:
+                dev_key = canonical
+        if dev_key not in active_covers or dev_key in seen_dev_keys:
+            continue
+
+        addr = Address.from_device_id(dev_key)
+        if CoverScope.of(addr.where, addr.interface) is not None:
+            continue
+        if ignored.is_ignored(2, addr.where, addr.interface):
+            continue
+
+        entity_id, cover_name = active_covers[dev_key]
+        live_cov = live_covers.get(dev_key)
+        if (
+            getattr(live_cov, "_advanced", False)
+            or _is_stored_advanced_cover(config_entry, dev_key)
+            or is_native_point_cover(
+                hass, config_entry, gw_mac, dev_key, entity_id=entity_id
+            )
+        ):
+            continue
+
+        seen_dev_keys.add(dev_key)
+        flagged.append(
+            {
+                "device_id": dev_key,
+                "entity_id": entity_id,
+                "name": cover_name,
+                "down": down_val,
+                "up": up_val,
+            }
+        )
+
+    async_sync_legacy_cover_cutoff_issues(hass, config_entry.entry_id, flagged)
 
 
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
@@ -435,6 +592,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
     from .cover_scope import CoverFamily, CoverScope, MyHOMEScopeCover
 
     runtime = config_entry.runtime_data
+    runtime.entities.setdefault(PLATFORM, {})
     mac = config_entry.data[CONF_MAC]
     gateway = runtime.gateway
     if runtime.calibration_hub is None:
@@ -618,13 +776,18 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
             "async_acknowledge_fault",
         )
 
+    async_sync_cover_calibration_issues(hass, config_entry)
+
 
 async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:  # pylint: disable=unused-argument
     """Unload cover platform."""
     runtime = getattr(config_entry, "runtime_data", None)
-    if runtime is not None and runtime.calibration_hub is not None:
-        runtime.calibration_hub.cleanup()
-        runtime.calibration_hub = None
+    if runtime is not None:
+        if hasattr(runtime, "entities") and isinstance(runtime.entities, dict):
+            runtime.entities.pop(PLATFORM, None)
+        if runtime.calibration_hub is not None:
+            runtime.calibration_hub.cleanup()
+            runtime.calibration_hub = None
     return True
 
 
@@ -641,6 +804,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
     _scope_run_active_until: float | None = None
     _unconfirmed_move_unsub: CALLBACK_TYPE | None = None
     _unconfirmed_move_task: asyncio.Task[None] | None = None
+    _manual_timing_failsafe_unsub: CALLBACK_TYPE | None = None
+    _manual_timing_owner: object | None = None
 
     def __init__(  # type: ignore
         self,
@@ -1018,6 +1183,52 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         if not enabled:
             self._cancel_wall_settle()
             self._travel_recomputed.set()
+
+    def _cancel_manual_timing_failsafe(self) -> None:
+        """Cancel any pending manual-timing failsafe timer."""
+        if self._manual_timing_failsafe_unsub is not None:
+            self._manual_timing_failsafe_unsub()
+            self._manual_timing_failsafe_unsub = None
+
+    def begin_manual_timing(self, owner: object | None = None) -> bool:
+        """Disable early travel-timer settling during a guided manual timing run."""
+        token = owner if owner is not None else self
+        if self._manual_timing_owner is not None and self._manual_timing_owner is not token:
+            return False
+        if self._calibrating or self.calibration_hub.is_calibrating:
+            return False
+        self._cancel_manual_timing_failsafe()
+        self._manual_timing_owner = token
+        self._settles_on_timer = False
+        target_hass = self.hass or self._hass
+        if target_hass is not None and hasattr(target_hass, "loop"):
+
+            @callback
+            def _restore_on_timeout(_now: datetime) -> None:
+                self._manual_timing_failsafe_unsub = None
+                if self._manual_timing_owner is token:
+                    self._manual_timing_owner = None
+                self._settles_on_timer = True
+
+            self._manual_timing_failsafe_unsub = async_call_later(
+                target_hass,
+                CALIBRATION_RUN_TIMEOUT,
+                HassJob(
+                    _restore_on_timeout,
+                    f"myhome cover manual timing failsafe {self._full_where}",
+                    cancel_on_shutdown=True,
+                ),
+            )
+        return True
+
+    def end_manual_timing(self, owner: object | None = None) -> None:
+        """Restore normal travel-timer settling after a guided manual timing run."""
+        if owner is not None:
+            if self._manual_timing_owner is not owner:
+                return
+        self._cancel_manual_timing_failsafe()
+        self._manual_timing_owner = None
+        self._settles_on_timer = True
 
     @property
     def strategy(self) -> CoverKinematicsStrategy:
@@ -1967,6 +2178,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         """Run when entity about to be added to hass."""
         self._restored_in_add = False
         await super().async_added_to_hass()
+        entry = getattr(self._gateway_handler, "config_entry", None)
+        runtime = get_runtime_data(entry) if entry is not None else None
+        if runtime is not None:
+            runtime.entities.setdefault(PLATFORM, {})[str(self._device_id)] = self
         if self._advanced and not self._restored_in_add:
             record = await self._async_last_restore_record()
             self._restore_last_run(record)
@@ -2207,12 +2422,21 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._run_generation += 1  # a run in flight must not act on a removed entity
         self._cancel_echo_stop_timer()
         self._cancel_unconfirmed_move_timer()
+        self._cancel_manual_timing_failsafe()
+        self._manual_timing_owner = None
+        self._settles_on_timer = True
         self._stop_live_refresh()
         self._cancel_stop_task()
         self._pending_stop_context = None
         if self._min_delta_unsub is not None:
             self._min_delta_unsub()
             self._min_delta_unsub = None
+        entry = getattr(self._gateway_handler, "config_entry", None)
+        runtime = get_runtime_data(entry) if entry is not None else None
+        if runtime is not None:
+            cover_entities = runtime.entities.get(PLATFORM)
+            if isinstance(cover_entities, dict) and cover_entities.get(str(self._device_id)) is self:
+                cover_entities.pop(str(self._device_id), None)
         await super().async_will_remove_from_hass()
 
     async def async_removed_from_registry(self) -> None:
@@ -2227,13 +2451,24 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             or not hasattr(hass, "config_entries")
         ):
             return
-        options = dict(getattr(entry, "options", None) or {})
         key = str(self._device_id)
+        runtime = get_runtime_data(entry)
+        if runtime is not None:
+            cover_entities = runtime.entities.get(PLATFORM)
+            if isinstance(cover_entities, dict) and cover_entities.get(key) is self:
+                cover_entities.pop(key, None)
+        options = dict(getattr(entry, "options", None) or {})
+        legacy_key = _legacy_zero_padded_key(key)
+        keys_to_drop = {key} | ({legacy_key} if legacy_key is not None else set())
         changed = False
-        for option_key in (CONF_ADVANCED_COVERS, CONF_COVER_MIN_POSITION_DELTAS):
+        for option_key in (
+            CONF_ADVANCED_COVERS,
+            CONF_COVER_MIN_POSITION_DELTAS,
+            CONF_COVER_TRAVEL_TIMES,
+        ):
             stored = options.get(option_key)
-            if isinstance(stored, Mapping) and key in stored:
-                updated = {k: v for k, v in stored.items() if k != key}
+            if isinstance(stored, Mapping) and any(k in stored for k in keys_to_drop):
+                updated = {k: v for k, v in stored.items() if k not in keys_to_drop}
                 if updated:
                     options[option_key] = updated
                 else:
@@ -2241,6 +2476,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 changed = True
         if changed:
             hass.config_entries.async_update_entry(entry, options=options)
+        async_delete_cover_cutoff_issue(hass, entry.entry_id, key)
+        async_sync_cover_calibration_issues(hass, entry)
 
 
     # ── Calibration ──────────────────────────────────────────────────────
@@ -2451,6 +2688,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             "up": self._travel_time_up,
             "min_motor_pulse": self._min_motor_pulse,
             "measured_at": self._calibrated_at,
+            "source": "measured",
         }
         if (stored := self._stored_record()) and stored.get(CONF_SLAT_TIME) is not None:
             result[CONF_SLAT_TIME] = stored[CONF_SLAT_TIME]
@@ -2813,10 +3051,19 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         if entry is not None and getattr(entry, "entry_id", None) and hass is not None and hasattr(hass, "config_entries"):
             options = dict(getattr(entry, "options", None) or {})
             stored = dict(options.get(CONF_COVER_TRAVEL_TIMES) or {})
-            if str(self._device_id) in stored:
-                del stored[str(self._device_id)]
+            key = str(self._device_id)
+            legacy_key = _legacy_zero_padded_key(key)
+            removed_any = key in stored
+            stored.pop(key, None)
+            if legacy_key is not None and legacy_key in stored:
+                stored.pop(legacy_key, None)
+                removed_any = True
+            if removed_any:
                 options[CONF_COVER_TRAVEL_TIMES] = stored
                 hass.config_entries.async_update_entry(entry, options=options)
+            if isinstance(getattr(entry, "entry_id", None), str):
+                async_delete_cover_cutoff_issue(hass, entry.entry_id, key)
+                async_sync_cover_calibration_issues(hass, entry)
 
         cfg = self._device_config() or {}
         if self._advanced:
@@ -2883,9 +3130,15 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         try:
             options = dict(getattr(entry, "options", None) or {})
             stored = dict(options.get(CONF_COVER_TRAVEL_TIMES) or {})
-            stored[str(self._device_id)] = result
+            key = str(self._device_id)
+            stored[key] = result
+            if (legacy_key := _legacy_zero_padded_key(key)) is not None:
+                stored.pop(legacy_key, None)
             options[CONF_COVER_TRAVEL_TIMES] = stored
             hass.config_entries.async_update_entry(entry, options=options)
+            if isinstance(getattr(entry, "entry_id", None), str):
+                async_delete_cover_cutoff_issue(hass, entry.entry_id, key)
+                async_sync_cover_calibration_issues(hass, entry)
         except Exception as err:  # pragma: no cover - defensive
             LOGGER.warning("%s Could not persist calibration for %s: %s", self._gateway_handler.log_id, self._full_where, err)
 
@@ -2909,6 +3162,8 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             stored[key] = True
             options[CONF_ADVANCED_COVERS] = stored
             hass.config_entries.async_update_entry(entry, options=options)
+            async_delete_cover_cutoff_issue(hass, entry.entry_id, key)
+            async_sync_cover_calibration_issues(hass, entry)
         except Exception as err:  # pragma: no cover - defensive
             LOGGER.warning(
                 "%s Could not persist advanced cover flag for %s: %s",
@@ -5656,19 +5911,19 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
 
     async def async_calibrate(self) -> None:
         """Raise when calibrate_cover is called on a WHO=1 impulse cover."""
-        raise ServiceValidationError(f"{self._display_name}: calibration is only supported on WHO=2 shutters")
+        raise ServiceValidationError(f"{self._display_name}: calibration is only supported on WHO=2 covers")
 
     async def async_stop_calibration(self) -> None:
         """Raise when stop_cover_calibration is called on a WHO=1 impulse cover."""
-        raise ServiceValidationError(f"{self._display_name}: calibration is only supported on WHO=2 shutters")
+        raise ServiceValidationError(f"{self._display_name}: calibration is only supported on WHO=2 covers")
 
     async def async_set_travel_time(self, **kwargs: Any) -> None:
         """Raise when set_cover_travel_time is called on a WHO=1 impulse cover."""
-        raise ServiceValidationError(f"{self._display_name}: set_cover_travel_time is only supported on WHO=2 shutters")
+        raise ServiceValidationError(f"{self._display_name}: set_cover_travel_time is only supported on WHO=2 covers")
 
     async def async_reset_travel_time(self) -> None:
         """Raise when reset_cover_travel_time is called on a WHO=1 impulse cover."""
-        raise ServiceValidationError(f"{self._display_name}: reset_cover_travel_time is only supported on WHO=2 shutters")
+        raise ServiceValidationError(f"{self._display_name}: reset_cover_travel_time is only supported on WHO=2 covers")
 
     @callback
     def handle_actuator_lock(self, locked: bool) -> None:
@@ -5837,6 +6092,7 @@ __all__ = [
     "_stored_calibration",
     "async_setup_entry",
     "async_stop_cover_calibration",
+    "async_sync_cover_calibration_issues",
     "async_unload_entry",
     "compute_freeze_position",
     "compute_interpolated_position",

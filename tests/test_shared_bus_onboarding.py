@@ -609,9 +609,9 @@ async def test_calibrate_all_button_reactive_availability_and_no_covers(
         calls = []
         hass.services.async_register(DOMAIN, SERVICE_CALIBRATE_COVER, callback(lambda call: calls.append(call)))
         await btn.async_press()
-        await hass.async_block_till_done()
+        await hass.async_block_till_done(wait_background_tasks=True)
         assert len(calls) == 1
-        assert calls[0].data == {"entity_id": [cover.entity_id]}
+        assert calls[0].data == {"entity_id": cover.entity_id}
 
         # 5. Gateway drops -> availability listener fires -> state becomes unavailable
         entry_x.runtime_data.gateway._available = False

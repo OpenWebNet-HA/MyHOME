@@ -11,7 +11,7 @@ In v2, setup and management are **100% UI-first**: entities are automatically di
 When your gateway connects to Home Assistant:
 
 1. **Dynamic Bus Discovery**: The integration listens to OpenWebNet `WHO = 2` frames and scans the bus.
-2. **Device Creation**: Each physical shutter actuator (`WHERE = 1..99` or area/point addresses) is registered as a Home Assistant `cover` device linked to your MyHOME Gateway.
+2. **Device Creation**: Each physical cover actuator (`WHERE = 1..99` or area/point addresses) is registered as a Home Assistant `cover` device linked to your MyHOME Gateway.
 3. **UI Customization**: You can rename the entity, assign it to an Area (e.g. *Living Room*, *Master Bedroom*), or change its icon directly in the Home Assistant UI (**Settings → Devices & Services → Entities**).
 
 ---
@@ -45,22 +45,39 @@ An explicit `strategy` cannot be combined with a flag that selects another model
 
 ## 🏷️ Device class (`class`)
 
-A WHO 2 cover is a `shutter` unless `/config/myhome.yaml` says otherwise. `class:` (or `device_class:`) accepts the Home Assistant cover classes `awning`, `blind`, `curtain`, `damper`, `door`, `garage`, `gate`, `shade`, `shutter` and `window`, and picks the entity's icon and the wording of its states. It applies to every WHO 2 cover, point-to-point as well as [general, area and group covers](#general-area-and-group-covers). A configured class also wins over the `blind` that `slat_tilt: true` (or `strategy: venetian`) would otherwise set.
+A WHO 2 cover defaults to `shutter` unless `/config/myhome.yaml` or Home Assistant's UI (**Show As**) says otherwise. `class:` (or `device_class:`) accepts all ten Home Assistant `CoverDeviceClass` values (`shutter`, `shade`, `blind`, `curtain`, `awning`, `door`, `garage`, `gate`, `damper`, and `window`), and determines the entity's icon, state wording, and directional control buttons in the Home Assistant UI. It applies to every WHO 2 cover, point-to-point as well as [general, area and group covers](#general-area-and-group-covers). A configured class also wins over the `blind` that `slat_tilt: true` (or `strategy: venetian`) would otherwise set.
+
+### Device Class & Home Assistant Arrow Controls
+
+Home Assistant renders different open/close control icons depending on the cover's `device_class`. Pick the class that matches the physical movement direction of your cover:
+
+| `device_class` | Typical Physical Cover | Home Assistant Controls | Notes |
+| :--- | :--- | :--- | :--- |
+| `shutter` | Roller shutters, exterior rolling covers *(WHO 2 default)* | Vertical **↑ / ↓** arrows | Default for discovered WHO 2 covers. |
+| `shade` | Roller shades, pleated shades, Roman shades (*vouwgordijnen* / *plisségordijnen*) | Vertical **↑ / ↓** arrows | **Recommended** for vertically opening fabric shades and Roman blinds so HA renders vertical ↑ / ↓ arrows. |
+| `blind` | Venetian blinds, slatted blinds, external blinds (BSO/EVB) | Vertical **↑ / ↓** arrows *(+ slat tilt controls when `slat_tilt: true`)* | Automatically selected when `slat_tilt: true` or `strategy: venetian` is set; also suitable for vertically opening shades. |
+| `curtain` | Side-drawing curtains / drapes | Horizontal **↔** arrows | Renders horizontal open/close arrows for side-drawing curtains; for vertically opening pleated or Roman shades, use `shade` or `blind` instead. |
+| `awning` | Retractable patio or window awnings | Inverted vertical **↓ / ↑** (extend / retract) | Direction arrows match outward/downward awning extension. |
+| `door` | Motorized doors | Door open / close icons | State wording reflects open/closed door semantics. |
+| `garage` | Sectional, tilt, or roller garage doors | Vertical **↑ / ↓** arrows *(garage state icon)* | Typical for `WHO = 1` impulse garage relays (`device_class: garage`). |
+| `gate` | Sliding or swing entrance gates | Gate open / close icons | Default for `WHO = 1` impulse covers (`device_class: gate`). |
+| `damper` | HVAC air dampers / ventilation louvres | Vertical **↑ / ↓** arrows *(damper state icon)* | For motorized air-flow dampers. |
+| `window` | Motorized windows, skylights, roof vents | Vertical **↑ / ↓** arrows *(window state icon)* | State icon and wording reflect open/closed window semantics. |
 
 ```yaml
 # /config/myhome.yaml
 cover:
-  living_room_curtain:
+  living_room_shade:
     where: '32'
-    name: Living Room Curtain
-    class: curtain
+    name: Living Room Shade
+    class: shade
 ```
 
 > [!NOTE]
 > **Single-Gateway vs Multi-Gateway `myhome.yaml` Layout**:
 > Flat top-level `cover:` blocks apply to single-gateway installations. On multi-gateway installations, nest `cover:` (and any other domain blocks) under each gateway's MAC address key (e.g. `"00:03:50:01:02:03":`).
 
-Covers set up in the UI (without `myhome.yaml`) change their device class in Home Assistant with the **"Show As"** feature, like [switches](switches.md) and [binary sensors](binary-sensors.md): **Settings → Devices & Services → Entities**, select the cover entity, click the **Settings (gear)** icon and pick the class under **Show As**.
+Covers set up in the UI (without `myhome.yaml`) change their device class in Home Assistant with the **"Show As"** feature, like [switches](switches.md) and [binary sensors](binary-sensors.md): **Settings → Devices & Services → Entities**, select the cover entity, click the **Settings (gear)** icon and pick the class under **Show As** (for example, switching a vertically opening pleated/Roman shade from `shutter` to `shade` or `blind`, or a side-drawing curtain to `curtain`).
 
 ---
 
@@ -92,23 +109,23 @@ The smallest change is set per native cover directly in the Home Assistant UI vi
 ```yaml
 # Optional /config/myhome.yaml fallback (the UI Minimum position step entity takes precedence)
 cover:
-  living_room_shutter:
+  living_room_cover:
     where: '31'
-    name: Living Room Shutter
+    name: Living Room Cover
     advanced_shutter: true
     min_position_delta: 1
 ```
 
 ### 🔒 Actuator Lock (`WHO = 14`) & Echo-Verified Motion
 
-Every point-to-point shutter device exposes **Lock** (`*14*0*<WHERE>##`) and **Unlock** (`*14*1*<WHERE>##`) configuration buttons and avoids phantom position drift when locked ([#976](https://github.com/OpenWebNet-HA/MyHOME/issues/976)):
+Every point-to-point cover device exposes **Lock** (`*14*0*<WHERE>##`) and **Unlock** (`*14*1*<WHERE>##`) configuration buttons and avoids phantom position drift when locked ([#976](https://github.com/OpenWebNet-HA/MyHOME/issues/976)):
 
 * **Bidirectional `WHO = 14` & `Dimension 10` Lock Tracking**: Because `*#14*<WHERE>##` is NACKed on tested gateways and `MH201` (`3.3.6` / `3.6.44`), 1st-gen `L4671/2` shutters, and `F422` `#4#II` local-bus interfaces never echo `WHO = 14` on `*99*1##`, `actuator_locked` (`extra_state_attributes`, soft-restored across restarts including `unavailable` saves) tracks inbound non-translation `*14*0/1*...##` events, `*#*1##`-acknowledged outbound `*14*0/1*...##` commands (published `WHO_1.pdf` §4.2 point, Area `00` / `1`–`9` / `100`, and General `0` scopes — plus defensive resolution of configured `#G` groups — isolated per `#4#<Int>` local-bus interface per §2.3; `*#*0##` NACKs are ignored), and positioned `Object 218` `Dimension 10` `SHUTTER_INFO` reports (`12` / `13` → `actuator_locked: true`, `0` / `15` → `false`, `14` → command not executed).
 * **Echo-Verified Point-to-Point Moves (`*#2*<WHERE>##` Check)**: On timed and `simple` point-to-point moves, the 1 Hz position ticker and `65 s` `M=0` relay-hold window wait for a real motor-start echo (`*2*1/2*<WHERE>##` or moving `Dimension 10` status `11` / `12`) rather than starting at socket write (and when `actuator_locked: true`, `opening` / `closing` and Venetian tilt pulses stay idle until confirmed, and `calibrate_cover` is refused). If `ECHO_WINDOW` (`1.5 s`) expires without motor-start confirmation (and `actuator_locked` is not already `true`), Home Assistant sends a single point-to-point `*#2*<WHERE>##` status request:
     * **Stationary `*2*0*<WHERE>##` reply** (locked 2nd-gen `F411/2`) or **NACK / empty reply** (transceiver-locked 1st-gen `L4671/2` on `MH201` / `F461` / `F454` / `MH202`, or unpowered/unpopulated address): aborts the unconfirmed move with **zero position drift**, zero `last_run_seconds` update, and zero phantom full-travel settle, and (for runs exceeding `ECHO_WINDOW`, where the motor could not already have reached its target) exposes `actuation_unconfirmed: true` in `extra_state_attributes` to exclude the cover from local scope follower timers until confirmed.
     * **Moving `*2*1/2*<WHERE>##` reply** (e.g. an `F455` dropped burst echo or `3578` `#9` ZigBee shutter): confirms the run anchored at `write_ts + 0.55 s` and completes travel normally.
 * **Scope Exclusion (`#1` / Area / General) & `#4#II` Fan-Out Self-Heal**: Local scope covers still transmit their broadcast frame (`*2*1/2*#1##`, `*2*1/2*0##`, etc.), while excluding members with `actuator_locked: true` or `actuation_unconfirmed: true` from local follower animation, pre-move stops, and local scope tilt pulses (and ignoring relayed scope echoes on excluded members without mid-run broadcast status storms). Behind an `F422` interface (`#4#II`), paced point-to-point fan-outs still transmit each member's command so an actuator unlocked offline self-heals on its echo while still-locked members stay at `0 %` drift.
-* **Mid-Run Lock Freeze & Power-Cycle Self-Healing**: Locking a moving shutter immediately interrupts active calibration, freezes an active tilt pulse or timed run at its interpolated angle/position (aborting unstarted pulses and preserving native `Dimension 10` position), and clears the `65 s` relay-hold window because locking opens the physical relay. Outbound commands still transmit while `actuator_locked: true` so an actuator unlocked by a mains power cycle or un-relayed wall scenario responds; `actuator_locked` (and any unconfirmed-move flag) clears strictly on a point-to-point moving frame (`*2*1/2*<WHERE>##` or `Dimension 10` status `11` / `12`, plus `actuation_unconfirmed` clearing on a `WHO_2.pdf` §3.0.1 per-actuator `*2*0*<WHERE>##` end-stop following a scope run; `WHO = 1` impulse covers — with or without `state_sensor` — suppress optimistic motion while locked and clear on a point-to-point relay-ON event).
+* **Mid-Run Lock Freeze & Power-Cycle Self-Healing**: Locking a moving cover immediately interrupts active calibration, freezes an active tilt pulse or timed run at its interpolated angle/position (aborting unstarted pulses and preserving native `Dimension 10` position), and clears the `65 s` relay-hold window because locking opens the physical relay. Outbound commands still transmit while `actuator_locked: true` so an actuator unlocked by a mains power cycle or un-relayed wall scenario responds; `actuator_locked` (and any unconfirmed-move flag) clears strictly on a point-to-point moving frame (`*2*1/2*<WHERE>##` or `Dimension 10` status `11` / `12`, plus `actuation_unconfirmed` clearing on a `WHO_2.pdf` §3.0.1 per-actuator `*2*0*<WHERE>##` end-stop following a scope run; `WHO = 1` impulse covers — with or without `state_sensor` — suppress optimistic motion while locked and clear on a point-to-point relay-ON event).
 
 ---
 
@@ -118,14 +135,14 @@ You never need to edit YAML files to calibrate travel times in v2.
 
 > [!IMPORTANT]
 > **Actuator Requirements for Automated Calibration**
-> Automated on-bus calibration relies entirely on the actuator emitting a stop frame (`*2*0*<WHERE>##`) at the moment the shutter physically reaches its end stop.
+> Automated on-bus calibration relies entirely on the actuator emitting a stop frame (`*2*0*<WHERE>##`) at the moment the cover physically reaches its end stop.
 >
-> * **Trimmed Actuators**: If the installer trimmed the actuator's mechanical or potentiometer run-time limit to match the physical shutter, automated calibration will measure your shutter travel times accurately down to tenths of a second.
-> * **Configurator Run-Time Cutoff Actuators (60 s, 2 min, …)**: If the actuator run-time was left at the factory default cutoff (~60 s, `M=0`), the actuator will not stop when the shutter reaches the bottom; it will continue running until the 60 s hardware timer expires. The integration detects this condition and **safely rejects the calibration** to prevent saving inaccurate 60 s run times. The same applies to the other whole-minute configurator steps: a run ending from 1 s before a limit to 5 s per minute after it — 59–65 s at 60 s, 119–130 s at 2 min (`M=1`, the setting a 60–86 s shutter needs on an `F411`), and so on up to 10 min — is refused too. For these actuators, use [Method 3: Set Explicit Travel Time via Service Action](#method-3-set-explicit-travel-time-via-service-action) instead.
+> * **Trimmed Actuators**: If the installer trimmed the actuator's mechanical or potentiometer run-time limit to match the physical cover, automated calibration will measure your cover travel times accurately down to tenths of a second.
+> * **Configurator Run-Time Cutoff Actuators (60 s, 2 min, …)**: If the actuator run-time was left at the factory default cutoff (~60 s, `M=0`), the actuator will not stop when the cover reaches the bottom; it will continue running until the 60 s hardware timer expires. The integration detects this condition and **safely rejects the calibration** to prevent saving inaccurate 60 s run times. The same applies to the other whole-minute configurator steps: a run ending from 1 s before a limit to 5 s per minute after it — 59–65 s at 60 s, 119–130 s at 2 min (`M=1`, the setting a 60–86 s cover needs on an `F411`), and so on up to 10 min — is refused too. For these actuators, use the **guided Start → Stop Repair Flow** in **Settings → System → Repairs** (created automatically on cutoff) or [Method 3: Set Explicit Travel Time via Service Action](#method-3-set-explicit-travel-time-via-service-action).
 >
-> **How to spot your case**: press the button once and watch the first (opening) run. If the motor keeps running well past the top until its hardware timer expires (~60 s at factory `M=0`, ~2 min at `M=1`, …), your actuator is stopping on its run-time limit rather than the end stop and cannot be measured over the bus — the button will refuse every time. You will not see the refusal in the UI (the button does not wait for the result): it is logged, and the `myhome_cover_calibration` event reports `phase: failed` with `actuator_limit` set to the limit in seconds. Nothing is stored.
+> **How to spot your case**: press **Calibrate travel time** once and watch the first (opening) run. If the motor keeps running well past the top until its hardware timer expires (~60 s at factory `M=0`, ~2 min at `M=1`, …), your actuator is stopping on its run-time limit rather than the end stop and cannot be measured automatically over the bus. The button logs a clean `WARNING` (no error traceback), posts a **persistent notification** linking directly to **Settings → System → Repairs**, creates a fixable [`cover_calibration_cutoff`](../diagnostics/repair-issues.md#cover-actuator-run-time-cutoff) Repair Issue with an interactive **Guided Start → Stop** timing dialog, and fires the `myhome_cover_calibration` event (`phase: failed`, `actuator_limit` set to the limit in seconds). Nothing inaccurate is stored. Any pre-existing `~61 s` / whole-minute cutoff records saved before the cutoff guard are also detected on startup via [`cover_legacy_calibration_cutoff`](../diagnostics/repair-issues.md#legacy-cover-cutoff-travel-time-detected) using the same guided Repair Flow.
 >
-> **Which actuators** (from datasheets and user reports, awaiting full hardware traces under #466): the `F411/2`, `F411/4` and `F411U2` have a configurable timed stop — fixed steps on the physical *M* configurator (`5` / `10` / `15` / `20` / `30` s on `M=7/6/8/5/9`, `1` / `2` / `5` / `10` min on `M=0..3`, until motor limit stop on `M=4`), or `1–60` s and whole minutes `2–10` min in MyHOME_Suite (`MQ00275_e_EN.pdf` p. 3). Setting it a couple of seconds above the real travel in MyHOME_Suite allows shutters under ~58 s to be measured; above 60 s only whole-minute steps exist, which calibration refuses, so shutters between 60 s and 120 s must use `M=1` (120 s) with [Method 3](#method-3-set-explicit-travel-time-via-service-action) ([discussion #770](https://github.com/OpenWebNet-HA/MyHOME/discussions/770#discussioncomment-19245565)), and a run ending at ~60 s indicates the factory default `M=0`. The `F401` and the `H4661M2` / `LN4661M2` family learn the real travel themselves (*Push&Learn*), which is the case where the end stop on the bus is genuine.
+> **Which actuators** (from datasheets and user reports, awaiting full hardware traces under #466): the `F411/2`, `F411/4` and `F411U2` have a configurable timed stop — fixed steps on the physical *M* configurator (`5` / `10` / `15` / `20` / `30` s on `M=7/6/8/5/9`, `1` / `2` / `5` / `10` min on `M=0..3`, until motor limit stop on `M=4`), or `1–60` s and whole minutes `2–10` min in MyHOME_Suite (`MQ00275_e_EN.pdf` p. 3). Setting it a couple of seconds above the real travel in MyHOME_Suite allows covers under ~58 s to be measured; above 60 s only whole-minute steps exist, which calibration refuses, so covers between 60 s and 120 s must use `M=1` (120 s) with the guided Repair Flow or [Method 3](#method-3-set-explicit-travel-time-via-service-action) ([discussion #770](https://github.com/OpenWebNet-HA/MyHOME/discussions/770#discussioncomment-19245565)), and a run ending at ~60 s indicates the factory default `M=0`. The `F401` and the `H4661M2` / `LN4661M2` family learn the real travel themselves (*Push&Learn*), which is the case where the end stop on the bus is genuine.
 
 ### Method 1: Automated Calibration Button on Device Page
 Every cover device in Home Assistant includes a dedicated configuration button entity (on a position-reporting cover a press is refused, as there is nothing to measure):
@@ -135,48 +152,48 @@ Every cover device in Home Assistant includes a dedicated configuration button e
 
 When you click **Calibrate Travel Time**, the integration performs a fully automated 3-step calibration sequence on the bus:
 
-1. **Full Open (Reference Sync)**: The shutter is driven fully **UP** to reach the mechanical top limit, establishing a reliable reference position.
-2. **Full Close (Timed)**: After a brief settling pause, the shutter is driven fully **DOWN**. The integration monitors the OpenWebNet bus to precisely record `travel_time_down` (from motor start to actuator stop frame).
-3. **Full Open (Timed)**: After another pause, the shutter is driven fully **UP** back to the top limit, recording `travel_time_up`.
-4. **Saved Automatically**: Both measured times are persisted into Home Assistant's config entry (`cover_travel_times`) and shown as the cover's `travel_time_down` / `travel_time_up` attributes, with `calibration_source: measured` and a `calibrated_at` timestamp. The shutter ends in the 100% open position. Progress is published on the event bus as `myhome_cover_calibration` (`phase`: `queued`, `start`, `run`, `done`, `failed`), so you can follow or automate on it.
+1. **Full Open (Reference Sync)**: The cover is driven fully **UP** to reach the mechanical top limit, establishing a reliable reference position.
+2. **Full Close (Timed)**: After a brief settling pause, the cover is driven fully **DOWN**. The integration monitors the OpenWebNet bus to precisely record `travel_time_down` (from motor start to actuator stop frame).
+3. **Full Open (Timed)**: After another pause, the cover is driven fully **UP** back to the top limit, recording `travel_time_up`.
+4. **Saved Automatically**: Both measured times are persisted into Home Assistant's config entry (`cover_travel_times`) and shown as the cover's `travel_time_down` / `travel_time_up` attributes, with `calibration_source: measured` and a `calibrated_at` timestamp. The cover ends in the 100% open position, and any prior cutoff Repair Issue or calibration notification for that cover is cleared. Progress is published on the event bus as `myhome_cover_calibration` (`phase`: `queued`, `start`, `run`, `done`, `failed`), so you can follow or automate on it.
 
 > [!NOTE]
 >
-> * **Do not press the button a second time**: The sequence is fully automated. A second press while the run is active is refused (*"… is already being calibrated"*); the button fires the action without waiting for it, so the refusal only shows up in the Home Assistant log, not in the UI. Each run also gives up with *no stop status from the actuator* if no stop frame arrives within 180 s.
-> * **Do NOT stop the shutter during calibration — neither from the cover entity nor from the wall**: While gateways that emit command-translation frames (`*2*1000#0*<WHERE>##`) recognise an external stop and abort calibration, gateways or controls that put only a plain stop frame (`*2*0*<WHERE>##`) on the bus emit the very same frame the actuator sends when the shutter reaches its end stop. When only `*2*0*<WHERE>##` is seen, the integration cannot tell them apart and stores the partial elapsed time (e.g. 5–6 seconds) as the calibrated travel time.
-> * **How to Abort Safely**: The one safe way out is the `myhome.stop_cover_calibration` action in **Developer Tools → Actions**: it marks the run as interrupted and stores nothing. Call it while the shutter is moving — a call that lands in the one-second pause between two runs is not seen and the next run starts. (Driving the shutter in the *opposite* direction from the wall is also recognised as an interruption, because it arrives as an explicit open/close command rather than a stop — but prefer the action.)
+> * **Clean UI Feedback (Notifications & Guided Repair Flow)**: Calibration runs in a managed background task so the button responds immediately. Pre-flight checks refuse unavailable or unloaded covers, `WHO = 14`-locked actuators, active calibrations, native position-reporting covers, missing stop status after `180 s`, and actuator cutoffs cleanly at `WARNING` level (without raw tracebacks) and surface the outcome directly in the Home Assistant UI via a **persistent notification**. When an actuator hits its `60 s` / `120 s` run-time cutoff, the notification links directly to **Settings → System → Repairs**, where clicking **Fix** launches the interactive **Guided Start → Stop** manual timing dialog (which verifies the cover is available, unlocked, and not already calibrating, drives the cover without settling early under a `180 s` failsafe, stops immediately on **Submit** or if the dialog is closed mid-run, saves `calibration_source: manual`, and automatically clears both the Repair Issue and the cover's calibration notification).
+> * **Do NOT stop the cover during automated calibration — neither from the cover entity nor from the wall**: While gateways that emit command-translation frames (`*2*1000#0*<WHERE>##`) recognise an external stop and abort calibration, gateways or controls that put only a plain stop frame (`*2*0*<WHERE>##`) on the bus emit the very same frame the actuator sends when the cover reaches its end stop. When only `*2*0*<WHERE>##` is seen, the integration cannot tell them apart and stores the partial elapsed time (e.g. 5–6 seconds) as the calibrated travel time.
+> * **How to Abort Safely**: The one safe way out is the `myhome.stop_cover_calibration` action in **Developer Tools → Actions**: it stops the moving cover, aborts any remaining covers in a batch run (even if called during the one-second settle pause between runs), marks the run as interrupted, and stores nothing. (Driving the cover in the *opposite* direction from the wall is also recognised as an interruption, because it arrives as an explicit open/close command rather than a stop — but prefer the action.)
 
 ### Method 2: Calibrate All Covers Sequentially
-On your gateway device page, click **Calibrate All Covers** (`button.<gateway name>_calibrate_all_covers`, e.g. `button.f454_gateway_calibrate_all_covers`). It calls `myhome.calibrate_cover` for every enabled cover of that gateway; a per-gateway lock runs them **one at a time**, because two motors moving on one paced session would make the timings meaningless. Covers still waiting report `phase: queued`. Position-reporting (advanced) covers are refused with an error in the log and the others continue. `myhome.stop_cover_calibration` stops the running cover and drops the whole queue.
+On your gateway device page, click **Calibrate All Covers** (`button.<gateway name>_calibrate_all_covers`, e.g. `button.f454_gateway_calibrate_all_covers`). It runs a managed background batch targeting every enabled, non-exposed cover of that gateway **one at a time** (and refuses a duplicate press if a batch is already running), because two motors moving on one paced session would make the timings meaningless. Covers still waiting report `phase: queued`. Individual refusals (such as unavailable covers, position-reporting advanced covers, locked actuators, or actuators hitting a `60 s` / `120 s` cutoff) are logged at `WARNING` level and recorded without stopping the rest of the batch; every cutoff cover also gets a per-cover fixable Repair Issue. Calling `myhome.stop_cover_calibration` immediately stops the moving cover and aborts the remaining batch. When the batch finishes (or is stopped), MyHOME posts one summary **persistent notification** listing succeeded, stopped/skipped, and failed covers with reasons and a direct link to **Settings → System → Repairs** whenever any cover hit a cutoff.
 
 ### Method 3: Set Explicit Travel Time via Service Action
-If your actuators enforce a configurator run-time cutoff (such as 60 s or 120 s), if your gateway is single-session (such as MH200 / MH200N), or if you already know the exact run duration (e.g. from a handheld stopwatch or technical datasheet), set it directly using the `myhome.set_cover_travel_time` action in **Developer Tools → Actions**.
+If your actuators enforce a configurator run-time cutoff (such as 60 s or 120 s) and you prefer not to use the guided Repair Flow, if your gateway is single-session (such as MH200 / MH200N), or if you already know the exact run duration (e.g. from a handheld stopwatch or technical datasheet), set it directly using the `myhome.set_cover_travel_time` action in **Developer Tools → Actions**.
 
 You rarely need a handheld stopwatch: the integration times **every** run of a timed cover, calibration or not, and exposes the result as plain entity attributes — no card required.
 
-1. If your shutter takes longer than the `25 s` default (e.g. a `60–90 s` tall shutter), first set a temporary larger `travel_time` (such as `180` seconds) via `myhome.set_cover_travel_time` so the cover does not settle to `0 %` / `100 %` before you press **Stop**.
+1. If your cover takes longer than the `25 s` default (e.g. a `60–90 s` tall cover), first set a temporary larger `travel_time` (such as `180` seconds) via `myhome.set_cover_travel_time` so the cover does not settle to `0 %` / `100 %` before you press **Stop**.
 2. Open the cover in Home Assistant (or use its wall switch) and press **Close**.
-3. Press **Stop** (entity or wall switch) the moment the shutter physically reaches the bottom end stop. *(Never let an `M=0` ~60 s or `M=1` ~120 s actuator run unattended to its hardware timer cutoff and save that number — `last_run_seconds` would record the relay cutoff rather than the curtain's physical travel.)*
+3. Press **Stop** (entity or wall switch) the moment the cover physically reaches the bottom end stop. *(Never let an `M=0` ~60 s or `M=1` ~120 s actuator run unattended to its hardware timer cutoff and save that number — `last_run_seconds` would record the relay cutoff rather than the cover's physical travel.)*
 4. Go to **Developer Tools → States**, filter on the cover entity: `last_run_seconds` is the motor-start-to-stop time of the run you just made and `last_run_direction` says `close`. The same attributes are listed under **Attributes** in the cover's more-info dialog.
-5. Repeat with **Open** for the up time, then pass both numbers to the action (or put the attributes and a **Save** button on your dashboard with [Lovelace Recipe 6](lovelace_recipes.md#recipe-6-shutter-travel-time-workbench-stock-cards-only)):
+5. Repeat with **Open** for the up time, then pass both numbers to the action (or put the attributes and a **Save** button on your dashboard with [Lovelace Recipe 6](lovelace_recipes.md#recipe-6-cover-travel-time-workbench-stock-cards-only)):
 
 ```yaml
 action: myhome.set_cover_travel_time
 target:
-  entity_id: cover.living_room_shutter
+  entity_id: cover.living_room_cover
 data:
   travel_time_down: 22.5
   travel_time_up: 24.0
   min_motor_pulse: 0.4
 ```
 
-When setting travel times, the result is stored like a measured calibration, with `calibration_source: manual`, and overwrites whatever a previous calibration attempt may have saved (also visible under `cover_travel_times` in the integration's diagnostics download). When only `min_motor_pulse` is set, existing travel times, source, and calibration timestamps remain untouched. When the numbers you pass were measured on an identical shutter, add `copied_from: cover.<other_shutter>` to record where they came from; `calibration_source` then reads `copied` and the entity is exposed as a `copied_from` attribute.
+When setting travel times, the result is stored like a measured calibration, with `calibration_source: manual`, and overwrites whatever a previous calibration attempt may have saved (also visible under `cover_travel_times` in the integration's diagnostics download). When only `min_motor_pulse` is set, existing travel times, source, and calibration timestamps remain untouched. When the numbers you pass were measured on an identical cover, add `copied_from: cover.<other_cover>` to record where they came from; `calibration_source` then reads `copied` and the entity is exposed as a `copied_from` attribute.
 
 To forget the measured or manual times and return to the `travel_time` from `myhome.yaml` (or the 25 s default when none is configured):
 ```yaml
 action: myhome.reset_cover_travel_time
 target:
-  entity_id: cover.living_room_shutter
+  entity_id: cover.living_room_cover
 ```
 
 ---
@@ -246,11 +263,11 @@ End-to-end travel time (`travel_time_down` / `travel_time_up`) includes one full
 
 ## 🏠 General, Area and Group Covers
 
-A cover declared in `/config/myhome.yaml` on a **general** (`where: '0'`), **area** (`where: '1'`, `'00'`, `'100'`) or **group** (`where: '#3'`) address is one button for many shutters: *open*, *close* and *stop* send a single frame to that address, like the general button on a keypad.
+A cover declared in `/config/myhome.yaml` on a **general** (`where: '0'`), **area** (`where: '1'`, `'00'`, `'100'`) or **group** (`where: '#3'`) address is one button for many covers: *open*, *close* and *stop* send a single frame to that address, like the general button on a keypad.
 
-Its state comes from the shutters it moves, not from the bus. At the end of a run every actuator reports its own stop (`*2*0*11##`, `*2*0*12##`, …) and none arrives for the general or area address (WHO_2 specification §3.0.1). So the cover shows *opening* / *closing* while any of its shutters is moving, *closed* when all are closed, and the average of their positions:
+Its state comes from the covers it moves, not from the bus. At the end of a run every actuator reports its own stop (`*2*0*11##`, `*2*0*12##`, …) and none arrives for the general or area address (WHO_2 specification §3.0.1). So the cover shows *opening* / *closing* while any of its covers is moving, *closed* when all are closed, and the average of their positions:
 
-| Address | Shutters it follows |
+| Address | Covers it follows |
 | :--- | :--- |
 | General `0` | every point-to-point cover of the gateway |
 | Area `1`…`9`, `00`, `100` | the covers of that area on the same bus: area `1` is `11`…`19` and `0110`…`0115` |
@@ -321,7 +338,7 @@ A WHO 2 command heard on a **general**, **area** or **group** address — from a
 | Area `1`…`9`, `00`, `100` | `myhome_area_automation_event` | `area` |
 | Group `#1`…`#255` | `myhome_group_automation_event` | `group` |
 
-Every payload carries `message` (the raw frame), `event` (`open`, `close` or `stop`), `where`, `gateway_mac` and `entry_id`. The general event also drives the gateway device triggers *Centralized shutter open / close / stop*.
+Every payload carries `message` (the raw frame), `event` (`open`, `close` or `stop`), `where`, `gateway_mac` and `entry_id`. The general event also drives the gateway device triggers *Centralized cover open / close / stop*.
 
 Only a **command frame that states a motion** fires an event: the standard `WHAT 0` / `1` / `2` (`*2*0*0##`, `*2*1*3##`, `*2*2*#5##`) and the advanced `WHAT 10` / `11` / `12` with their parameters (`*2*10#001#1*0##` stop, `*2*11#100#001#1*0##` up, `*2*12#100#001#1*0##` down, as captured from a MyHomeServer1 + LN4660M2 keypad). Nothing fires for:
 

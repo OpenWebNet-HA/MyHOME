@@ -969,13 +969,13 @@ async def test_cross_class_cover_service_guards(hass: HomeAssistant, impulse_gat
 
     from custom_components.myhome.cover import MyHOMECover
 
-    with pytest.raises(ServiceValidationError, match="only supported on WHO=2 shutters"):
+    with pytest.raises(ServiceValidationError, match="only supported on WHO=2 covers"):
         await impulse_gate.async_calibrate()
-    with pytest.raises(ServiceValidationError, match="only supported on WHO=2 shutters"):
+    with pytest.raises(ServiceValidationError, match="only supported on WHO=2 covers"):
         await impulse_gate.async_stop_calibration()
-    with pytest.raises(ServiceValidationError, match="only supported on WHO=2 shutters"):
+    with pytest.raises(ServiceValidationError, match="only supported on WHO=2 covers"):
         await impulse_gate.async_set_travel_time(travel_time=20.0)
-    with pytest.raises(ServiceValidationError, match="only supported on WHO=2 shutters"):
+    with pytest.raises(ServiceValidationError, match="only supported on WHO=2 covers"):
         await impulse_gate.async_reset_travel_time()
 
     with patch("custom_components.myhome.myhome_device.Entity.__init__", return_value=None):
