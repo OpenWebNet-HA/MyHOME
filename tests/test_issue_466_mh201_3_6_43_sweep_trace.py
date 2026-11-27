@@ -193,8 +193,13 @@ async def test_mh201_3_6_43_first_physical_who1013_object_model_10_and_replay(
             await handler._event_dispatcher.process_message(msg)
 
         replayed_ident = handler.identification()
-        # `<myhome-bus-card>` strips `ssdp_location` (contains the LAN IP) on export
-        assert {k: v for k, v in replayed_ident.items() if k != "ssdp_location"} == ident
+        # `<myhome-bus-card>` strips `ssdp_location` (contains the LAN IP) on export;
+        # `who13_model_observed` has since gained `3488` for shared code 200.
+        expected_replayed = {
+            **ident,
+            "who13_model_observed": "F454 / MyHomeServer1 / MH202 / F461 / H4890 / MH201 / 3488",
+        }
+        assert {k: v for k, v in replayed_ident.items() if k != "ssdp_location"} == expected_replayed
         assert isinstance(handler.gateway.profile, MH201Profile)
         assert ssdp_entry.data[CONF_FIRMWARE] == "3.6.43"
 
