@@ -44,8 +44,9 @@ All real-time streaming, history backfill, diagnostic frame injection, and cover
 | :--- | :---: | :--- | :--- |
 | `myhome/bus_monitor/stream` | Signed-in user | Optional `mac`, `who`, `where`, `direction` (`all`, `rx`, `tx`, `ack`, `nack`) | Live push subscription forwarding matching bus frames as they arrive. |
 | `myhome/bus_monitor/history` | Signed-in user | Optional `mac`, `limit` (`1–1000`, default `100`; backend ring holds `500`), `who`, `where`, `direction` | Returns buffered historical frames from the in-memory circular buffer. |
-| `myhome/bus_monitor/info` | Signed-in user | Optional `mac` | Returns gateway model, firmware, host/port, `OWNd` & integration versions, and ring-buffer stats. |
-| `myhome/bus_monitor/send` | **Administrator** | Required `frame`, optional `mac` | Transmits a validated raw OpenWebNet frame (blocks signaling frames and `is_refused_dimension_22` crash frames). |
+| `myhome/bus_monitor/info` | Signed-in user | Optional `mac` | Returns gateway model (`model` and normalized `model_key`), firmware, host/port, `OWNd` & integration versions, active `crash_protections` summary, and ring-buffer stats. |
+| `myhome/bus_monitor/check_frame` | Signed-in user | Required `frame`, optional `mac` | Read-only safety preflight returning whether a candidate OpenWebNet frame is valid, hard-blocked by blanket or active/delegated gateway Firmware Oracle crash rules, or carries a non-blocking caution warning. |
+| `myhome/bus_monitor/send` | **Administrator** | Required `frame`, optional `mac` | Transmits a validated raw OpenWebNet frame (enforces single-frame ASCII syntax, blocks signaling frames, and refuses blanket as well as active/delegated gateway Firmware Oracle crash frames). |
 | `myhome/bus_monitor/clear` | **Administrator** | Optional `mac` | Clears the backend circular frame buffer and resets RX/TX counters. |
 | `myhome/cover/calibration_trace` | Signed-in user | Optional `mac` | Exports recorded cover calibration run traces and timing anchors for the gateway. |
 
@@ -111,10 +112,14 @@ Two ways to begin a capture. **Both are harmless** — neither can switch a load
 
 ### 5. Transmit frame (⚠️ direct bus command)
 
-The bar at the bottom writes a raw OpenWebNet frame to the SCS bus exactly as typed. That **can** switch loads, move shutters, or arm/disarm the burglar alarm, so it is disabled until you tick **I understand the risk** in the orange bar above it; the bar turns red while armed. Untick it when you are done. Start Trace and Sweep Bus never use this path. (The backend additionally refuses the command for non-administrator users.)
+The bar at the bottom writes a raw OpenWebNet frame to the SCS bus exactly as typed. That **can** switch loads, move shutters, or arm/disarm the burglar alarm, so it is disabled until you tick **I understand the risk** in the orange bar above it; the bar turns red while armed. The active target gateway model and firmware are shown in the stats bar (refreshed automatically when arming), and as you type the card runs a live read-only preflight check against `myhome/bus_monitor/check_frame` before you can click **Send**. Untick the checkbox when you are done. Start Trace and Sweep Bus never use this path. (The backend additionally refuses the command for non-administrator users.)
 
 > [!NOTE]
-> For gateway and bus safety, structurally invalid frames, signaling frames (`*#*1##`, `*#*0##`), and commands known to crash gateway hardware (WHO 4 Dimension 22 frames whose WHERE carries no actuator token, such as `*#4*1*22##`, `*#4*0*22##` or `*#4*#0*22##`, which crash the thermostat daemon on F461 / F454 / MH200N gateways and triggered a reboot on a live F461) are blocked by the backend and return `ERR_INVALID_FORMAT`. The published split-unit form `*#4*3#Z#N*22##` is forwarded when the installed OWNd (2.0.0b12 or newer) can tell the two apart; with an older OWNd every Dimension 22 frame is refused.
+> **Gateway-Aware Firmware Oracle Crash Protection**
+> - **Blanket crash rules (blocked on every gateway)**: Structurally invalid or concatenated multi-frame (`##`) strings, signaling frames (`*#*1##`, `*#*0##`), WHO 4 Dimension 22 frames without a split-unit actuator token (such as `*#4*1*22##`, `*#4*0*22##` or `*#4*#0*22##`; the published split-unit form `*#4*3#Z#N*22##` / `*#4*3#Z#N*#22*...##` remains allowed with OWNd >= 2.0.0b12), WHO 18 Dimension 52 invalid years, WHO 1 empty WHERE (`*#1*##`), bare WHO 22 `WHAT` commands without `#params`, unstructured WHO 22 `WHERE` requests (exempting `WHERE = 6`), and 5-digit WHO 4 Dimension 14 setpoint writes are always hard-blocked.
+> - **Per-gateway crash rules (blocked for the active gateway model)**: Frames proven by the Firmware Oracle to crash specific gateway models are blocked when targeting those models — including WHO 13 network dimensions `10`/`11`/`12` on `H4684`/`MH200`, WHO 13 dimension `50` on `F453`/`F453AV`/`MH200N`, bare WHO 22 `WHAT` `33`/`44`/`45` on affected models, and `MH202` WHO 4 (`001`–`099` all-probes, invalid dimensionless numeric/actuator-`#` status WHERE forms) and WHO 1 status WHERE crashes (`1111`, `<addr>#4`, `<addr>#4#19+`).
+> - **Shared-bus delegation awareness**: On multi-gateway plants, preflight and send enforcement resolve the effective delegated or failover gateway for non-WHO-13/1013 frames (while WHO 13/1013 remain local to the primary gateway) and show both the target and delegating gateway in the card notice when a frame is blocked.
+> - **Live UI preflight & non-blocking cautions**: Hard-blocked frames disable **Send** immediately and display an inline red notice naming the target gateway, reason, and Firmware Oracle reference; backend rejections also render inline with `ERR_INVALID_FORMAT` (without browser alert popups). Frames known to stall replies (`no-reply` patterns) and model-specific crash frames on unidentified (`Generic`) or unemulated gateways display a non-blocking amber caution notice while leaving **Send** enabled.
 
 ### 6. Time stamps
 
@@ -122,7 +127,7 @@ Frames are stamped in **UTC** by the integration (`timestamp` / `iso_time`) and 
 
 ### 7. Permissions
 
-Reading the stream, history and gateway info is available to any signed-in user. **Send frame** and **Clear buffer** require an **administrator** user: a non-admin (or a kiosk/long-lived token created by one) gets `Unauthorized`, because a raw `*5*…##` frame can arm or disarm the burglar alarm.
+Reading the stream, history, gateway info, and `check_frame` safety preflight is available to any signed-in user. **Send frame** and **Clear buffer** require an **administrator** user: a non-admin (or a kiosk/long-lived token created by one) gets `Unauthorized`, because a raw `*5*…##` frame can arm or disarm the burglar alarm.
 
 ---
 

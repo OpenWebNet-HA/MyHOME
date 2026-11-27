@@ -164,9 +164,15 @@ def _profile_for_model(
     """
     profile = _call_get_gateway_profile(model, firmware, lookup=lookup)
     if isinstance(profile, GenericGatewayProfile) and model:
-        mapped = _MODEL_SPELLINGS.get(_alnum(model))
-        if mapped is not None:
-            return _call_get_gateway_profile(mapped, firmware, lookup=lookup)
+        cleaned = _NETWORK_ADDR_RE.sub(" : ", str(model))
+        alnum = _alnum(cleaned)
+        if not alnum.isdigit() or any(
+            _is_isolated_numeric_span(cleaned, m.start(), m.end())
+            for m in re.finditer(re.escape(alnum), cleaned)
+        ):
+            mapped = _MODEL_SPELLINGS.get(alnum)
+            if mapped is not None:
+                return _call_get_gateway_profile(mapped, firmware, lookup=lookup)
     return profile
 
 
@@ -398,7 +404,7 @@ HUMIDITY_REQUEST_REFUSED = frozenset({"F450", "F453", "F453AV", "F454", "F455", 
 # and not left as the whole string. The same key on every table of #792 / #793 / #794.
 KNOWN_GATEWAY_MODELS = frozenset(
     {
-        "F450", "F452", "F452V", "F453", "F453AV", "F454", "F455", "F459", "F460", "F461",
+        "3488", "F450", "F452", "F452V", "F453", "F453AV", "F454", "F455", "F459", "F460", "F461",
         "H4684", "H4890", "MH200", "MH200N", "MH201", "MH202", "MYHOMESERVER1",
     }
 )
@@ -424,20 +430,49 @@ _ZONE_REQUEST_MODELS = sorted(
     key=len,
     reverse=True,
 )
-# Legrand 067292 Céliane 3.5" touch screen family (issue #832) SSDP model names mapped
-# to the H4890 profile until OWNd aliases them upstream.
+# Legrand 067292 Céliane 3.5" touch screen family (issue #832) and 3488 HOMETOUCH
+# catalogue/firmware spellings mapped until OWNd aliases them upstream.
 _MODEL_SPELLINGS = {
     "067292": "H4890",
     "67292": "H4890",
     "573958": "H4890",
     "078479": "H4890",
     "78479": "H4890",
+    "HOMETOUCH": "3488",
+    "067259": "3488",
+    "67259": "3488",
+    "SMARTDES": "3488",
 }
+
+
+_NUMERIC_BOUNDARY_CHARS = (".", ":")
+_MODEL_SPELLINGS_SORTED = tuple(
+    sorted(_MODEL_SPELLINGS.items(), key=lambda kv: len(kv[0]), reverse=True)
+)
+_NETWORK_ADDR_RE = re.compile(
+    r"\[[0-9A-Fa-f:]+\](?::[0-9]+)?"
+    r"|(?:[0-9A-Fa-f]{0,4}:){2,}[0-9A-Fa-f:]*"
+    r"|[0-9A-Fa-f]{2}(?:-[0-9A-Fa-f]{2}){5}"
+    r"|[0-9]{1,3}(?:\.[0-9]{1,3}){3}(?::[0-9]+)?",
+    re.ASCII,
+)
 
 
 def _alnum(name: object) -> str:
     """A model string reduced to its upper-case letters and digits (``"BTicino F461"`` -> ``BTICINOF461``)."""
     return "".join(character for character in str(name).upper() if character.isalnum())
+
+
+def _is_isolated_numeric_span(raw: str, start: int, end: int) -> bool:
+    """True when ``raw[start:end]`` is not adjacent to digits, ``.`` or ``:``."""
+    before = raw[start - 1] if start > 0 else ""
+    after = raw[end] if end < len(raw) else ""
+    return (
+        before not in _NUMERIC_BOUNDARY_CHARS
+        and after not in _NUMERIC_BOUNDARY_CHARS
+        and not before.isdigit()
+        and not after.isdigit()
+    )
 
 
 def _resolved_model(word: str) -> str | None:
@@ -447,10 +482,14 @@ def _resolved_model(word: str) -> str | None:
     ``03565`` -> ``MH200N`` (OWNd's aliases and catalogue item numbers); spellings OWNd has no
     alias for are mapped first via ``_MODEL_SPELLINGS``.
     """
-    key = _MODEL_SPELLINGS.get(_alnum(word), word)
+    alnum = _alnum(word)
+    mapped = _MODEL_SPELLINGS.get(alnum)
+    key = mapped if mapped is not None else word
     profile = get_gateway_profile(key)
     if isinstance(profile, GenericGatewayProfile):
-        return None
+        if mapped is not None:
+            return mapped
+        return alnum if alnum in KNOWN_GATEWAY_MODELS else None
     return _alnum(profile.model_name)
 
 
@@ -460,12 +499,38 @@ def _resolve_model_key(model: str | None, *, profile: Any = None) -> str:
         name: object = getattr(profile, "model_name", None) or model or ""
     else:
         name = model or ""
-    for word in re.findall(r"[A-Za-z0-9]+", str(name)):
+    raw = str(name)
+    cleaned = _NETWORK_ADDR_RE.sub(" : ", raw)
+    for match in re.finditer(r"[A-Za-z0-9]+", cleaned):
+        word = match.group(0)
+        if word.isdigit() and not _is_isolated_numeric_span(cleaned, match.start(), match.end()):
+            continue
         resolved = _resolved_model(word)
         if resolved is not None:
             return resolved
-    normalized = _MODEL_SPELLINGS.get(_alnum(name), _alnum(name))
-    return next((known for known in _ZONE_REQUEST_MODELS if known in normalized), normalized)
+    alnum = _alnum(raw)
+    searchable = "".join(
+        ch for ch in cleaned.upper() if ch.isalnum() or ch in _NUMERIC_BOUNDARY_CHARS
+    )
+    for spelling, target in _MODEL_SPELLINGS_SORTED:
+        if spelling.isdigit():
+            if any(
+                _is_isolated_numeric_span(cleaned, m.start(), m.end())
+                for m in re.finditer(re.escape(spelling), cleaned)
+            ):
+                return target
+        elif spelling in searchable:
+            return target
+    for known in _ZONE_REQUEST_MODELS:
+        if known.isdigit():
+            if any(
+                _is_isolated_numeric_span(cleaned, m.start(), m.end())
+                for m in re.finditer(re.escape(known), cleaned)
+            ):
+                return known
+        elif known in searchable:
+            return known
+    return "" if (alnum in _ZONE_REQUEST_MODELS or alnum in _MODEL_SPELLINGS) else alnum
 
 
 def gateway_emits_cover_pre_move_stop(model: str | None, *, profile: Any = None) -> bool | None:

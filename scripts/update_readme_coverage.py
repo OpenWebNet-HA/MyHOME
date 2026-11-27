@@ -58,6 +58,7 @@ COMPONENT_NOTES = {
     "custom_components/myhome/diagnostics.py": "Sanitized config-entry diagnostics export with credential, IP, and MAC redaction",
     "custom_components/myhome/discovery.py": "Shared entity restore, YAML overlay merge, dynamic bus discovery, and dispatcher",
     "custom_components/myhome/expose.py": "Virtual OpenWebNet responder projecting HA entities and system clock onto SCS",
+    "custom_components/myhome/frame_safety.py": "Firmware-Oracle-backed OpenWebNet crash guard, target delegation resolver, and caution evaluator",
     "custom_components/myhome/gateway.py": "Gateway coordinator, profile capability gates, startup sweeps, and bus lifecycle",
     "custom_components/myhome/gateway_confirm.py": "Point-to-point WHO=1 status read-back when a light's status does not follow an acknowledged command",
     "custom_components/myhome/gateway_events.py": "Inbound OpenWebNet frame classification, event bus emission, and doorbell routing",

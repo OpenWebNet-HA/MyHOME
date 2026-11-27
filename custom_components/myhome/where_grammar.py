@@ -1366,14 +1366,12 @@ def validate_thermo_trigger_command(raw: str | None) -> str:
         raise ValueError(
             "OpenWebNet status request cannot be used as a write/trigger command"
         )
-    if frame.startswith("*#4*") and "*#22*" in frame:
-        # Dimension 22 (split control) is read/write, but every spelling without
-        # an actuator token crashes the thermostat daemon; only the published
-        # ``*#4*3#Z#N*#22*MOD*SP*VEL*SWING##`` write may be a trigger, and only
-        # with an OWNd that knows the safe form (services.is_refused_dimension_22).
-        from .services import is_refused_dimension_22, services_has_dimension_22_detector
+    from .frame_safety import evaluate_blanket_crash_safety
+    from .services import services_has_dimension_22_detector
 
-        if is_refused_dimension_22(frame):
+    verdict = evaluate_blanket_crash_safety(frame)
+    if verdict.blocked and verdict.severity == "crash":
+        if verdict.rule_id == "who4_dim22_no_actuator":
             if services_has_dimension_22_detector():
                 detail = "only the split-unit write *#4*3#Z#N*#22*MOD*SP*VEL*SWING## is accepted"
             else:
@@ -1386,6 +1384,7 @@ def validate_thermo_trigger_command(raw: str | None) -> str:
                 "WHO=4 Dimension 22 in this form crashes the gateway's thermostat daemon; "
                 + detail
             )
+        raise ValueError(f"Refusing OpenWebNet trigger command {frame}: {verdict.reason}")
     if not _TRIGGER_COMMAND_RE.fullmatch(frame):
         raise ValueError(f"Invalid OpenWebNet command frame: {frame}")
     try:
