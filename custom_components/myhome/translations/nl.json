@@ -116,7 +116,7 @@
             "who": "WHO-subsysteem"
           },
           "data_description": {
-            "who": "WHO 1 (verlichting/schakelaar) en WHO 2 (rolluiken) bieden keuzelijsten voor A en PL plus een optionele ruwe WHERE-overschrijving; WHO 4, 13 en 18 tonen alleen hun eigen velden."
+            "who": "WHO 1 (verlichting/schakelaar) en WHO 2 (raambedekking) bieden keuzelijsten voor A en PL plus een optionele ruwe WHERE-overschrijving; WHO 4, 13 en 18 tonen alleen hun eigen velden."
           }
         },
         "reconfigure": {
@@ -165,7 +165,7 @@
           }
         },
         "who_2": {
-          "title": "WHO 2 — Automatisering / Rolluik",
+          "title": "WHO 2 — Automatisering / Raambedekking",
           "description": "Kies Zone (A) en Punt (PL) zoals geconfigureerd in MyHOME_Suite (bijv. A = 3, PL = 1 of A = 8, PL = 12), of laat ze leeg en vul hieronder een ruw OpenWebNet WHERE-adres in.",
           "data": {
             "area": "Zone (A, 0–10)",
@@ -188,7 +188,7 @@
             "interface": "Optionele F422 lokale businterface (#4#01–#4#09 of #4#11–#4#15) voor routering naar een lokale bus.",
             "where": "Optioneel veld voor gevorderde gebruikers (bijv. 31, 08, 0812, 0012, 1008 of 31#4#01). Indien ingevuld overschrijft dit A, PL en Interface.",
             "entity_id": "Home Assistant cover-bronentiteit (optioneel als hieronder aangepaste acties zijn ingesteld).",
-            "attribute": "Optioneel attribuut zoals 'current_position' om rolluikposities te spiegelen.",
+            "attribute": "Optioneel attribuut zoals 'current_position' om posities van raambedekking te spiegelen.",
             "turn_on_action": "Optionele aangepaste actiereeks bij een inkomend OMHOOG / open-commando vanaf de bus.",
             "turn_off_action": "Optionele aangepaste actiereeks bij een inkomend OMLAAG / sluit-commando vanaf de bus."
           }
@@ -485,7 +485,7 @@
     },
     "sweep_bus": {
       "name": "Busstatus scannen",
-      "description": "Voert een alleen-lezen statusverzoek uit over alle bussubsystemen (verlichting, rolluiken, klimaatregeling, klok en gatewaydiagnostiek) om de diagnostische ringbuffer te vullen.",
+      "description": "Voert een alleen-lezen statusverzoek uit over alle bussubsystemen (verlichting, raambedekking, klimaatregeling, klok en gatewaydiagnostiek) om de diagnostische ringbuffer te vullen.",
       "fields": {
         "gateway": {
           "name": "Gateway",
@@ -526,12 +526,12 @@
       }
     },
     "calibrate_cover": {
-      "name": "Looptijd rolluik kalibreren",
-      "description": "Meet de op- en neerwaartse looptijden van een tijdgestuurd rolluik op de SCS-bus en slaat ze op: het rolluik gaat helemaal omhoog, dan helemaal omlaag (getimed) en daarna weer helemaal omhoog (getimed). Rolluiken worden per gateway één voor één gekalibreerd."
+      "name": "Looptijd raambedekking kalibreren",
+      "description": "Meet de op- en neerwaartse looptijden van tijdgestuurde raambedekking op de SCS-bus en slaat ze op: de raambedekking gaat helemaal omhoog, dan helemaal omlaag (getimed) en daarna weer helemaal omhoog (getimed). Raambedekking wordt per gateway één voor één gekalibreerd."
     },
     "stop_cover_calibration": {
-      "name": "Rolluikkalibratie stoppen",
-      "description": "Stopt de lopende looptijdkalibratie en annuleert de wachtende; het bewegende rolluik wordt gestopt en er wordt niets opgeslagen.",
+      "name": "Kalibratie raambedekking stoppen",
+      "description": "Stopt de lopende looptijdkalibratie en annuleert de wachtende; de bewegende raambedekking wordt gestopt en er wordt niets opgeslagen.",
       "fields": {
         "gateway": {
           "name": "Gateway",
@@ -540,8 +540,8 @@
       }
     },
     "set_cover_travel_time": {
-      "name": "Looptijd rolluik instellen",
-      "description": "Slaat de fysieke looptijden van een tijdgestuurd rolluik handmatig op in plaats van ze op de bus te kalibreren.",
+      "name": "Looptijd raambedekking instellen",
+      "description": "Slaat de fysieke looptijden van tijdgestuurde raambedekking handmatig op in plaats van ze op de bus te kalibreren.",
       "fields": {
         "travel_time": {
           "name": "Looptijd",
@@ -557,11 +557,11 @@
         },
         "slat_time": {
           "name": "Kanteltijd lamellen",
-          "description": "Seconden die de lamellen van een jaloezie nodig hebben voor een volledige kanteling (0.5-10). Alleen gebruikt door rolluiken met slat_tilt ingeschakeld."
+          "description": "Seconden die de lamellen van een jaloezie nodig hebben voor een volledige kanteling (0.5-10). Alleen gebruikt door raambedekking met slat_tilt ingeschakeld."
         },
         "copied_from": {
           "name": "Gekopieerd van",
-          "description": "Het rolluik waarvan deze tijden zijn overgenomen; de bron wordt dan gemeld als \"copied\" in plaats van \"manual\"."
+          "description": "De raambedekking waarvan deze tijden zijn overgenomen; de bron wordt dan gemeld als \"copied\" in plaats van \"manual\"."
         },
         "min_motor_pulse": {
           "name": "Minimale motorpulsduur",
@@ -570,7 +570,7 @@
       }
     },
     "reset_cover_travel_time": {
-      "name": "Looptijd rolluik terugzetten",
+      "name": "Looptijd raambedekking terugzetten",
       "description": "Vergeet de gemeten of handmatig ingestelde looptijden en valt terug op travel_time uit myhome.yaml of de standaardwaarde van 25 s."
     },
     "send_scenario_plus_command": {
@@ -700,6 +700,130 @@
     "legacy_yaml_imported": {
       "title": "Verouderde myhome.yaml geïmporteerd voor {gateway}",
       "description": "De apparaatconfiguratie in `myhome.yaml` voor {gateway} is gekopieerd naar de configuratie-opties van Home Assistant. Zolang `myhome.yaml` bestaat, blijft dat bestand leidend en volgt de kopie de wijzigingen. Wordt het bestand verwijderd of onleesbaar, dan houden de apparaten de configuratie van de laatste kopie."
+    },
+    "cover_calibration_cutoff": {
+      "title": "{name}: actuator stopte op de looptijdgrens van {limit} s",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Looptijd raambedekking instellen",
+            "description": "{detail}\n\nKies hoe u **{name}** wilt kalibreren:",
+            "menu_options": {
+              "timed_close_ready": "Begeleide Start → Stop-meting",
+              "manual_entry": "Looptijden handmatig invoeren",
+              "reset_default": "Terugzetten naar standaard looptijd"
+            }
+          },
+          "timed_close_ready": {
+            "title": "Stap 1 van 2: Klaar om sluiten te meten",
+            "description": "Zorg dat **{name}** helemaal open staat en klik op **Verzenden** om het sluiten te starten. Klik direct opnieuw op **Verzenden** zodra de raambedekking de onderste eindstop bereikt."
+          },
+          "timed_close_stop": {
+            "title": "Stap 1 van 2: Bezig met sluiten — klik op Verzenden bij de eindstop",
+            "description": "**{name}** is aan het sluiten. Klik op **Verzenden** zodra de onderste eindstop is bereikt (als u dit venster sluit, stopt de motor direct)."
+          },
+          "timed_open_ready": {
+            "title": "Stap 2 van 2: Klaar om openen te meten",
+            "description": "Gemeten sluittijd voor **{name}**: **{down} s**.\n\nKlik op **Verzenden** om het openen te starten en te meten, of vink het vakje hieronder aan om **{down} s** voor beide richtingen te gebruiken.",
+            "data": {
+              "reuse_down_for_up": "Sluittijd ook gebruiken voor openen (openingsmeting overslaan)"
+            }
+          },
+          "timed_open_stop": {
+            "title": "Stap 2 van 2: Bezig met openen — klik op Verzenden bij de eindstop",
+            "description": "**{name}** is aan het openen. Klik op **Verzenden** zodra de bovenste eindstop is bereikt (als u dit venster sluit, stopt de motor direct)."
+          },
+          "manual_entry": {
+            "title": "Looptijden raambedekking invoeren",
+            "description": "Voer de volledige sluit- en openingslooptijd (in seconden) voor **{name}** in.",
+            "data": {
+              "travel_time_down": "Looptijd omlaag (seconden)",
+              "travel_time_up": "Looptijd omhoog (seconden)"
+            }
+          },
+          "confirm_save": {
+            "title": "Looptijden controleren en opslaan",
+            "description": "Gemeten looptijden voor **{name}**: sluiten **{down} s**, openen **{up} s**.\n\nPas zo nodig aan en klik op **Verzenden** om op te slaan.",
+            "data": {
+              "travel_time_down": "Looptijd omlaag (seconden)",
+              "travel_time_up": "Looptijd omhoog (seconden)"
+            }
+          },
+          "reset_default": {
+            "title": "Looptijd raambedekking terugzetten",
+            "description": "Klik op **Verzenden** om de opgeslagen looptijden voor **{name}** te wissen en terug te keren naar `myhome.yaml` of de standaardwaarde van 25 s."
+          }
+        },
+        "abort": {
+          "cover_missing": "De raambedekkingsentiteit is niet langer beschikbaar.",
+          "save_failed": "Opslaan van de looptijden van de raambedekking is mislukt."
+        },
+        "error": {
+          "invalid_travel_time": "Voer geldige looptijden binnen het toegestane bereik in."
+        }
+      }
+    },
+    "cover_legacy_calibration_cutoff": {
+      "title": "{name}: opgeslagen looptijd lijkt op een actuatorlimiet",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Looptijd raambedekking instellen",
+            "description": "{detail}\n\nKies hoe u **{name}** wilt kalibreren:",
+            "menu_options": {
+              "timed_close_ready": "Begeleide Start → Stop-meting",
+              "manual_entry": "Looptijden handmatig invoeren",
+              "reset_default": "Terugzetten naar standaard looptijd"
+            }
+          },
+          "timed_close_ready": {
+            "title": "Stap 1 van 2: Klaar om sluiten te meten",
+            "description": "Zorg dat **{name}** helemaal open staat en klik op **Verzenden** om het sluiten te starten. Klik direct opnieuw op **Verzenden** zodra de raambedekking de onderste eindstop bereikt."
+          },
+          "timed_close_stop": {
+            "title": "Stap 1 van 2: Bezig met sluiten — klik op Verzenden bij de eindstop",
+            "description": "**{name}** is aan het sluiten. Klik op **Verzenden** zodra de onderste eindstop is bereikt (als u dit venster sluit, stopt de motor direct)."
+          },
+          "timed_open_ready": {
+            "title": "Stap 2 van 2: Klaar om openen te meten",
+            "description": "Gemeten sluittijd voor **{name}**: **{down} s**.\n\nKlik op **Verzenden** om het openen te starten en te meten, of vink het vakje hieronder aan om **{down} s** voor beide richtingen te gebruiken.",
+            "data": {
+              "reuse_down_for_up": "Sluittijd ook gebruiken voor openen (openingsmeting overslaan)"
+            }
+          },
+          "timed_open_stop": {
+            "title": "Stap 2 van 2: Bezig met openen — klik op Verzenden bij de eindstop",
+            "description": "**{name}** is aan het openen. Klik op **Verzenden** zodra de bovenste eindstop is bereikt (als u dit venster sluit, stopt de motor direct)."
+          },
+          "manual_entry": {
+            "title": "Looptijden raambedekking invoeren",
+            "description": "Voer de volledige sluit- en openingslooptijd (in seconden) voor **{name}** in.",
+            "data": {
+              "travel_time_down": "Looptijd omlaag (seconden)",
+              "travel_time_up": "Looptijd omhoog (seconden)"
+            }
+          },
+          "confirm_save": {
+            "title": "Looptijden controleren en opslaan",
+            "description": "Gemeten looptijden voor **{name}**: sluiten **{down} s**, openen **{up} s**.\n\nPas zo nodig aan en klik op **Verzenden** om op te slaan.",
+            "data": {
+              "travel_time_down": "Looptijd omlaag (seconden)",
+              "travel_time_up": "Looptijd omhoog (seconden)"
+            }
+          },
+          "reset_default": {
+            "title": "Looptijd raambedekking terugzetten",
+            "description": "Klik op **Verzenden** om de opgeslagen looptijden voor **{name}** te wissen en terug te keren naar `myhome.yaml` of de standaardwaarde van 25 s."
+          }
+        },
+        "abort": {
+          "cover_missing": "De raambedekkingsentiteit is niet langer beschikbaar.",
+          "save_failed": "Opslaan van de looptijden van de raambedekking is mislukt."
+        },
+        "error": {
+          "invalid_travel_time": "Voer geldige looptijden binnen het toegestane bereik in."
+        }
+      }
     }
   },
   "exceptions": {
@@ -758,10 +882,10 @@
       "message": "{name}: geen stopstatus van de actuator binnen {timeout} s - mogelijk meldt hij geen status; stel travel_time handmatig in"
     },
     "calibration_actuator_cutoff_open": {
-      "message": "{name}: de openingsloop eindigde na {seconds} s, op de looptijdgrens van {limit} s van de actuator, niet op de eindstop; de actuator kan dit rolluik niet meten - gebruik de stopwatch (Stop & Save) of stel travel_time handmatig in"
+      "message": "{name}: de openingsloop eindigde na {seconds} s, op de looptijdgrens van {limit} s van de actuator, niet op de eindstop; de actuator kan deze raambedekking niet automatisch meten — gebruik de begeleide handmatige meting in Instellingen -> Reparaties, of meet een beweging handmatig (last_run_seconds) en sla deze op met myhome.set_cover_travel_time"
     },
     "calibration_actuator_cutoff_close": {
-      "message": "{name}: de sluitloop eindigde na {seconds} s, op de looptijdgrens van {limit} s van de actuator, niet op de eindstop; de actuator kan dit rolluik niet meten - gebruik de stopwatch (Stop & Save) of stel travel_time handmatig in"
+      "message": "{name}: de sluitloop eindigde na {seconds} s, op de looptijdgrens van {limit} s van de actuator, niet op de eindstop; de actuator kan deze raambedekking niet automatisch meten — gebruik de begeleide handmatige meting in Instellingen -> Reparaties, of meet een beweging handmatig (last_run_seconds) en sla deze op met myhome.set_cover_travel_time"
     },
     "cover_reports_position": {
       "message": "{name} meldt zijn positie (Dimension 10 / advanced: true); looptijdkalibratie is daarop niet van toepassing. Als dit een standaard tijdgestuurde actuator is (bijv. F411) die dimensie 10 niet ondersteunt, stel dan advanced: false in of verwijder advanced: true uit myhome.yaml."
@@ -776,7 +900,7 @@
       "message": "{name}: onwaarschijnlijke openingsloop van {seconds} s; niet opgeslagen"
     },
     "travel_time_missing": {
-      "message": "Geef ten minste travel_time, travel_time_down/up of min_motor_pulse op"
+      "message": "Geef ten minste travel_time, travel_time_down/up, slat_time of min_motor_pulse op"
     },
     "travel_time_out_of_range": {
       "message": "{field} moet tussen {min} s en {max} s liggen"
@@ -947,7 +1071,7 @@
         "name": "Looptijd kalibreren"
       },
       "calibrate_all_covers": {
-        "name": "Alle rolluiken kalibreren"
+        "name": "Alle raambedekking kalibreren"
       },
       "tuner_seek_up": {
         "name": "Vooruit zoeken"
@@ -998,7 +1122,7 @@
     "delegated_whos": {
       "options": {
         "1": "1 - Verlichting",
-        "2": "2 - Rolluiken / zonwering",
+        "2": "2 - Automatisering / raambedekking",
         "4": "4 - Thermoregeling",
         "5": "5 - Inbraakalarm",
         "6": "6 - Deurintercom",
@@ -1014,7 +1138,7 @@
     "expose_who": {
       "options": {
         "1": "WHO 1 — Verlichting / Schakelaar / Virtuele actuator",
-        "2": "WHO 2 — Automatisering / Rolluik",
+        "2": "WHO 2 — Automatisering / Raambedekking",
         "4": "WHO 4 — Temperatuursensor (Dimensie 0)",
         "13": "WHO 13 — Busklok & zomertijdsynchronisatie",
         "18": "WHO 18 — Energie- / vermogensmeter"
