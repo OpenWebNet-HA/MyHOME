@@ -170,7 +170,7 @@ stop_cover_calibration:
 set_cover_travel_time:
   name: Set cover travel time
   description: >-
-    Stores the physical travel times of a timed cover by hand (measured with a stopwatch)
+    Stores the physical travel times of a timed cover by hand
     instead of calibrating on the bus. Values are kept in the config entry, survive
     restarts and apply to discovered covers without YAML.
   target:

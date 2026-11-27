@@ -919,7 +919,7 @@ async def test_run_ending_at_the_actuator_cutoff_fails_at_once(hass, gateway, cl
     with pytest.raises(HomeAssistantError, match="60 s run-time limit") as err:
         await asyncio.wait_for(task, 5)
     assert "61.5 s" in str(err.value)
-    assert "Settings -> Repairs" in str(err.value)
+    assert "Settings -> System -> Repairs" in str(err.value)
     assert "stopwatch" not in str(err.value)
 
     assert [f for f, _ in gateway.deliveries] == ["*2*1*21##"]  # no second and third run
@@ -1970,7 +1970,7 @@ def test_calibration_cutoff_message_guides_manual_timing_not_stopwatch() -> None
     assert "stopwatch" not in msg_close.lower()
     assert "shutter" not in msg_close.lower()
     assert "cannot measure this cover automatically" in msg_close
-    assert "Settings -> Repairs" in msg_close
+    assert "Settings -> System -> Repairs" in msg_close
     assert "last_run_seconds" in msg_close
     assert "myhome.set_cover_travel_time" in msg_close
     assert err_close.limit == 60.0
@@ -2377,6 +2377,200 @@ async def test_manual_timing_failsafe_restores_settle_on_timeout_and_cancels_cle
     await cover.async_will_remove_from_hass()
     assert cover._settles_on_timer is True
     assert cover._manual_timing_failsafe_unsub is None
+
+
+async def test_legacy_cutoff_sync_guards_native_scope_zero_padded_and_registry_removal(
+    hass, gateway
+) -> None:
+    """M2, M3, M4: Legacy sync skips native/scope/00-shadowed covers, cleans 00-aliases, and cleans on entity deletion."""
+    from homeassistant.helpers import entity_registry as er
+    from homeassistant.helpers import issue_registry as ir
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.const import CONF_ADVANCED_COVERS, DOMAIN
+    from custom_components.myhome.cover import async_sync_cover_calibration_issues
+    from custom_components.myhome.data import MyHOMERuntimeData
+    from custom_components.myhome.repairs import ISSUE_COVER_LEGACY_CUTOFF
+
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        data={"mac": gateway.mac},
+        unique_id=gateway.mac,
+        options={
+            CONF_ADVANCED_COVERS: {"30": True},
+            CONF_COVER_TRAVEL_TIMES: {
+                # M2: promoted native cover (stored advanced) -> must NOT be flagged
+                "30": {"down": 61.0, "up": 61.0},
+                # M2: group/scope cover -> must NOT be flagged
+                "#1": {"down": 61.0, "up": 61.0},
+                # M3: legacy 0004 shadowed by canonical 04 manual -> must NOT be flagged
+                "0004": {"down": 61.0, "up": 61.0},
+                "04": {"down": 22.0, "up": 23.0, "source": "manual"},
+                # M3 + M4: legacy 0005 alone for active cover 05 -> flagged under canonical 05
+                "0005": {"down": 60.8, "up": 61.1},
+                # M4: active cover 06 for registry removal test
+                "06": {"down": 61.0, "up": 61.0},
+            },
+        },
+    )
+    entry.add_to_hass(hass)
+    gateway.config_entry = entry
+
+    ent_reg = er.async_get(hass)
+    for dev_id in ("30", "#1", "04", "05", "06"):
+        ent_reg.async_get_or_create("cover", DOMAIN, f"{gateway.mac}-2-{dev_id}", config_entry=entry)
+
+    cover_05 = _make_cover(hass, gateway, device_id="05", where="05", name="Cover 05")
+    cover_06 = _make_cover(hass, gateway, device_id="06", where="06", name="Cover 06")
+    runtime = MyHOMERuntimeData(gateway=gateway)
+    runtime.entities["cover"] = {"05": cover_05, "06": cover_06}
+    entry.runtime_data = runtime
+
+    async_sync_cover_calibration_issues(hass, entry)
+    issue_reg = ir.async_get(hass)
+
+    assert issue_reg.async_get_issue(DOMAIN, f"{ISSUE_COVER_LEGACY_CUTOFF}_{entry.entry_id}_30") is None
+    assert issue_reg.async_get_issue(DOMAIN, f"{ISSUE_COVER_LEGACY_CUTOFF}_{entry.entry_id}__1") is None
+    assert issue_reg.async_get_issue(DOMAIN, f"{ISSUE_COVER_LEGACY_CUTOFF}_{entry.entry_id}_04") is None
+    assert issue_reg.async_get_issue(DOMAIN, f"{ISSUE_COVER_LEGACY_CUTOFF}_{entry.entry_id}_0004") is None
+    assert issue_reg.async_get_issue(DOMAIN, f"{ISSUE_COVER_LEGACY_CUTOFF}_{entry.entry_id}_05") is not None
+    assert issue_reg.async_get_issue(DOMAIN, f"{ISSUE_COVER_LEGACY_CUTOFF}_{entry.entry_id}_06") is not None
+
+    # M3: Saving manual travel time on 05 pops stale '0005' alias so issue stays cleared
+    await cover_05.async_set_travel_time(travel_time_down=18.0, travel_time_up=19.0)
+    assert "0005" not in entry.options[CONF_COVER_TRAVEL_TIMES]
+    assert entry.options[CONF_COVER_TRAVEL_TIMES]["05"]["source"] == "manual"
+    assert issue_reg.async_get_issue(DOMAIN, f"{ISSUE_COVER_LEGACY_CUTOFF}_{entry.entry_id}_05") is None
+
+    # M4: Deleting cover 06 from registry cleans CONF_COVER_TRAVEL_TIMES, pops runtime entity, and clears issue
+    reg_06 = ent_reg.async_get_entity_id("cover", DOMAIN, f"{gateway.mac}-2-06")
+    assert reg_06 is not None
+    ent_reg.async_remove(reg_06)
+    await cover_06.async_removed_from_registry()
+    assert "06" not in entry.options.get(CONF_COVER_TRAVEL_TIMES, {})
+    assert "06" not in runtime.entities["cover"]
+    assert issue_reg.async_get_issue(DOMAIN, f"{ISSUE_COVER_LEGACY_CUTOFF}_{entry.entry_id}_06") is None
+
+
+async def test_calibrate_buttons_guard_unloaded_unavailable_exposed_and_duplicate_batch(
+    hass, gateway
+) -> None:
+    """M5, Minor #3, Minor #4: Buttons reject unloaded/unavailable covers without clearing issues, skip exposed covers, and block duplicate batches."""
+    from homeassistant.helpers import entity_registry as er
+    from homeassistant.helpers import issue_registry as ir
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.button import (
+        CalibrateAllCoversButtonEntity,
+        CalibrateCoverButtonEntity,
+    )
+    from custom_components.myhome.const import CONF_WHERE, CONF_WHO, DOMAIN
+    from custom_components.myhome.data import MyHOMERuntimeData
+    from custom_components.myhome.repairs import (
+        ISSUE_COVER_CALIBRATION_CUTOFF,
+        async_create_cover_cutoff_issue,
+        cover_calibration_notification_id,
+    )
+
+    entry = MockConfigEntry(domain=DOMAIN, data={"mac": gateway.mac}, unique_id=gateway.mac)
+    entry.add_to_hass(hass)
+    gateway.config_entry = entry
+    gateway.unique_id = gateway.mac
+
+    ent_reg = er.async_get(hass)
+    ent_21 = ent_reg.async_get_or_create(
+        "cover", DOMAIN, f"{gateway.mac}-2-21", suggested_object_id="unloaded_21", config_entry=entry
+    )
+    ent_22 = ent_reg.async_get_or_create(
+        "cover", DOMAIN, f"{gateway.mac}-2-22", suggested_object_id="loaded_22", config_entry=entry
+    )
+    ent_reg.async_get_or_create(
+        "cover", DOMAIN, f"{gateway.mac}-2-23", suggested_object_id="exposed_23", config_entry=entry
+    )
+
+    cover_22 = _make_cover(hass, gateway, device_id="22", where="22", name="Cover 22")
+    cover_22.entity_id = ent_22.entity_id
+
+    runtime = MyHOMERuntimeData(
+        gateway=gateway,
+        expose=[{CONF_WHO: 2, CONF_WHERE: "23", "entity_id": "cover.external"}],
+    )
+    # 21 is intentionally absent (unloaded), 22 is loaded
+    runtime.entities["cover"] = {"22": cover_22}
+    entry.runtime_data = runtime
+
+    # Existing cutoff issue on 21 must NOT be deleted when 21 is unloaded
+    async_create_cover_cutoff_issue(
+        hass, entry.entry_id, "21", ent_21.entity_id, "Cover 21", 60.0, 61.0
+    )
+    issue_21_id = f"{ISSUE_COVER_CALIBRATION_CUTOFF}_{entry.entry_id}_21"
+
+    called: list[str] = []
+    block_22 = asyncio.Event()
+    started_22 = asyncio.Event()
+
+    async def _svc_calibrate(call) -> None:
+        eid = call.data["entity_id"]
+        called.append(eid)
+        if eid == ent_22.entity_id:
+            started_22.set()
+            await block_22.wait()
+
+    hass.services.async_register(DOMAIN, "calibrate_cover", _svc_calibrate)
+
+    # 1. Single-cover button on unloaded 21 -> warns, notifies, never calls service, preserves cutoff issue
+    btn_21 = CalibrateCoverButtonEntity(
+        hass=hass,
+        platform="button",
+        device_id="21",
+        where="21",
+        interface=None,
+        name="Cover 21",
+        gateway=gateway,
+        config_entry=entry,
+    )
+    btn_21.hass = hass
+    with patch("custom_components.myhome.button.persistent_notification.async_create") as mock_notify:
+        await btn_21.async_press()
+        await hass.async_block_till_done(wait_background_tasks=True)
+        assert called == []
+        mock_notify.assert_called_once()
+        assert "not loaded" in mock_notify.call_args.args[1]
+        assert ir.async_get(hass).async_get_issue(DOMAIN, issue_21_id) is not None
+
+    # 2. Batch button skips exposed 23, marks unloaded 21 as Failed, and rejects duplicate concurrent batch press
+    btn_all = CalibrateAllCoversButtonEntity(hass=hass, config_entry=entry, gateway=gateway)
+    with patch(
+        "custom_components.myhome.button.is_exposed_on_bus",
+        side_effect=lambda _h, _e, who, where: str(who) == "2" and str(where) == "23",
+    ):
+        assert btn_all._cover_entity_ids() == sorted([ent_21.entity_id, ent_22.entity_id])
+
+        with patch("custom_components.myhome.button.persistent_notification.async_create") as mock_notify:
+            await btn_all.async_press()
+            await asyncio.wait_for(started_22.wait(), timeout=2.0)
+            assert cover_22.calibration_hub.is_batch_running is True
+
+            # Duplicate press while batch is running is rejected immediately
+            await btn_all.async_press()
+            assert any("already in progress" in c.args[1] for c in mock_notify.call_args_list)
+
+            block_22.set()
+            await hass.async_block_till_done(wait_background_tasks=True)
+
+            assert called == [ent_22.entity_id]  # only loaded 22 ran; 21 failed preflight; 23 excluded
+            final_summary = mock_notify.call_args_list[-1].args[1]
+            assert "Succeeded: 1" in final_summary
+            assert "Failed: 1" in final_summary
+            assert ir.async_get(hass).async_get_issue(DOMAIN, issue_21_id) is not None
+
+    # 3. Minor #4: Resolving 21 via set_cover_travel_time dismisses its deterministic notification
+    cover_21 = _make_cover(hass, gateway, device_id="21", where="21", name="Cover 21")
+    notif_21 = cover_calibration_notification_id(entry.entry_id, "21")
+    with patch("custom_components.myhome.repairs.persistent_notification.async_dismiss") as mock_dismiss:
+        await cover_21.async_set_travel_time(travel_time_down=20.0, travel_time_up=21.0)
+        assert any(c.args[1] == notif_21 for c in mock_dismiss.call_args_list)
+    assert ir.async_get(hass).async_get_issue(DOMAIN, issue_21_id) is None
 
 
 

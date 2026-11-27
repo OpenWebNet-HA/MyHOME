@@ -11,6 +11,9 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.util import dt as dt_util
 
 from .const import (
+    CALIBRATION_CUTOFF_EARLY,
+    CALIBRATION_CUTOFF_LATE_PER_MIN,
+    CALIBRATION_CUTOFFS,
     CONF_COVER_TRAVEL_TIMES,
     DOMAIN,
     LOGGER,
@@ -115,6 +118,15 @@ class CalibrationInterrupted(HomeAssistantError):
         )
 
 
+def _actuator_cutoff(seconds: float) -> float | None:
+    """Return the actuator run-time limit a calibration run of ``seconds`` ended at, if any."""
+    for limit in CALIBRATION_CUTOFFS:
+        late = (limit / 60.0) * CALIBRATION_CUTOFF_LATE_PER_MIN
+        if limit - CALIBRATION_CUTOFF_EARLY <= seconds <= limit + late:
+            return limit
+    return None
+
+
 class CalibrationCutoff(HomeAssistantError):
     """A calibration run ended at the actuator's run-time limit, not at the end stop."""
 
@@ -126,7 +138,7 @@ class CalibrationCutoff(HomeAssistantError):
         msg = (
             f"{name}: the {direction} run ended after {seconds:.1f} s, at the actuator's {limit:.0f} s "
             "run-time limit, not at the end stop; the actuator cannot measure this cover automatically — "
-            "use the guided manual timing flow in Settings -> Repairs, or time a run manually "
+            "use the guided manual timing flow in Settings -> System -> Repairs, or time a run manually "
             "(last_run_seconds) and save it with myhome.set_cover_travel_time"
         )
         placeholders = {"name": name, "seconds": f"{seconds:.1f}", "limit": f"{limit:.0f}"}
@@ -256,6 +268,11 @@ class CoverCalibrationHub:
     def stop_generation(self) -> int:
         """Return the monotonic counter incremented on every async_stop() call."""
         return self._stop_generation
+
+    @property
+    def is_batch_running(self) -> bool:
+        """Return True if a sequential batch calibration is currently active."""
+        return self._active_batch_gen is not None
 
     def begin_batch(self) -> int:
         """Start tracking a sequential batch calibration and return its stop generation."""

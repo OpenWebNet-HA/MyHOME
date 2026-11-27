@@ -17,6 +17,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     CONF_MAC,
     CONF_NAME,
+    STATE_UNAVAILABLE,
     EntityCategory,
     Platform,
 )
@@ -26,6 +27,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers.entity_component import DATA_INSTANCES
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .command_delivery import async_send_confirmed
@@ -61,6 +63,7 @@ from .myhome_device import MyHOMEEntity
 from .repairs import (
     async_create_cover_cutoff_issue,
     async_delete_cover_cutoff_issue,
+    cover_calibration_notification_id,
 )
 from .sound_source import source_address, tuner_source, uses_who22_commands
 
@@ -129,6 +132,38 @@ def _resolve_cover_device_id(
     )
     _who, dev_id = parse_unique_id(reg_entry.unique_id, gateway_mac, entry_mac)
     return dev_id or None
+
+
+def _check_cover_ready_for_calibration(
+    hass: HomeAssistant,
+    config_entry: MyHOMEConfigEntry | None,
+    gateway: MyHOMEGatewayHandler,
+    entity_id: str,
+    device_id: str | None,
+    label: str,
+) -> str | None:
+    """Return an error message if the target cover is unloaded or unavailable, else None."""
+    if not bool(getattr(gateway, "available", True)):
+        return f"{label}: gateway is unavailable"
+    state = hass.states.get(entity_id)
+    if state is not None and state.state == STATE_UNAVAILABLE:
+        return f"{label}: cover is unavailable"
+    runtime = get_runtime_data(config_entry) if isinstance(config_entry, ConfigEntry) else None
+    if runtime is not None and "cover" in runtime.entities:
+        live_cover = runtime.entities["cover"].get(device_id) if device_id else None
+        if live_cover is None:
+            return f"{label}: cover entity is not loaded"
+        if not bool(getattr(live_cover, "available", True)):
+            return f"{label}: cover is unavailable"
+    else:
+        entity_comp = hass.data.get(DATA_INSTANCES, {}).get("cover")
+        if entity_comp is not None and hasattr(entity_comp, "get_entity"):
+            live_cover = entity_comp.get_entity(entity_id)
+            if live_cover is None:
+                return f"{label}: cover entity is not loaded"
+            if not bool(getattr(live_cover, "available", True)):
+                return f"{label}: cover is unavailable"
+    return None
 
 
 async def async_setup_entry(
@@ -589,11 +624,12 @@ class CalibrateCoverButtonEntity(ButtonEntity, MyHOMEEntity):
 
     async def async_press(self) -> None:
         registry = er.async_get(self.hass)
+        cfg_entry = self._config_entry
         cover_entity_id = registry.async_get_entity_id(
             "cover", DOMAIN, f"{self._gateway_handler.mac}-2-{self._device_id}"
         )
-        if not cover_entity_id and self._config_entry is not None:
-            entry_data = getattr(self._config_entry, "data", None)
+        if not cover_entity_id and cfg_entry is not None:
+            entry_data = getattr(cfg_entry, "data", None)
             entry_mac = entry_data.get(CONF_MAC) if isinstance(entry_data, Mapping) else None
             if entry_mac and entry_mac != self._gateway_handler.mac:
                 cover_entity_id = registry.async_get_entity_id(
@@ -604,15 +640,38 @@ class CalibrateCoverButtonEntity(ButtonEntity, MyHOMEEntity):
             return
 
         entry_id = (
-            self._config_entry.entry_id
-            if isinstance(getattr(self._config_entry, "entry_id", None), str)
+            cfg_entry.entry_id
+            if cfg_entry is not None and isinstance(getattr(cfg_entry, "entry_id", None), str)
             else None
         )
-        notification_id = (
-            f"{DOMAIN}_cover_calibration_{re.sub(r'[^a-zA-Z0-9_-]', '_', cover_entity_id)}"
-        )
+        notification_id = cover_calibration_notification_id(entry_id, self._device_id)
 
         async def _run_calibration() -> None:
+            cover_name = _resolve_cover_label(
+                self.hass, cover_entity_id, self._device_name
+            )
+            unready_msg = _check_cover_ready_for_calibration(
+                self.hass,
+                cfg_entry,
+                self._gateway_handler,
+                cover_entity_id,
+                self._device_id,
+                cover_name,
+            )
+            if unready_msg is not None:
+                LOGGER.warning(
+                    "%s Cover calibration for %s skipped: %s",
+                    self._gateway_handler.log_id,
+                    cover_entity_id,
+                    unready_msg,
+                )
+                persistent_notification.async_create(
+                    self.hass,
+                    unready_msg,
+                    title=f"Cover calibration failed: {cover_name}",
+                    notification_id=notification_id,
+                )
+                return
             try:
                 await self.hass.services.async_call(
                     DOMAIN,
@@ -663,15 +722,18 @@ class CalibrateCoverButtonEntity(ButtonEntity, MyHOMEEntity):
                     notification_id=notification_id,
                 )
             else:
-                persistent_notification.async_dismiss(self.hass, notification_id)
                 if entry_id is not None:
-                    async_delete_cover_cutoff_issue(self.hass, entry_id, self._device_id)
+                    async_delete_cover_cutoff_issue(
+                        self.hass, entry_id, self._device_id, cover_entity_id
+                    )
+                else:
+                    persistent_notification.async_dismiss(self.hass, notification_id)
 
         task_name = f"myhome_calibrate_cover_{self._device_id}"
-        if isinstance(self._config_entry, ConfigEntry) and hasattr(
-            self._config_entry, "async_create_background_task"
+        if isinstance(cfg_entry, ConfigEntry) and hasattr(
+            cfg_entry, "async_create_background_task"
         ):
-            self._config_entry.async_create_background_task(
+            cfg_entry.async_create_background_task(
                 self.hass, _run_calibration(), name=task_name
             )
         else:
@@ -758,6 +820,8 @@ class CalibrateAllCoversButtonEntity(ButtonEntity):
             )
             if who is not None and who != "2":
                 continue
+            if device_id and is_exposed_on_bus(self.hass, self._config_entry, 2, device_id):
+                continue
             if device_id and _is_non_calibratable_cover(
                 self.hass,
                 self._config_entry,
@@ -773,17 +837,30 @@ class CalibrateAllCoversButtonEntity(ButtonEntity):
         if not self.available:
             LOGGER.warning("%s Cannot calibrate covers: gateway unavailable or no covers present.", self._gateway_handler.log_id)
             return
-        entity_ids = self._cover_entity_ids()
-        LOGGER.info("%s Calibrating %d covers sequentially.", self._gateway_handler.log_id, len(entity_ids))
-        hub = get_calibration_hub(self._gateway_handler)
-        gen = hub.begin_batch()
-        entry_id = (
-            self._config_entry.entry_id
-            if isinstance(getattr(self._config_entry, "entry_id", None), str)
-            else None
-        )
         notification_id = (
             f"{DOMAIN}_calibrate_all_covers_{re.sub(r'[^a-zA-Z0-9_-]', '_', self._gateway_handler.mac)}"
+        )
+        hub = get_calibration_hub(self._gateway_handler)
+        if hub.is_batch_running:
+            LOGGER.warning(
+                "%s Batch cover calibration is already running; ignoring duplicate press.",
+                self._gateway_handler.log_id,
+            )
+            persistent_notification.async_create(
+                self.hass,
+                "A batch cover calibration is already in progress on this gateway.",
+                title="Cover calibration already running",
+                notification_id=notification_id,
+            )
+            return
+        entity_ids = self._cover_entity_ids()
+        LOGGER.info("%s Calibrating %d covers sequentially.", self._gateway_handler.log_id, len(entity_ids))
+        gen = hub.begin_batch()
+        cfg_entry = self._config_entry
+        entry_id = (
+            cfg_entry.entry_id
+            if cfg_entry is not None and isinstance(getattr(cfg_entry, "entry_id", None), str)
+            else None
         )
 
         async def _run_batch() -> None:
@@ -801,8 +878,25 @@ class CalibrateAllCoversButtonEntity(ButtonEntity):
                         self.hass,
                         entity_id,
                         self._gateway_handler.mac,
-                        self._config_entry,
+                        cfg_entry,
                     )
+                    unready_msg = _check_cover_ready_for_calibration(
+                        self.hass,
+                        cfg_entry,
+                        self._gateway_handler,
+                        entity_id,
+                        dev_id,
+                        label,
+                    )
+                    if unready_msg is not None:
+                        LOGGER.warning(
+                            "%s Batch calibration for %s skipped: %s",
+                            self._gateway_handler.log_id,
+                            entity_id,
+                            unready_msg,
+                        )
+                        failed.append((label, unready_msg))
+                        continue
                     try:
                         await self.hass.services.async_call(
                             DOMAIN,
@@ -851,7 +945,9 @@ class CalibrateAllCoversButtonEntity(ButtonEntity):
                     else:
                         succeeded.append(label)
                         if entry_id is not None and dev_id is not None:
-                            async_delete_cover_cutoff_issue(self.hass, entry_id, dev_id)
+                            async_delete_cover_cutoff_issue(
+                                self.hass, entry_id, dev_id, entity_id
+                            )
                     if hub.is_batch_stopped(gen):
                         stopped_remaining = list(entity_ids[idx + 1 :])
                         break
@@ -879,10 +975,10 @@ class CalibrateAllCoversButtonEntity(ButtonEntity):
             )
 
         task_name = f"myhome_calibrate_all_covers_{self._gateway_handler.mac}"
-        if isinstance(self._config_entry, ConfigEntry) and hasattr(
-            self._config_entry, "async_create_background_task"
+        if isinstance(cfg_entry, ConfigEntry) and hasattr(
+            cfg_entry, "async_create_background_task"
         ):
-            self._config_entry.async_create_background_task(
+            cfg_entry.async_create_background_task(
                 self.hass, _run_batch(), name=task_name
             )
         else:

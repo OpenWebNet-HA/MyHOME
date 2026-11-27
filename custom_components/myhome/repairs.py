@@ -10,6 +10,7 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 import voluptuous as vol
+from homeassistant.components import persistent_notification
 from homeassistant.components.repairs import RepairsFlow, RepairsFlowResult
 from homeassistant.const import CONF_MAC
 from homeassistant.core import HomeAssistant, callback
@@ -29,6 +30,7 @@ from .const import (
     CALIBRATION_MAX_RUN,
     CALIBRATION_MIN_RUN,
     CONF_BUS_TOPOLOGY,
+    CONF_COVER_TRAVEL_TIMES,
     CONF_DELEGATED_WHOS,
     CONF_GATEWAY_ROLE,
     CONF_PRIMARY_GATEWAY,
@@ -39,10 +41,9 @@ from .const import (
     ISSUE_SHARED_BUS_DETECTED,
     ROLE_PRIMARY,
     ROLE_SECONDARY,
-    SERVICE_RESET_COVER_TRAVEL_TIME,
-    SERVICE_SET_COVER_TRAVEL_TIME,
     TOPOLOGY_SHARED,
 )
+from .cover_calibration import _actuator_cutoff
 from .data import get_runtime_data
 from .discovery import parse_unique_id
 from .topology import (
@@ -52,6 +53,7 @@ from .topology import (
     infer_shared_bus_topology,
     validate_shared_bus_topology,
 )
+from .typing_compat import flow_schema
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -546,6 +548,14 @@ def _cover_issue_slug(device_id: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_-]", "_", str(device_id))
 
 
+def cover_calibration_notification_id(entry_id: str | None, device_id: str) -> str:
+    """Return the deterministic persistent_notification ID for one cover's calibration status."""
+    slug = _cover_issue_slug(device_id)
+    if entry_id:
+        return f"{DOMAIN}_cover_calibration_{entry_id}_{slug}"
+    return f"{DOMAIN}_cover_calibration_{slug}"
+
+
 def async_create_cover_cutoff_issue(
     hass: HomeAssistant,
     entry_id: str,
@@ -585,12 +595,18 @@ def async_create_cover_cutoff_issue(
 
 
 def async_delete_cover_cutoff_issue(
-    hass: HomeAssistant, entry_id: str, device_id: str
+    hass: HomeAssistant,
+    entry_id: str,
+    device_id: str,
+    entity_id: str | None = None,
 ) -> None:
-    """Delete any active cutoff or legacy cutoff repair issue for a cover."""
+    """Delete any active cutoff or legacy cutoff repair issue and dismiss its notification."""
     slug = _cover_issue_slug(device_id)
     async_delete_issue(hass, DOMAIN, f"{ISSUE_COVER_CALIBRATION_CUTOFF}_{entry_id}_{slug}")
     async_delete_issue(hass, DOMAIN, f"{ISSUE_COVER_LEGACY_CUTOFF}_{entry_id}_{slug}")
+    persistent_notification.async_dismiss(
+        hass, cover_calibration_notification_id(entry_id, device_id)
+    )
 
 
 def async_sync_legacy_cover_cutoff_issues(
@@ -654,8 +670,8 @@ def async_sync_legacy_cover_cutoff_issues(
             async_delete_issue(hass, DOMAIN, issue_id)
 
 
-def _travel_time_schema(default_down: float, default_up: float) -> vol.Schema:
-    """Return the voluptuous schema for entering down/up travel times."""
+def _travel_time_schema(default_down: float, default_up: float) -> Any:
+    """Return the flow schema for entering down/up travel times."""
     num_selector = selector.NumberSelector(
         selector.NumberSelectorConfig(
             min=CALIBRATION_MIN_RUN,
@@ -665,11 +681,28 @@ def _travel_time_schema(default_down: float, default_up: float) -> vol.Schema:
             mode=selector.NumberSelectorMode.BOX,
         )
     )
-    return vol.Schema(
+    return flow_schema(
         {
             vol.Required("travel_time_down", default=round(default_down, 1)): num_selector,
             vol.Required("travel_time_up", default=round(default_up, 1)): num_selector,
         }
+    )
+
+
+def _legacy_zero_padded_alias(device_id: str) -> str | None:
+    """Return legacy 4-digit ``000X`` option key for canonical ``01``..``09`` covers."""
+    base, sep, rest = str(device_id).partition("#")
+    if len(base) == 2 and base[0] == "0" and base[1] != "0":
+        return f"00{base}{sep}{rest}"
+    return None
+
+
+def _cover_is_moving_or_settling(cover: Any) -> bool:
+    """Return True if the cover motor is moving or inside its pre-move settle pause."""
+    return bool(
+        getattr(cover, "is_opening", False)
+        or getattr(cover, "is_closing", False)
+        or getattr(cover, "_pre_move_stop_gen", None) is not None
     )
 
 
@@ -696,8 +729,8 @@ class CoverManualCalibrationRepairFlow(RepairsFlow):
         self._manual_timing_cover: Any | None = None
         self._pre_run_snapshot: dict[str, Any] | None = None
 
-    def _resolve_cover_and_entity(self) -> tuple[Any | None, str | None]:
-        """Resolve the live cover entity (if loaded) and its entity_id."""
+    def _resolve_live_cover(self) -> tuple[Any | None, str | None]:
+        """Resolve the live loaded cover entity and its entity_id."""
         cover: Any | None = None
         entry = (
             self.hass.config_entries.async_get_entry(self._entry_id)
@@ -716,12 +749,7 @@ class CoverManualCalibrationRepairFlow(RepairsFlow):
             if entity_comp is not None and hasattr(entity_comp, "get_entity"):
                 cover = entity_comp.get_entity(entity_id)
 
-        if (
-            cover is None
-            and (not entity_id or ent_reg.async_get(entity_id) is None)
-            and self._entry_id
-            and self._device_id
-        ):
+        if cover is None and self._entry_id and self._device_id:
             gw_mac = runtime.mac if runtime is not None else ""
             entry_mac_val = (
                 str(entry.data.get(CONF_MAC, gw_mac))
@@ -729,7 +757,11 @@ class CoverManualCalibrationRepairFlow(RepairsFlow):
                 else gw_mac
             )
             for reg_entry in er.async_entries_for_config_entry(ent_reg, self._entry_id):
-                if reg_entry.domain != "cover" or not reg_entry.unique_id:
+                if (
+                    reg_entry.domain != "cover"
+                    or not reg_entry.unique_id
+                    or reg_entry.disabled_by is not None
+                ):
                     continue
                 who, dev_id = parse_unique_id(reg_entry.unique_id, gw_mac, entry_mac_val)
                 if (who is None or who == "2") and dev_id == self._device_id:
@@ -739,22 +771,15 @@ class CoverManualCalibrationRepairFlow(RepairsFlow):
                         cover = entity_comp.get_entity(entity_id)
                     break
 
-        if cover is not None:
-            resolved_id = getattr(cover, "entity_id", None) or entity_id
-            if resolved_id:
-                self._entity_id = resolved_id
-            return cover, resolved_id
+        if cover is None:
+            return None, None
 
-        if entity_id and (
-            ent_reg.async_get(entity_id) is not None
-            or self.hass.states.get(entity_id) is not None
-        ):
-            self._entity_id = entity_id
-            return None, entity_id
+        resolved_id = getattr(cover, "entity_id", None) or entity_id
+        if resolved_id:
+            self._entity_id = resolved_id
+        return cover, resolved_id
 
-        return None, None
-
-    def _resolve_cover_name(self, cover: Any | None, entity_id: str | None) -> str:
+    def _resolve_cover_name(self, cover: Any, entity_id: str | None) -> str:
         """Resolve the user-visible cover name from registry, entity, or state."""
         if entity_id:
             ent_reg = er.async_get(self.hass)
@@ -771,34 +796,91 @@ class CoverManualCalibrationRepairFlow(RepairsFlow):
                         return str(dev.name_by_user or dev.name)
                 if reg_entry.original_name:
                     return reg_entry.original_name
-        if cover is not None:
-            display = getattr(cover, "_display_name", None)
-            if isinstance(display, str) and display:
-                return display
+        display = getattr(cover, "_display_name", None)
+        if isinstance(display, str) and display:
+            return display
         if entity_id:
             state = self.hass.states.get(entity_id)
             if state is not None and state.attributes.get("friendly_name"):
                 return str(state.attributes["friendly_name"])
         return self._cover_name
 
-    def _build_detail(self) -> str:
-        """Build a concise explanation shown in the init menu description."""
-        if self._reason == "legacy":
-            return (
-                f"Stored travel times are {self._stored_down or '?'} s (down) and "
-                f"{self._stored_up or '?'} s (up), which matches an actuator run-time limit."
-            )
-        if self._seconds and self._limit:
-            return (
-                f"Auto-calibration ended after {self._seconds} s at the actuator's "
-                f"{self._limit} s run-time limit rather than the physical end stop."
-            )
-        if self._limit:
-            return (
-                f"Auto-calibration hit the actuator's {self._limit} s run-time limit "
-                "rather than the physical end stop."
-            )
-        return "Auto-calibration hit the actuator's run-time limit rather than the physical end stop."
+    def _is_native_cover(self, cover: Any, entity_id: str | None) -> bool:
+        """Return True if the cover reports native position rather than timed travel."""
+        if bool(getattr(cover, "_advanced", False)):
+            return True
+        if not self._device_id:
+            return False
+        from .cover import is_native_point_cover
+
+        entry = (
+            self.hass.config_entries.async_get_entry(self._entry_id)
+            if self._entry_id
+            else None
+        )
+        gw_mac = str(getattr(getattr(cover, "_gateway_handler", None), "mac", "") or "")
+        return is_native_point_cover(
+            self.hass, entry, gw_mac, self._device_id, entity_id=entity_id
+        )
+
+    def _prune_native_stale_calibration_and_abort(
+        self, entity_id: str | None
+    ) -> RepairsFlowResult:
+        """Clean stale travel-time records for a promoted native cover and abort."""
+        if self._entry_id:
+            entry = self.hass.config_entries.async_get_entry(self._entry_id)
+            if entry is not None and self._device_id:
+                options = dict(getattr(entry, "options", None) or {})
+                stored = options.get(CONF_COVER_TRAVEL_TIMES)
+                if isinstance(stored, Mapping):
+                    alias = _legacy_zero_padded_alias(self._device_id)
+                    keys_to_drop = {self._device_id} | ({alias} if alias is not None else set())
+                    if any(k in stored for k in keys_to_drop):
+                        updated = {k: v for k, v in stored.items() if k not in keys_to_drop}
+                        if updated:
+                            options[CONF_COVER_TRAVEL_TIMES] = updated
+                        else:
+                            options.pop(CONF_COVER_TRAVEL_TIMES, None)
+                        self.hass.config_entries.async_update_entry(entry, options=options)
+            if self._device_id:
+                async_delete_cover_cutoff_issue(
+                    self.hass, self._entry_id, self._device_id, entity_id
+                )
+            if entry is not None:
+                from .cover import async_sync_cover_calibration_issues
+
+                async_sync_cover_calibration_issues(self.hass, entry)
+        return self.async_abort(reason="cover_reports_position")
+
+    def _preflight_cover(self) -> tuple[Any | None, str | None, RepairsFlowResult | None]:
+        """Resolve the live cover and verify it is still a timed WHO=2 cover."""
+        cover, entity_id = self._resolve_live_cover()
+        if cover is None:
+            self._moving = False
+            self._restore_manual_timing()
+            return None, None, self.async_abort(reason="cover_missing")
+        if self._is_native_cover(cover, entity_id):
+            self._moving = False
+            self._restore_manual_timing()
+            return None, None, self._prune_native_stale_calibration_and_abort(entity_id)
+        self._cover_name = self._resolve_cover_name(cover, entity_id)
+        return cover, entity_id, None
+
+    def _preflight_motion(self, cover: Any) -> RepairsFlowResult | None:
+        """Verify cover availability, lock state, and exclusive timing ownership before moving."""
+        if not bool(getattr(cover, "available", True)):
+            return self.async_abort(reason="cover_unavailable")
+        if getattr(cover, "actuator_locked", None) is True:
+            return self.async_abort(reason="cover_locked")
+        hub = getattr(cover, "calibration_hub", None)
+        if bool(getattr(cover, "_calibrating", False)) or bool(
+            getattr(hub, "is_calibrating", False)
+        ):
+            return self.async_abort(reason="calibration_in_progress")
+        if hasattr(cover, "begin_manual_timing") and not cover.begin_manual_timing(self):
+            return self.async_abort(reason="calibration_in_progress")
+        self._manual_timing_cover = cover
+        return None
 
     def _read_last_run(self, cover: Any | None, entity_id: str | None) -> dict[str, Any] | None:
         """Read the current last_run metadata from the cover entity or HA state."""
@@ -820,6 +902,17 @@ class CoverManualCalibrationRepairFlow(RepairsFlow):
                     }
         return None
 
+    def _usable_prefill_value(self, raw_val: Any) -> float | None:
+        """Return a valid travel-time prefill value, rejecting actuator cutoff durations."""
+        if not isinstance(raw_val, (int, float)) or isinstance(raw_val, bool):
+            return None
+        val = float(raw_val)
+        if not (CALIBRATION_MIN_RUN <= val <= CALIBRATION_MAX_RUN):
+            return None
+        if self._reason in ("cutoff", "legacy") and _actuator_cutoff(val) is not None:
+            return None
+        return val
+
     def _default_travel_times(
         self, cover: Any | None, entity_id: str | None
     ) -> tuple[float, float]:
@@ -838,39 +931,26 @@ class CoverManualCalibrationRepairFlow(RepairsFlow):
             if cover is not None
             else (state.attributes.get("travel_time_up") if state is not None else None)
         )
-        if (
-            isinstance(raw_down, (int, float))
-            and not isinstance(raw_down, bool)
-            and CALIBRATION_MIN_RUN <= float(raw_down) <= CALIBRATION_MAX_RUN
-        ):
-            down = float(raw_down)
-        if (
-            isinstance(raw_up, (int, float))
-            and not isinstance(raw_up, bool)
-            and CALIBRATION_MIN_RUN <= float(raw_up) <= CALIBRATION_MAX_RUN
-        ):
-            up = float(raw_up)
+        if (usable_down := self._usable_prefill_value(raw_down)) is not None:
+            down = usable_down
+        if (usable_up := self._usable_prefill_value(raw_up)) is not None:
+            up = usable_up
 
         last_run = self._read_last_run(cover, entity_id)
         if isinstance(last_run, Mapping):
-            lr_sec = last_run.get("seconds")
             lr_dir = last_run.get("direction")
-            if (
-                isinstance(lr_sec, (int, float))
-                and not isinstance(lr_sec, bool)
-                and CALIBRATION_MIN_RUN <= float(lr_sec) <= CALIBRATION_MAX_RUN
-            ):
+            if (usable_lr := self._usable_prefill_value(last_run.get("seconds"))) is not None:
                 if lr_dir == "close":
-                    down = float(lr_sec)
+                    down = usable_lr
                 elif lr_dir == "open":
-                    up = float(lr_sec)
+                    up = usable_lr
 
         return round(down, 1), round(up, 1)
 
     def _fresh_last_run_seconds(
         self, cover: Any | None, entity_id: str | None, direction: str
     ) -> float | None:
-        """Return bus-anchored last_run_seconds if it matches this run and direction."""
+        """Return clamped bus-anchored last_run_seconds if it matches this run and direction."""
         last_run = self._read_last_run(cover, entity_id)
         if not isinstance(last_run, Mapping):
             return None
@@ -885,50 +965,54 @@ class CoverManualCalibrationRepairFlow(RepairsFlow):
                 last_run.get("ended_at") is not None and same_ended
             ):
                 return None
-        return round(max(CALIBRATION_MIN_RUN, float(sec)), 1)
+        clamped = min(CALIBRATION_MAX_RUN, max(CALIBRATION_MIN_RUN, float(sec)))
+        return round(clamped, 1)
 
     async def _start_motion(
-        self, cover: Any | None, entity_id: str | None, direction: str
-    ) -> None:
-        """Disable early timer settling and start closing or opening the cover."""
+        self, cover: Any, entity_id: str | None, direction: str
+    ) -> RepairsFlowResult | None:
+        """Claim manual timing and start closing or opening the cover."""
+        abort_res = self._preflight_motion(cover)
+        if abort_res is not None:
+            return abort_res
         self._pre_run_snapshot = self._read_last_run(cover, entity_id)
-        if cover is not None:
-            if hasattr(cover, "begin_manual_timing"):
-                cover.begin_manual_timing()
-                self._manual_timing_cover = cover
+        self._run_started_at = time.monotonic()
+        self._moving = True
+        try:
             if direction == "close":
                 await cover.async_close_cover()
             else:
                 await cover.async_open_cover()
-        else:
-            service = "close_cover" if direction == "close" else "open_cover"
-            await self.hass.services.async_call(
-                "cover", service, {"entity_id": entity_id}, blocking=True
-            )
-        self._run_started_at = time.monotonic()
-        self._moving = True
+        except BaseException:
+            self._moving = False
+            self._run_started_at = None
+            self._restore_manual_timing()
+            raise
+        return None
 
     async def _stop_motion_and_measure(
-        self, cover: Any | None, entity_id: str | None, direction: str
+        self, cover: Any, entity_id: str | None, direction: str
     ) -> float:
-        """Stop the cover, capture bus-anchored or monotonic duration, and restore timer settle."""
-        elapsed_fallback = (
-            round(max(CALIBRATION_MIN_RUN, time.monotonic() - self._run_started_at), 1)
-            if self._run_started_at is not None
+        """Stop the cover if still moving, capture clamped duration, and restore timer settle."""
+        _was_moving = self._moving
+        self._moving = False
+        started_at = self._run_started_at
+        self._run_started_at = None
+        raw_fallback = (
+            time.monotonic() - started_at
+            if started_at is not None
             else float(DEFAULT_TRAVEL_TIME)
         )
+        elapsed_fallback = round(
+            min(CALIBRATION_MAX_RUN, max(CALIBRATION_MIN_RUN, raw_fallback)), 1
+        )
         try:
-            if cover is not None:
+            if _cover_is_moving_or_settling(cover):
                 await cover.async_stop_cover()
-            else:
-                await self.hass.services.async_call(
-                    "cover", "stop_cover", {"entity_id": entity_id}, blocking=True
-                )
 
             measured = self._fresh_last_run_seconds(cover, entity_id, direction)
             if (
                 measured is None
-                and cover is not None
                 and getattr(cover, "_run_started_at", None) is not None
             ):
                 deadline = time.monotonic() + _STOP_ECHO_WAIT_SECONDS
@@ -939,29 +1023,24 @@ class CoverManualCalibrationRepairFlow(RepairsFlow):
                         break
             return measured if measured is not None else elapsed_fallback
         finally:
-            self._moving = False
-            self._run_started_at = None
-            target = self._manual_timing_cover or cover
-            self._manual_timing_cover = None
-            if target is not None and hasattr(target, "end_manual_timing"):
-                target.end_manual_timing()
+            self._restore_manual_timing()
 
     def _restore_manual_timing(self) -> None:
-        """Restore timer settling without stopping the motor."""
+        """Restore timer settling for this flow's owner token without stopping the motor."""
         target = self._manual_timing_cover
         self._manual_timing_cover = None
         if target is not None and hasattr(target, "end_manual_timing"):
-            target.end_manual_timing()
+            target.end_manual_timing(self)
 
     async def _async_validate_and_save(
         self,
         step_id: str,
-        cover: Any | None,
+        cover: Any,
         entity_id: str | None,
         user_input: dict[str, Any],
         placeholders: dict[str, str],
     ) -> RepairsFlowResult:
-        """Validate submitted down/up travel times, persist via service, and clear issues."""
+        """Validate submitted down/up travel times, persist on live cover, and clear issues."""
         errors: dict[str, str] = {}
         try:
             down = float(user_input["travel_time_down"])
@@ -980,37 +1059,42 @@ class CoverManualCalibrationRepairFlow(RepairsFlow):
 
         if not errors:
             try:
-                if entity_id:
-                    await self.hass.services.async_call(
-                        DOMAIN,
-                        SERVICE_SET_COVER_TRAVEL_TIME,
-                        {
-                            "entity_id": entity_id,
-                            "travel_time_down": round(down, 1),
-                            "travel_time_up": round(up, 1),
-                        },
-                        blocking=True,
-                    )
-                elif cover is not None and hasattr(cover, "async_set_travel_time"):
-                    await cover.async_set_travel_time(
-                        travel_time_down=round(down, 1),
-                        travel_time_up=round(up, 1),
-                    )
-                else:
-                    return self.async_abort(reason="cover_missing")
-            except ServiceValidationError:
-                errors["base"] = "invalid_travel_time"
+                await cover.async_set_travel_time(
+                    travel_time_down=round(down, 1),
+                    travel_time_up=round(up, 1),
+                )
+            except ServiceValidationError as err:
+                err_key = getattr(err, "translation_key", None)
+                errors["base"] = (
+                    err_key
+                    if isinstance(err_key, str)
+                    and err_key
+                    and err_key != "travel_time_out_of_range"
+                    else "invalid_travel_time"
+                )
             except HomeAssistantError as err:
                 _LOGGER.warning("Failed saving manual travel times for %s: %s", entity_id, err)
                 return self.async_abort(reason="save_failed")
             else:
                 if self._entry_id and self._device_id:
-                    async_delete_cover_cutoff_issue(self.hass, self._entry_id, self._device_id)
+                    async_delete_cover_cutoff_issue(
+                        self.hass, self._entry_id, self._device_id, entity_id
+                    )
                 return self.async_create_entry(data={})
 
+        clamped_down = (
+            min(CALIBRATION_MAX_RUN, max(CALIBRATION_MIN_RUN, down))
+            if math.isfinite(down)
+            else float(DEFAULT_TRAVEL_TIME)
+        )
+        clamped_up = (
+            min(CALIBRATION_MAX_RUN, max(CALIBRATION_MIN_RUN, up))
+            if math.isfinite(up)
+            else float(DEFAULT_TRAVEL_TIME)
+        )
         return self.async_show_form(
             step_id=step_id,
-            data_schema=_travel_time_schema(down, up),
+            data_schema=_travel_time_schema(clamped_down, clamped_up),
             errors=errors,
             description_placeholders=placeholders,
         )
@@ -1019,38 +1103,46 @@ class CoverManualCalibrationRepairFlow(RepairsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> RepairsFlowResult:
         """Show the repair menu: guided timing, manual entry, or reset to default."""
-        cover, entity_id = self._resolve_cover_and_entity()
-        if cover is None and entity_id is None:
-            return self.async_abort(reason="cover_missing")
-        self._cover_name = self._resolve_cover_name(cover, entity_id)
+        _cover, _entity_id, abort_res = self._preflight_cover()
+        if abort_res is not None:
+            return abort_res
+        if self._reason == "legacy":
+            placeholders = {
+                "name": self._cover_name,
+                "down": self._stored_down or "?",
+                "up": self._stored_up or "?",
+            }
+        else:
+            placeholders = {
+                "name": self._cover_name,
+                "seconds": self._seconds or "?",
+                "limit": self._limit or "?",
+            }
         return self.async_show_menu(
             step_id="init",
             menu_options=["timed_close_ready", "manual_entry", "reset_default"],
-            description_placeholders={
-                "name": self._cover_name,
-                "detail": self._build_detail(),
-            },
+            description_placeholders=placeholders,
         )
 
     async def async_step_timed_close_ready(
         self, user_input: dict[str, Any] | None = None
     ) -> RepairsFlowResult:
         """Prepare to start a timed closing run."""
-        cover, entity_id = self._resolve_cover_and_entity()
-        if cover is None and entity_id is None:
-            return self.async_abort(reason="cover_missing")
-        self._cover_name = self._resolve_cover_name(cover, entity_id)
+        cover, entity_id, abort_res = self._preflight_cover()
+        if abort_res is not None or cover is None:
+            return abort_res or self.async_abort(reason="cover_missing")
         if user_input is not None:
             try:
-                await self._start_motion(cover, entity_id, "close")
+                motion_abort = await self._start_motion(cover, entity_id, "close")
             except HomeAssistantError as err:
-                self._restore_manual_timing()
                 _LOGGER.warning("Failed starting timed close for %s: %s", entity_id, err)
                 return self.async_abort(reason="save_failed")
+            if motion_abort is not None:
+                return motion_abort
             return await self.async_step_timed_close_stop()
         return self.async_show_form(
             step_id="timed_close_ready",
-            data_schema=vol.Schema({}),
+            data_schema=flow_schema({}),
             description_placeholders={"name": self._cover_name},
         )
 
@@ -1058,12 +1150,9 @@ class CoverManualCalibrationRepairFlow(RepairsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> RepairsFlowResult:
         """Stop the cover when it reaches the closed end stop and record down time."""
-        cover, entity_id = self._resolve_cover_and_entity()
-        if cover is None and entity_id is None:
-            self._restore_manual_timing()
-            self._moving = False
-            return self.async_abort(reason="cover_missing")
-        self._cover_name = self._resolve_cover_name(cover, entity_id)
+        cover, entity_id, abort_res = self._preflight_cover()
+        if abort_res is not None or cover is None:
+            return abort_res or self.async_abort(reason="cover_missing")
         if user_input is not None:
             try:
                 self._measured_down = await self._stop_motion_and_measure(cover, entity_id, "close")
@@ -1073,7 +1162,7 @@ class CoverManualCalibrationRepairFlow(RepairsFlow):
             return await self.async_step_timed_open_ready()
         return self.async_show_form(
             step_id="timed_close_stop",
-            data_schema=vol.Schema({}),
+            data_schema=flow_schema({}),
             description_placeholders={"name": self._cover_name},
         )
 
@@ -1081,10 +1170,9 @@ class CoverManualCalibrationRepairFlow(RepairsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> RepairsFlowResult:
         """Optionally reuse closing time or start a timed opening run."""
-        cover, entity_id = self._resolve_cover_and_entity()
-        if cover is None and entity_id is None:
-            return self.async_abort(reason="cover_missing")
-        self._cover_name = self._resolve_cover_name(cover, entity_id)
+        cover, entity_id, abort_res = self._preflight_cover()
+        if abort_res is not None or cover is None:
+            return abort_res or self.async_abort(reason="cover_missing")
         down_val = (
             self._measured_down if self._measured_down is not None else float(DEFAULT_TRAVEL_TIME)
         )
@@ -1093,15 +1181,16 @@ class CoverManualCalibrationRepairFlow(RepairsFlow):
                 self._measured_up = down_val
                 return await self.async_step_confirm_save()
             try:
-                await self._start_motion(cover, entity_id, "open")
+                motion_abort = await self._start_motion(cover, entity_id, "open")
             except HomeAssistantError as err:
-                self._restore_manual_timing()
                 _LOGGER.warning("Failed starting timed open for %s: %s", entity_id, err)
                 return self.async_abort(reason="save_failed")
+            if motion_abort is not None:
+                return motion_abort
             return await self.async_step_timed_open_stop()
         return self.async_show_form(
             step_id="timed_open_ready",
-            data_schema=vol.Schema(
+            data_schema=flow_schema(
                 {vol.Optional("reuse_down_for_up", default=False): selector.BooleanSelector()}
             ),
             description_placeholders={
@@ -1114,12 +1203,9 @@ class CoverManualCalibrationRepairFlow(RepairsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> RepairsFlowResult:
         """Stop the cover when it reaches the open end stop and record up time."""
-        cover, entity_id = self._resolve_cover_and_entity()
-        if cover is None and entity_id is None:
-            self._restore_manual_timing()
-            self._moving = False
-            return self.async_abort(reason="cover_missing")
-        self._cover_name = self._resolve_cover_name(cover, entity_id)
+        cover, entity_id, abort_res = self._preflight_cover()
+        if abort_res is not None or cover is None:
+            return abort_res or self.async_abort(reason="cover_missing")
         if user_input is not None:
             try:
                 self._measured_up = await self._stop_motion_and_measure(cover, entity_id, "open")
@@ -1129,7 +1215,7 @@ class CoverManualCalibrationRepairFlow(RepairsFlow):
             return await self.async_step_confirm_save()
         return self.async_show_form(
             step_id="timed_open_stop",
-            data_schema=vol.Schema({}),
+            data_schema=flow_schema({}),
             description_placeholders={"name": self._cover_name},
         )
 
@@ -1137,10 +1223,9 @@ class CoverManualCalibrationRepairFlow(RepairsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> RepairsFlowResult:
         """Manually enter closing and opening travel times."""
-        cover, entity_id = self._resolve_cover_and_entity()
-        if cover is None and entity_id is None:
-            return self.async_abort(reason="cover_missing")
-        self._cover_name = self._resolve_cover_name(cover, entity_id)
+        cover, entity_id, abort_res = self._preflight_cover()
+        if abort_res is not None or cover is None:
+            return abort_res or self.async_abort(reason="cover_missing")
         placeholders = {"name": self._cover_name}
         if user_input is not None:
             return await self._async_validate_and_save(
@@ -1157,10 +1242,9 @@ class CoverManualCalibrationRepairFlow(RepairsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> RepairsFlowResult:
         """Review and save measured travel times."""
-        cover, entity_id = self._resolve_cover_and_entity()
-        if cover is None and entity_id is None:
-            return self.async_abort(reason="cover_missing")
-        self._cover_name = self._resolve_cover_name(cover, entity_id)
+        cover, entity_id, abort_res = self._preflight_cover()
+        if abort_res is not None or cover is None:
+            return abort_res or self.async_abort(reason="cover_missing")
         fallback_down, fallback_up = self._default_travel_times(cover, entity_id)
         down_val = self._measured_down if self._measured_down is not None else fallback_down
         up_val = self._measured_up if self._measured_up is not None else fallback_up
@@ -1183,32 +1267,23 @@ class CoverManualCalibrationRepairFlow(RepairsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> RepairsFlowResult:
         """Confirm resetting travel times back to default/YAML and clearing repair issues."""
-        cover, entity_id = self._resolve_cover_and_entity()
-        if cover is None and entity_id is None:
-            return self.async_abort(reason="cover_missing")
-        self._cover_name = self._resolve_cover_name(cover, entity_id)
+        cover, entity_id, abort_res = self._preflight_cover()
+        if abort_res is not None or cover is None:
+            return abort_res or self.async_abort(reason="cover_missing")
         if user_input is not None:
             try:
-                if entity_id:
-                    await self.hass.services.async_call(
-                        DOMAIN,
-                        SERVICE_RESET_COVER_TRAVEL_TIME,
-                        {"entity_id": entity_id},
-                        blocking=True,
-                    )
-                elif cover is not None and hasattr(cover, "async_reset_travel_time"):
-                    await cover.async_reset_travel_time()
-                else:
-                    return self.async_abort(reason="cover_missing")
+                await cover.async_reset_travel_time()
             except HomeAssistantError as err:
                 _LOGGER.warning("Failed resetting travel times for %s: %s", entity_id, err)
                 return self.async_abort(reason="save_failed")
             if self._entry_id and self._device_id:
-                async_delete_cover_cutoff_issue(self.hass, self._entry_id, self._device_id)
+                async_delete_cover_cutoff_issue(
+                    self.hass, self._entry_id, self._device_id, entity_id
+                )
             return self.async_create_entry(data={})
         return self.async_show_form(
             step_id="reset_default",
-            data_schema=vol.Schema({}),
+            data_schema=flow_schema({}),
             description_placeholders={"name": self._cover_name},
         )
 
@@ -1220,25 +1295,21 @@ class CoverManualCalibrationRepairFlow(RepairsFlow):
             return
         self._moving = False
         self._run_started_at = None
+        hass: HomeAssistant | None = getattr(self, "hass", None)
         cover = self._manual_timing_cover
-        if cover is None and self.hass is not None:
-            cover, _ = self._resolve_cover_and_entity()
+        if cover is None and hass is not None:
+            cover, _ = self._resolve_live_cover()
         self._manual_timing_cover = None
         if cover is not None and hasattr(cover, "end_manual_timing"):
-            cover.end_manual_timing()
-        if self.hass is None:
+            cover.end_manual_timing(self)
+        if hass is None:
             return
-        if cover is not None and hasattr(cover, "async_stop_cover"):
-            self.hass.async_create_task(cover.async_stop_cover())
-        elif self._entity_id:
-            self.hass.async_create_task(
-                self.hass.services.async_call(
-                    "cover",
-                    "stop_cover",
-                    {"entity_id": self._entity_id},
-                    blocking=False,
-                )
-            )
+        if (
+            cover is not None
+            and hasattr(cover, "async_stop_cover")
+            and _cover_is_moving_or_settling(cover)
+        ):
+            hass.async_create_task(cover.async_stop_cover())
 
 
 async def async_create_fix_flow(
@@ -1258,7 +1329,14 @@ async def async_create_fix_flow(
     if issue_id.startswith(f"{ISSUE_COVER_CALIBRATION_CUTOFF}_") or issue_id.startswith(
         f"{ISSUE_COVER_LEGACY_CUTOFF}_"
     ):
-        cover_flow: RepairsFlow = CoverManualCalibrationRepairFlow(data or {})
+        flow_data = dict(data or {})
+        if "reason" not in flow_data:
+            flow_data["reason"] = (
+                "legacy"
+                if issue_id.startswith(f"{ISSUE_COVER_LEGACY_CUTOFF}_")
+                else "cutoff"
+            )
+        cover_flow: RepairsFlow = CoverManualCalibrationRepairFlow(flow_data)
         cover_flow.hass = hass
         return cover_flow
     from homeassistant.components.repairs import ConfirmRepairFlow
