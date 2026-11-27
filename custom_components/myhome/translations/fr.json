@@ -378,7 +378,7 @@
     },
     "error": {
       "invalid_ip": "Adresse IP invalide",
-      "invalid_worker_count": "Workers must be between 1 and 10",
+      "invalid_worker_count": "Le nombre de workers doit être compris entre 1 et 10",
       "worker_count_above_gateway_limit": "Le {model} accepte au maximum {session_limit} session(s) de commande simultanée(s) ; au-delà, il cesse de répondre.",
       "invalid_standalone_zone": "Les thermostats autonomes doivent être des numéros de zone compris entre 1 et 99, séparés par des virgules (ex. 2, 7).",
       "invalid_config_path": "Fichier de configuration inexistant à ce chemin",
@@ -618,8 +618,8 @@
       "description": "La zone de chauffage {device} sur {gateway} n'a pas répondu à sa demande d'état lors de deux redémarrages consécutifs ; MyHOME a donc cessé de l'interroger au démarrage (chaque requête sans réponse bloque la file de commandes de la passerelle pendant plusieurs secondes). Si la zone n'existe plus, supprimez son appareil ou son entité dans Home Assistant. Si elle existe toujours, ce problème disparaîtra dès qu'elle émettra une trame, et elle sera de nouveau interrogée au bout d'une semaine."
     },
     "unconfigured_timezone": {
-      "title": "Unconfigured timezone on MyHOME gateway ({gateway})",
-      "description": "The MyHOME gateway {gateway} is reporting an unconfigured timezone (999). This will cause incorrect timestamps in the bus monitor and potentially alarm logs.\\n\\nPlease log into the gateway web UI or MyHOME Suite and configure a valid timezone, then restart the gateway."
+      "title": "Fuseau horaire non configuré sur la passerelle MyHOME ({gateway})",
+      "description": "La passerelle MyHOME {gateway} signale un fuseau horaire non configuré (code par défaut « 999 »). Cela peut provoquer des erreurs d'analyse de la date et de l'heure ou la perte de messages de diagnostic de la passerelle.\n\nVeuillez vous connecter à l'interface web de la passerelle ou à MyHOME Suite pour configurer un fuseau horaire valide, puis redémarrez la passerelle."
     },
     "unknown_gateway_model": {
       "title": "Code de type d'appareil de passerelle inconnu ({code})",
@@ -788,7 +788,7 @@
       "message": "{entity_id} est en cours de calibration ; réessayez lorsqu'elle sera terminée"
     },
     "cover_position_unknown": {
-      "message": "{name} : la position est inconnue tant que le volet n'a pas effectué une ouverture ou une fermeture complète au moins une fois"
+      "message": "{name} : la position est inconnue tant que l'ouverture n'a pas été complètement ouverte ou fermée au moins une fois"
     },
     "cover_tilt_position_unknown": {
       "message": "{name} : l'inclinaison des lames est inconnue tant que les lames n'ont pas été orientées en ouverture ou en fermeture complète au moins une fois"
@@ -1067,9 +1067,9 @@
       "rotary_cw_fast": "« {subtype} » tourné rapidement dans le sens horaire",
       "rotary_ccw_slow": "« {subtype} » tourné lentement dans le sens antihoraire",
       "rotary_ccw_fast": "« {subtype} » tourné rapidement dans le sens antihoraire",
-      "centralized_shutter_open": "Commande centralisée d'OUVERTURE de volet reçue",
-      "centralized_shutter_close": "Commande centralisée de FERMETURE de volet reçue",
-      "centralized_shutter_stop": "Commande centralisée d'ARRÊT de volet reçue"
+      "centralized_shutter_open": "Commande centralisée d'OUVERTURE des ouvertures reçue",
+      "centralized_shutter_close": "Commande centralisée de FERMETURE des ouvertures reçue",
+      "centralized_shutter_stop": "Commande centralisée d'ARRÊT des ouvertures reçue"
     },
     "trigger_subtype": {
       "button_0": "Bouton 0",

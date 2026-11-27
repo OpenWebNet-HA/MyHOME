@@ -1,7 +1,7 @@
 {
   "title": "MyHome",
   "config": {
-    "flow_title": "MyHome {name} Gateway ({host})",
+    "flow_title": "MyHome-gateway {name} ({host})",
     "step": {
       "user": {
         "title": "Kies uw \"MyHome\" gateway",
@@ -28,8 +28,8 @@
         "title": "Manuele gateway informatie",
         "description": "Vul de informatie in voor uw gateway\n\nMyHOME houdt één permanente eventverbinding open, plus één verbinding per commandoworker (standaard 1). Een gateway accepteert maar een handvol gelijktijdige OpenWebNet-verbindingen (5 bij een F455, minder bij een MH200N), gedeeld met alles wat er verbinding mee maakt: de Legrand/BTicino Home+Project-app, andere Home Assistant-installaties, andere integraties. Als de verbindingen op zijn, wordt MyHOME of de andere client geweigerd of verbroken. Sluit clients die u niet nodig hebt en houd het aantal commandoworkers laag.",
         "data": {
-          "address": "IP address",
-          "port": "Port"
+          "address": "IP-adres",
+          "port": "Poort"
         }
       },
       "custom_manual": {
@@ -70,10 +70,10 @@
     },
     "error": {
       "invalid_port": "Ongeldig poortnummer",
-      "invalid_ip": "Ongeldig IP address",
-      "invalid_mac": "Ongeldig MAC address",
+      "invalid_ip": "Ongeldig IP-adres",
+      "invalid_mac": "Ongeldig MAC-adres",
       "invalid_password": "Ongeldig wachtwoord",
-      "password_retry": "Gateway refusing password negotiation, wait 60s before retrying.",
+      "password_retry": "De gateway weigert de wachtwoordonderhandeling, wacht 60 s voordat u het opnieuw probeert.",
       "password_error": "Ongeldig wachtwoord",
       "primary_gateway_required": "Voor de rollen secundair en stand-by op een gedeelde bus moet een primaire gateway worden gekozen.",
       "primary_gateway_not_found": "De gekozen primaire gateway is niet gevonden.",
@@ -324,7 +324,7 @@
           "source_3_tuner": "Bron 3 is een tuner (F500): voegt een radio-entiteit toe met zenders, frequentie en RDS",
           "source_4_name": "Bron 4 — naam van wat op matrix-ingang S4 is aangesloten (leeg laten als er niets op zit)",
           "source_4_tuner": "Bron 4 is een tuner (F500): voegt een radio-entiteit toe met zenders, frequentie en RDS",
-          "address": "IP address",
+          "address": "IP-adres",
           "name": "Gatewaymodel",
           "password": "Wachtwoord",
           "command_worker_count": "Aantal open command sessies",
@@ -377,13 +377,13 @@
       }
     },
     "error": {
-      "invalid_ip": "Ongeldig IP address",
-      "invalid_worker_count": "Aantal workers moet tussen 1 and 10 zijn",
+      "invalid_ip": "Ongeldig IP-adres",
+      "invalid_worker_count": "Aantal workers moet tussen 1 en 10 liggen",
       "worker_count_above_gateway_limit": "De {model} accepteert maximaal {session_limit} gelijktijdige command sessie(s); met meer reageert hij niet meer.",
       "invalid_standalone_zone": "Zelfstandige thermostaten moeten zonenummers van 1 tot 99 zijn, gescheiden door komma's (bijv. 2, 7).",
       "invalid_config_path": "Ongeldig path voor configuratie bestand",
-      "invalid_password": "Ongeldig password",
-      "password_error": "Ongeldig password",
+      "invalid_password": "Ongeldig wachtwoord",
+      "password_error": "Ongeldig wachtwoord",
       "not_a_media_player": "Moet een media_player-entiteit zijn (bijv. media_player.cambridge_audio_cxn)",
       "companion_same_as_decoder": "De begeleidende streaming-entiteit moet een andere entiteit zijn dan de decoder zelf.",
       "companion_without_decoder": "Een begeleidende streaming-entiteit kan alleen worden geconfigureerd voor een slot met een decoderentiteit.",
@@ -411,31 +411,31 @@
       "fields": {
         "gateway": {
           "name": "Gateway",
-          "description": "The gateway's MAC address, as present in the config."
+          "description": "Het MAC-adres van de gateway, zoals opgenomen in de configuratie."
         }
       }
     },
     "send_message": {
-      "name": "Send message",
+      "name": "Bericht verzenden",
       "description": "Stuur een willekeurig (maar geldig) OpenWebNet-bericht naar de gateway (alleen voor beheerders).",
       "fields": {
         "gateway": {
           "name": "Gateway",
-          "description": "The gateway's MAC address, as present in the config."
+          "description": "Het MAC-adres van de gateway, zoals opgenomen in de configuratie."
         },
         "message": {
-          "name": "Message",
-          "description": "Valid OpenWebNet message."
+          "name": "Bericht",
+          "description": "Geldig OpenWebNet-bericht."
         }
       }
     },
     "start_sending_instant_power": {
-      "name": "Start sending instant power",
-      "description": "Get automatic instant power draw updates for a sensor.",
+      "name": "Verzenden van actueel vermogen starten",
+      "description": "Ontvang automatische updates van het actuele vermogensverbruik voor een sensor.",
       "fields": {
         "entity_id": {
-          "name": "Entity",
-          "description": "Name(s) of entities that will start sending instant power information."
+          "name": "Entiteit",
+          "description": "Naam of namen van entiteiten die beginnen met het verzenden van actuele vermogensinformatie."
         },
         "duration": {
           "name": "Tijdsduur",
@@ -444,12 +444,12 @@
       }
     },
     "stop_sending_instant_power": {
-      "name": "Stop sending instant power",
-      "description": "Stop automatic instant power draw updates for a sensor.",
+      "name": "Verzenden van actueel vermogen stoppen",
+      "description": "Stop automatische updates van het actuele vermogensverbruik voor een sensor.",
       "fields": {
         "entity_id": {
-          "name": "Entity",
-          "description": "Name(s) of entities that will stop sending instant power information."
+          "name": "Entiteit",
+          "description": "Naam of namen van entiteiten die stoppen met het verzenden van actuele vermogensinformatie."
         }
       }
     },
@@ -618,8 +618,8 @@
       "description": "Verwarmingszone {device} op {gateway} heeft bij twee herstarts op rij niet geantwoord op het statusverzoek, dus MyHOME vraagt er bij het opstarten niet meer naar (elk onbeantwoord verzoek kost de commandowachtrij van de gateway enkele seconden). Als de zone niet meer bestaat, verwijder dan het apparaat of de entiteit in Home Assistant. Bestaat de zone nog wel, dan verdwijnt deze melding zodra de zone weer een frame stuurt en wordt deze na een week opnieuw bevraagd."
     },
     "unconfigured_timezone": {
-      "title": "Unconfigured timezone on MyHOME gateway ({gateway})",
-      "description": "The MyHOME gateway {gateway} is reporting an unconfigured timezone (999). This will cause incorrect timestamps in the bus monitor and potentially alarm logs.\\n\\nPlease log into the gateway web UI or MyHOME Suite and configure a valid timezone, then restart the gateway."
+      "title": "Niet-geconfigureerde tijdzone op MyHOME-gateway ({gateway})",
+      "description": "De MyHOME-gateway {gateway} meldt een niet-geconfigureerde tijdzone (tijdelijke code '999'). Dit kan fouten veroorzaken bij het verwerken van datum en tijd of leiden tot weggevallen diagnostische berichten van de gateway.\n\nLog in op de webinterface van de gateway of in MyHOME Suite, configureer een geldige tijdzone en herstart de gateway."
     },
     "unknown_gateway_model": {
       "title": "Onbekende apparaattypecode voor gateway ({code})",
@@ -788,7 +788,7 @@
       "message": "{entity_id} wordt gekalibreerd; probeer het opnieuw wanneer dat klaar is"
     },
     "cover_position_unknown": {
-      "message": "{name}: de positie is onbekend totdat het rolluik eenmaal volledig is geopend of gesloten"
+      "message": "{name}: de positie is onbekend totdat de raambedekking eenmaal volledig is geopend of gesloten"
     },
     "cover_tilt_position_unknown": {
       "message": "{name}: de hoek van de lamellen is onbekend totdat de lamellen eenmaal volledig zijn open- of dichtgekanteld"
@@ -1067,9 +1067,9 @@
       "rotary_cw_fast": "\"{subtype}\" snel met de klok mee gedraaid",
       "rotary_ccw_slow": "\"{subtype}\" langzaam tegen de klok in gedraaid",
       "rotary_ccw_fast": "\"{subtype}\" snel tegen de klok in gedraaid",
-      "centralized_shutter_open": "Centraal OPEN-commando voor rolluiken ontvangen",
-      "centralized_shutter_close": "Centraal SLUIT-commando voor rolluiken ontvangen",
-      "centralized_shutter_stop": "Centraal STOP-commando voor rolluiken ontvangen"
+      "centralized_shutter_open": "Centraal OPEN-commando voor raambedekking ontvangen",
+      "centralized_shutter_close": "Centraal SLUIT-commando voor raambedekking ontvangen",
+      "centralized_shutter_stop": "Centraal STOP-commando voor raambedekking ontvangen"
     },
     "trigger_subtype": {
       "button_0": "Knop 0",

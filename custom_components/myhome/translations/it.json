@@ -411,31 +411,31 @@
       "fields": {
         "gateway": {
           "name": "Gateway",
-          "description": "The gateway's MAC address, as present in the config."
+          "description": "L'indirizzo MAC del gateway, come presente nella configurazione."
         }
       }
     },
     "send_message": {
-      "name": "Send message",
+      "name": "Invia messaggio",
       "description": "Invia un messaggio OpenWebNet arbitrario (ma valido) al gateway (solo amministratori).",
       "fields": {
         "gateway": {
           "name": "Gateway",
-          "description": "The gateway's MAC address, as present in the config."
+          "description": "L'indirizzo MAC del gateway, come presente nella configurazione."
         },
         "message": {
-          "name": "Message",
-          "description": "Valid OpenWebNet message."
+          "name": "Messaggio",
+          "description": "Messaggio OpenWebNet valido."
         }
       }
     },
     "start_sending_instant_power": {
-      "name": "Start sending instant power",
-      "description": "Get automatic instant power draw updates for a sensor.",
+      "name": "Avvia invio potenza istantanea",
+      "description": "Ricevi aggiornamenti automatici della potenza istantanea assorbita per un sensore.",
       "fields": {
         "entity_id": {
-          "name": "Entity",
-          "description": "Name(s) of entities that will start sending instant power information."
+          "name": "Entità",
+          "description": "Nome/i delle entità che inizieranno a inviare informazioni sulla potenza istantanea."
         },
         "duration": {
           "name": "Durata",
@@ -444,12 +444,12 @@
       }
     },
     "stop_sending_instant_power": {
-      "name": "Stop sending instant power",
-      "description": "Stop automatic instant power draw updates for a sensor.",
+      "name": "Interrompi invio potenza istantanea",
+      "description": "Interrompi gli aggiornamenti automatici della potenza istantanea assorbita per un sensore.",
       "fields": {
         "entity_id": {
-          "name": "Entity",
-          "description": "Name(s) of entities that will stop sending instant power information."
+          "name": "Entità",
+          "description": "Nome/i delle entità che smetteranno di inviare informazioni sulla potenza istantanea."
         }
       }
     },
@@ -618,8 +618,8 @@
       "description": "La zona di riscaldamento {device} su {gateway} non ha risposto alla richiesta di stato per due riavvii consecutivi, quindi MyHOME ha smesso di interrogarla all'avvio (ogni richiesta senza risposta costa diversi secondi alla coda comandi del gateway). Se la zona non esiste più, rimuovi il relativo dispositivo o entità in Home Assistant. Se esiste ancora, questo avviso si risolve automaticamente appena la zona invia un frame e verrà nuovamente interrogata dopo una settimana."
     },
     "unconfigured_timezone": {
-      "title": "Unconfigured timezone on MyHOME gateway ({gateway})",
-      "description": "The MyHOME gateway {gateway} is reporting an unconfigured timezone (999). This will cause incorrect timestamps in the bus monitor and potentially alarm logs.\\n\\nPlease log into the gateway web UI or MyHOME Suite and configure a valid timezone, then restart the gateway."
+      "title": "Fuso orario non configurato sul gateway MyHOME ({gateway})",
+      "description": "Il gateway MyHOME {gateway} segnala un fuso orario non configurato (codice segnaposto '999'). Ciò può causare errori nell'analisi di data e ora o la perdita di messaggi diagnostici del gateway.\n\nAccedi all'interfaccia web del gateway o a MyHOME Suite, configura un fuso orario valido e riavvia il gateway."
     },
     "unknown_gateway_model": {
       "title": "Codice tipo dispositivo gateway sconosciuto ({code})",
@@ -788,7 +788,7 @@
       "message": "{entity_id} è in fase di calibrazione; riprova quando sarà terminata"
     },
     "cover_position_unknown": {
-      "message": "{name}: la posizione è sconosciuta finché la tapparella non ha eseguito almeno una volta una corsa completa di apertura o chiusura"
+      "message": "{name}: la posizione è sconosciuta finché la copertura non ha eseguito almeno una volta una corsa completa di apertura o chiusura"
     },
     "cover_tilt_position_unknown": {
       "message": "{name}: l'inclinazione delle lamelle è sconosciuta finché le lamelle non sono state orientate almeno una volta in apertura o chiusura completa"
@@ -1067,9 +1067,9 @@
       "rotary_cw_fast": "\"{subtype}\" ruotato rapidamente in senso orario",
       "rotary_ccw_slow": "\"{subtype}\" ruotato lentamente in senso antiorario",
       "rotary_ccw_fast": "\"{subtype}\" ruotato rapidamente in senso antiorario",
-      "centralized_shutter_open": "Ricevuto il comando centralizzato APRI delle tapparelle",
-      "centralized_shutter_close": "Ricevuto il comando centralizzato CHIUDI delle tapparelle",
-      "centralized_shutter_stop": "Ricevuto il comando centralizzato STOP delle tapparelle"
+      "centralized_shutter_open": "Ricevuto il comando centralizzato APRI delle coperture",
+      "centralized_shutter_close": "Ricevuto il comando centralizzato CHIUDI delle coperture",
+      "centralized_shutter_stop": "Ricevuto il comando centralizzato STOP delle coperture"
     },
     "trigger_subtype": {
       "button_0": "Pulsante 0",
