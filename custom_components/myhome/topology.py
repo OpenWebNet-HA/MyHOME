@@ -573,9 +573,67 @@ class GatewayTopologyMixin:
         standby = self._get_standby_gateway()
         return bool(standby is not None and standby.available)
 
+    def _who14_secondary(self, *, connected_only: bool = False) -> MyHOMEGatewayHandler | None:
+        """Return the secondary gateway responsible for WHO=14 lock commands, if delegated.
+
+        Precedence:
+        1. Explicit WHO 14 delegation (``14 in delegated_away_whos``).
+        2. Implicit WHO 14 delegation when WHO 1 and WHO 2 are both delegated away (or the
+           primary supports neither) — preferring a secondary that supports WHO 14 commands.
+        """
+        if 14 in self.delegated_away_whos:
+            sec = self._get_secondary_for_who(14)
+            if (
+                sec is not None
+                and sec is not self
+                and (not connected_only or sec.is_connected)
+                and peer_handles_who(sec, 14)
+            ):
+                return sec
+            return None
+        if (
+            not (self._profile_supports_who(1) or self._profile_supports_who(2))
+            or {1, 2}.issubset(self.delegated_away_whos)
+        ):
+            fallback: MyHOMEGatewayHandler | None = None
+            for cand_who in (1, 2):
+                if cand_who not in self.delegated_away_whos:
+                    continue
+                sec_lock = self._get_secondary_for_who(cand_who)
+                if (
+                    sec_lock is None
+                    or sec_lock is self
+                    or (connected_only and not sec_lock.is_connected)
+                    or not peer_handles_who(sec_lock, cand_who)
+                ):
+                    continue
+                if getattr(sec_lock, "supports_who14_commands", True) is True:
+                    return sec_lock
+                if fallback is None:
+                    fallback = sec_lock
+            return fallback
+        return None
+
     def is_who_available(self, who: str | int) -> bool:
         """Return True if this gateway (or its delegated/standby peer) can currently handle the given WHO."""
         who_int = int(who)
+        if who_int == 14:
+            sec = self._who14_secondary()
+            if (
+                sec is not None
+                and sec.available
+                and getattr(sec, "supports_who14_commands", True) is True
+            ):
+                return True
+            if self._available and getattr(self, "_own_supports_who14_commands", True) is True:
+                return True
+            standby = self._get_standby_gateway()
+            return bool(
+                standby is not None
+                and standby.available
+                and (standby._profile_supports_who(1) or standby._profile_supports_who(2))
+                and getattr(standby, "supports_who14_commands", True) is True
+            )
         if who_int in DOOR_ENTRY_WHOS and who_int in self.delegated_away_whos:
             sec = self._get_secondary_for_who(who_int)
             if sec is not None and sec.available and peer_handles_who(sec, who_int):
@@ -586,11 +644,6 @@ class GatewayTopologyMixin:
             return True
         standby = self._get_standby_gateway()
         if standby is not None and standby.available:
-            if who_int == 14:
-                return (
-                    (standby._profile_supports_who(1) or standby._profile_supports_who(2))
-                    and getattr(standby, "supports_who14_commands", True) is True
-                )
             return standby._profile_supports_who(who_int)
         return False
 
@@ -854,16 +907,15 @@ class GatewayTopologyMixin:
         if msg_who in (13, 1013) or msg_who is None:
             return None
         who_int = int(msg_who)
-        if who_int == 14 and (
-            not (self._profile_supports_who(1) or self._profile_supports_who(2))
-            or {1, 2}.issubset(self.delegated_away_whos)
-        ):
-            for cand_who in (1, 2):
-                if cand_who in self.delegated_away_whos:
-                    sec_lock = self._get_secondary_for_who(cand_who)
-                    if sec_lock is not None and sec_lock.is_connected and peer_handles_who(sec_lock, cand_who):
-                        LOGGER.debug("%s Subsystem WHO=14 routed through WHO=%s secondary gateway %s.", self.log_id, cand_who, sec_lock.log_id)
-                        return sec_lock
+        if who_int == 14:
+            sec_lock = self._who14_secondary(connected_only=True)
+            if sec_lock is not None:
+                LOGGER.debug(
+                    "%s Subsystem WHO=14 routed through secondary gateway %s.",
+                    self.log_id,
+                    sec_lock.log_id,
+                )
+                return sec_lock
             return None
         if who_int not in self.delegated_away_whos:
             return None

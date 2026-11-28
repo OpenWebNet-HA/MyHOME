@@ -3162,3 +3162,476 @@ async def test_group2a_queued_live_brightness_refresh_preserves_self_heal(
         await dim._brightness_refresh_task
 
 
+async def test_who14_audit_button_availability_and_multi_gw_delegation(
+    hass: HomeAssistant,
+) -> None:
+    """WHO=14 Lock/Unlock buttons follow is_who_available(14), and _who14_secondary resolves precedence cleanly."""
+    from custom_components.myhome.button import (
+        DisableCommandButtonEntity,
+        EnableCommandButtonEntity,
+    )
+    from custom_components.myhome.topology import (
+        CONF_BUS_TOPOLOGY,
+        CONF_DELEGATED_WHOS,
+        CONF_GATEWAY_ROLE,
+        CONF_PRIMARY_GATEWAY,
+        ROLE_PRIMARY,
+        ROLE_SECONDARY,
+        ROLE_STANDBY,
+        TOPOLOGY_SHARED,
+    )
+
+    # 1. Online F455 itself reports is_who_available(14) == False
+    _ef455, gw_f455 = _make_gateway(hass, model="F455", mac="00:03:50:cc:00:01")
+    gw_f455._available = True
+    gw_f455._is_connected = True
+    assert gw_f455.is_who_available(14) is False
+
+    # 2. F461 primary offline + F455 standby online -> Lock/Unlock buttons become unavailable!
+    mac_p = "00:03:50:cc:01:01"
+    mac_s = "00:03:50:cc:01:02"
+    _ep, pri_f461 = _make_gateway(
+        hass,
+        model="F461",
+        mac=mac_p,
+        options={CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED, CONF_GATEWAY_ROLE: ROLE_PRIMARY},
+    )
+    _es, stb_f455 = _make_gateway(
+        hass,
+        model="F455",
+        mac=mac_s,
+        options={
+            CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED,
+            CONF_GATEWAY_ROLE: ROLE_STANDBY,
+            CONF_PRIMARY_GATEWAY: mac_p,
+        },
+    )
+    pri_f461._available = True
+    pri_f461._is_connected = True
+    stb_f455._available = True
+    stb_f455._is_connected = True
+    dis_btn = DisableCommandButtonEntity(
+        hass=hass,
+        platform="button",
+        name="Light 05",
+        device_id="05",
+        who="1",
+        where="05",
+        interface=None,
+        manufacturer="BTicino",
+        model="Actuator",
+        gateway=pri_f461,
+    )
+    en_btn = EnableCommandButtonEntity(
+        hass=hass,
+        platform="button",
+        name="Light 05",
+        device_id="05",
+        who="1",
+        where="05",
+        interface=None,
+        manufacturer="BTicino",
+        model="Actuator",
+        gateway=pri_f461,
+    )
+    assert dis_btn.available is True
+    assert en_btn.available is True
+
+    pri_f461._available = False
+    pri_f461._is_connected = False
+    assert pri_f461.is_who_available(1) is True
+    assert dis_btn.available is False
+    assert en_btn.available is False
+
+    # 3. Primary F455 + Secondary A (F455, WHO [1, 2]) + Secondary B (F461, WHO [14]):
+    # explicit WHO 14 delegation takes precedence in BOTH supports_who14_commands and _delegated_target!
+    mac_p3 = "00:03:50:cc:02:01"
+    _ep3, pri3 = _make_gateway(
+        hass,
+        model="F455",
+        mac=mac_p3,
+        options={CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED, CONF_GATEWAY_ROLE: ROLE_PRIMARY},
+    )
+    _ea, sec_a = _make_gateway(
+        hass,
+        model="F455",
+        mac="00:03:50:cc:02:02",
+        options={
+            CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED,
+            CONF_GATEWAY_ROLE: ROLE_SECONDARY,
+            CONF_PRIMARY_GATEWAY: mac_p3,
+            CONF_DELEGATED_WHOS: [1, 2],
+        },
+    )
+    _eb, sec_b = _make_gateway(
+        hass,
+        model="F461",
+        mac="00:03:50:cc:02:03",
+        options={
+            CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED,
+            CONF_GATEWAY_ROLE: ROLE_SECONDARY,
+            CONF_PRIMARY_GATEWAY: mac_p3,
+            CONF_DELEGATED_WHOS: [14],
+        },
+    )
+    pri3._available = False
+    pri3.is_connected = False
+    sec_a._available = True
+    sec_a.is_connected = True
+    sec_b._available = True
+    sec_b.is_connected = True
+    assert pri3.supports_who14_commands is True
+    assert pri3._delegated_target(OWNCommand("*14*0*05##")) is sec_b
+    assert pri3.is_who_available(14) is True
+
+    # Offline explicit WHO 14 secondary returns None from _delegated_target and False from is_who_available(14)
+    sec_b.is_connected = False
+    sec_b._available = False
+    assert pri3._delegated_target(OWNCommand("*14*0*05##")) is None
+    pri3._available = True
+    assert pri3.is_who_available(14) is False
+
+    # 4. Split WHO 1 (F455) + WHO 2 (F461) prefers the WHO 14-capable F461 secondary
+    mac_p4 = "00:03:50:cc:03:01"
+    _ep4, pri4 = _make_gateway(
+        hass,
+        model="F455",
+        mac=mac_p4,
+        options={CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED, CONF_GATEWAY_ROLE: ROLE_PRIMARY},
+    )
+    _es4a, sec4_f455 = _make_gateway(
+        hass,
+        model="F455",
+        mac="00:03:50:cc:03:02",
+        options={
+            CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED,
+            CONF_GATEWAY_ROLE: ROLE_SECONDARY,
+            CONF_PRIMARY_GATEWAY: mac_p4,
+            CONF_DELEGATED_WHOS: [1],
+        },
+    )
+    _es4b, sec4_f461 = _make_gateway(
+        hass,
+        model="F461",
+        mac="00:03:50:cc:03:03",
+        options={
+            CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED,
+            CONF_GATEWAY_ROLE: ROLE_SECONDARY,
+            CONF_PRIMARY_GATEWAY: mac_p4,
+            CONF_DELEGATED_WHOS: [2],
+        },
+    )
+    sec4_f455._available = True
+    sec4_f455.is_connected = True
+    sec4_f461._available = True
+    sec4_f461.is_connected = True
+    assert pri4.supports_who14_commands is True
+    assert pri4._delegated_target(OWNCommand("*14*0*05##")) is sec4_f461
+    # When F461 secondary is offline, falls back to connected F455 or None
+    sec4_f461.is_connected = False
+    assert pri4._delegated_target(OWNCommand("*14*0*05##")) is sec4_f455
+    sec4_f455.is_connected = False
+    assert pri4._delegated_target(OWNCommand("*14*0*05##")) is None
+
+    # 5. Primary without native WHO 1/2 delegating only WHO 2 skips cand_who=1 and routes via WHO 2 secondary
+    mac_p5 = "00:03:50:cc:04:01"
+    _ep5, pri5 = _make_gateway(
+        hass,
+        model="F455",
+        mac=mac_p5,
+        options={CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED, CONF_GATEWAY_ROLE: ROLE_PRIMARY},
+    )
+    _es5, sec5 = _make_gateway(
+        hass,
+        model="F461",
+        mac="00:03:50:cc:04:02",
+        options={
+            CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED,
+            CONF_GATEWAY_ROLE: ROLE_SECONDARY,
+            CONF_PRIMARY_GATEWAY: mac_p5,
+            CONF_DELEGATED_WHOS: [2],
+        },
+    )
+    pri5._profile_supports_who = lambda w: w == 4  # type: ignore[method-assign]
+    sec5.is_connected = True
+    sec5._available = True
+    assert pri5._delegated_target(OWNCommand("*14*0*05##")) is sec5
+
+
+async def test_who14_audit_button_boot_order_and_inband_model_guard(
+    hass: HomeAssistant,
+) -> None:
+    """button.py skips destructive pruning when a delegated WHO=14 secondary is not yet loaded and reads supports_who14 dynamically."""
+    from homeassistant.const import CONF_MAC
+    from homeassistant.helpers import entity_registry as er
+    from homeassistant.helpers.dispatcher import async_dispatcher_send
+    from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+    from custom_components.myhome.button import async_setup_entry as button_setup_entry
+    from custom_components.myhome.const import DOMAIN
+    from custom_components.myhome.topology import (
+        CONF_BUS_TOPOLOGY,
+        CONF_DELEGATED_WHOS,
+        CONF_GATEWAY_ROLE,
+        CONF_PRIMARY_GATEWAY,
+        ROLE_PRIMARY,
+        ROLE_SECONDARY,
+        TOPOLOGY_SHARED,
+    )
+
+    mac_p = "00:03:50:dd:00:01"
+    mac_s = "00:03:50:dd:00:02"
+    entry_p, pri_f455 = _make_gateway(
+        hass,
+        model="F455",
+        mac=mac_p,
+        options={CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED, CONF_GATEWAY_ROLE: ROLE_PRIMARY},
+    )
+    # Secondary F461 config entry exists in HA but has NOT finished loading yet (runtime_data=None)
+    entry_s = MockConfigEntry(
+        domain=DOMAIN,
+        title="F461 Sec",
+        data={"host": "192.0.2.2", "port": 20000, "password": "12345", CONF_MAC: mac_s, "name": "F461"},
+        options={
+            CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED,
+            CONF_GATEWAY_ROLE: ROLE_SECONDARY,
+            CONF_PRIMARY_GATEWAY: mac_p,
+            CONF_DELEGATED_WHOS: [1, 2],
+        },
+        unique_id=mac_s,
+    )
+    entry_s.add_to_hass(hass)
+    entry_p.runtime_data.platforms["button"] = {}
+
+    ent_reg = er.async_get(hass)
+    btn_entry = ent_reg.async_get_or_create(
+        "button", DOMAIN, f"{mac_p}-1-05-disable", config_entry=entry_p
+    )
+    added: list[Any] = []
+    await button_setup_entry(hass, entry_p, added.extend)
+    # Existing button must NOT be wiped while the delegated F461 secondary is still booting!
+    assert ent_reg.async_get(btn_entry.entity_id) is not None
+
+    # Once a loaded F455 secondary takes WHO 1+2, _has_pending_who14_secondary is False and buttons prune
+    mac_p2 = "00:03:50:dd:02:01"
+    entry_p2, _pri2 = _make_gateway(
+        hass,
+        model="F455",
+        mac=mac_p2,
+        options={CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED, CONF_GATEWAY_ROLE: ROLE_PRIMARY},
+    )
+    _entry_s2, _sec2 = _make_gateway(
+        hass,
+        model="F455",
+        mac="00:03:50:dd:02:02",
+        options={
+            CONF_BUS_TOPOLOGY: TOPOLOGY_SHARED,
+            CONF_GATEWAY_ROLE: ROLE_SECONDARY,
+            CONF_PRIMARY_GATEWAY: mac_p2,
+            CONF_DELEGATED_WHOS: [1, 2],
+        },
+    )
+    entry_p2.runtime_data.platforms["button"] = {}
+    btn_entry2 = ent_reg.async_get_or_create(
+        "button", DOMAIN, f"{mac_p2}-1-05-disable", config_entry=entry_p2
+    )
+    await button_setup_entry(hass, entry_p2, [].extend)
+    assert ent_reg.async_get(btn_entry2.entity_id) is None
+
+    # In-band model correction: start as Generic (supports WHO 14), then correct to F455 ->
+    # _async_new_device_listener evaluates supports_who14 dynamically and skips new lock buttons!
+    mac_g = "00:03:50:dd:01:01"
+    entry_g, gw_generic = _make_gateway(hass, model="Generic", mac=mac_g)
+    entry_g.runtime_data.platforms["button"] = {}
+    added_g: list[Any] = []
+    await button_setup_entry(hass, entry_g, added_g.extend)
+    added_g.clear()
+    gw_generic.gateway.model_name = "F455"
+    gw_generic.gateway.profile = None
+    assert gw_generic.supports_who14_commands is False
+    async_dispatcher_send(
+        hass,
+        f"myhome_new_device_{mac_g}",
+        {"who": "1", "where": "06", "device_id": "06", "name": "Light 06"},
+    )
+    await hass.async_block_till_done()
+    assert added_g == []
+
+
+async def test_who14_audit_plain_inflight_poll_switch_peer_sweep_and_impulse_cover(
+    hass: HomeAssistant,
+) -> None:
+    """Event-session replies to plain *#1*W## polls, peer sweeps on switch, impulse cover sweeps, and late Dim 1 reply #1 preserve actuator_locked."""
+    from types import SimpleNamespace
+
+    from custom_components.myhome.actuator_lock import who1_bus_gateways
+    from custom_components.myhome.cover import MyHOMEImpulseCover
+
+    assert who1_bus_gateways(None) == ()
+
+    _entry, handler = _make_gateway(hass, model="F461", mac="00:03:50:ee:00:01")
+    pool = SimpleNamespace(_in_flight_messages=[])
+    handler._command_pool = pool
+
+    # 1. Plain WHO=1 light: in-flight *#1*05## whose *1*0*05## reply arrives on event session
+    light = MyHOMELight(
+        hass=hass,
+        name="Light 05",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="05",
+        who="1",
+        where="05",
+        interface=None,
+        dimmable=False,
+        manufacturer="BTicino",
+        model="Relay",
+        gateway=handler,
+    )
+    _attach_live_entity(hass, light, "light.plain_05_poll")
+    light.handle_event(OWNEvent.parse("*1*1*05##"))
+    light.handle_actuator_lock(True)
+    pool._in_flight_messages = [OWNCommand.parse("*#1*05##")]
+    light.handle_event(OWNEvent.parse("*1*0*05##"))
+    assert light.actuator_locked is True
+
+    # 2. Fine dimmer: in-flight *#1*10## whose coarse preset *1*9*10## arrives on event session
+    dim = MyHOMELight(
+        hass=hass,
+        name="Dimmer 10",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="10",
+        who="1",
+        where="10",
+        interface=None,
+        dimmable=True,
+        manufacturer="BTicino",
+        model="F418",
+        gateway=handler,
+    )
+    _attach_live_entity(hass, dim, "light.dim_10_poll")
+    dim.handle_event(OWNEvent.parse("*#1*10*1*150*5##"))
+    dim.handle_actuator_lock(True)
+    pool._in_flight_messages = [OWNCommand.parse("*#1*10##")]
+    dim.handle_event(OWNEvent.parse("*1*9*10##"))
+    assert dim._brightness_refresh_from_live is False
+    assert dim.actuator_locked is True
+    pool._in_flight_messages = []
+
+    # 3. Late event-session stale Dim 1 reply #1 must NOT clear _brightness_refresh_from_live for queued Refresh #2
+    first_release = asyncio.Event()
+    second_started = asyncio.Event()
+    calls = 0
+
+    async def _send_status(cmd: Any, **_kwargs: Any) -> bool:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            await first_release.wait()
+        else:
+            second_started.set()
+            await asyncio.sleep(0.05)
+        return True
+
+    handler.send_status_request = AsyncMock(side_effect=_send_status)
+    dim2 = MyHOMELight(
+        hass=hass,
+        name="Dimmer 57",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="57",
+        who="1",
+        where="57",
+        interface=None,
+        dimmable=True,
+        manufacturer="BTicino",
+        model="F418",
+        gateway=handler,
+    )
+    _attach_live_entity(hass, dim2, "light.dim_57_late_stale")
+    dim2.handle_event(OWNEvent.parse("*#1*57*1*150*5##"))
+    dim2.handle_actuator_lock(True)
+    dim2.handle_event(OWNEvent.parse("*1*6*57##"))
+    await asyncio.sleep(0)
+    dim2.handle_event(OWNEvent.parse("*1*8*57##"))
+    first_release.set()
+    await asyncio.wait_for(second_started.wait(), timeout=2.0)
+    assert dim2._brightness_refresh_out is True
+    assert dim2._brightness_refresh_from_live is True
+    # Late stale event-session reply #1 (same 50%, _from_status_request=False) arrives while Refresh #2 is out
+    dim2.handle_event(OWNEvent.parse("*#1*57*1*150*5##"))
+    assert dim2._brightness_refresh_from_live is True
+    assert dim2.actuator_locked is True
+    # Refresh #2 real reply (75%, _from_status_request=True) self-heals actuator_locked
+    real_reply = OWNEvent.parse("*#1*57*1*175*5##")
+    real_reply._from_status_request = True  # type: ignore[attr-defined]
+    dim2.handle_event(real_reply)
+    assert dim2.actuator_locked is False
+    if dim2._brightness_refresh_task is not None:
+        await dim2._brightness_refresh_task
+
+    # 4. MyHOMESwitch preserves actuator_locked on shared-bus peer sweep AND in-flight *#1*W##
+    peer = SimpleNamespace(sweep_active=True, _command_pool=None)
+    handler._get_standby_gateway = lambda: peer  # type: ignore[method-assign]
+    sw = MyHOMESwitch(
+        hass=hass,
+        name="Switch 08",
+        entity_name=None,
+        icon=None,
+        icon_on=None,
+        device_id="08",
+        who="1",
+        where="08",
+        interface=None,
+        device_class="switch",
+        manufacturer="BTicino",
+        model="F411/4",
+        gateway=handler,
+    )
+    _attach_live_entity(hass, sw, "switch.sw_08_peer")
+    sw.handle_event(OWNEvent.parse("*1*0*08##"))
+    sw.handle_actuator_lock(True)
+    sw.handle_event(OWNEvent.parse("*1*1*08##"))
+    assert sw.actuator_locked is True
+    peer.sweep_active = False
+    pool._in_flight_messages = [OWNCommand.parse("*#1*08##")]
+    sw.handle_event(OWNEvent.parse("*1*0*08##"))
+    assert sw.actuator_locked is True
+    pool._in_flight_messages = []
+
+    # 5. MyHOMEImpulseCover preserves actuator_locked on startup sweep / status poll
+    imp = MyHOMEImpulseCover(
+        hass=hass,
+        name="Gate 09",
+        entity_name=None,
+        device_id="09",
+        who="1",
+        where="09",
+        interface=None,
+        manufacturer="BTicino",
+        model="F411/4",
+        gateway=handler,
+        travel_time=15.0,
+        pulse_duration=1.0,
+        min_cycle_time=1.0,
+        pin_code=None,
+        state_sensor=None,
+        device_class="gate",
+    )
+    imp.entity_id = "cover.gate_09_poll"
+    imp.async_schedule_update_ha_state = MagicMock()  # type: ignore[method-assign]
+    imp.handle_actuator_lock(True)
+    sweep_msg = OWNEvent.parse("*1*1*09##")
+    sweep_msg._from_status_request = True  # type: ignore[attr-defined]
+    imp.handle_event(sweep_msg)
+    assert imp.actuator_locked is True
+    # Live non-poll impulse event DOES self-heal lock
+    imp.handle_event(OWNEvent.parse("*1*1*09##"))
+    assert imp.actuator_locked is False
+
+
+

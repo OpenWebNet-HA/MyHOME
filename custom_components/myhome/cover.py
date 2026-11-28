@@ -66,7 +66,12 @@ from .access_policy import (
     Intent,
     PulseOutcome,
 )
-from .actuator_lock import actuator_locks_of, apply_actuator_lock_state, split_point_key
+from .actuator_lock import (
+    actuator_locks_of,
+    apply_actuator_lock_state,
+    is_who1_status_poll_reply,
+    split_point_key,
+)
 from .const import (
     BUS_ROUTING,
     CALIBRATION_CUTOFF_EARLY,
@@ -5715,7 +5720,12 @@ class MyHOMEImpulseCover(MyHOMEEntity, CoverEntity):
         if not own_point and self.actuator_locked is True:
             return
         now = time.monotonic()
-        if own_point and self.actuator_locked is True:
+        from_status_poll = is_who1_status_poll_reply(
+            self,
+            message,
+            is_own_point=self._is_own_impulse_event,
+        )
+        if own_point and self.actuator_locked is True and not from_status_poll:
             self._clear_actuator_lock()
             if self._locked_pulse_echo is not None:
                 self._locked_pulse_echo.set()

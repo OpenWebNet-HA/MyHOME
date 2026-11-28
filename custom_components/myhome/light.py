@@ -44,13 +44,9 @@ from OWNd.message import (
 )
 
 from .actuator_lock import (
-    AREA_WHERES,
-    actuator_locks_of,
-    entity_key,
-    is_valid_point_where,
-    normalize_iface,
-    parse_hash_group,
-    point_area,
+    is_who1_status_poll_reply,
+    who1_bus_gateways,
+    who1_poll_targets_entity,
 )
 from .const import (
     BUS_ROUTING,
@@ -1008,93 +1004,20 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
 
     def _bus_gateways_for_who1(self) -> tuple[Any, ...]:
         """Return candidate gateways on this bus that may hold WHO=1 sweeps or in-flight polls."""
-        gw = self._gateway_handler
-        pri_fn = getattr(gw, "_get_primary_gateway", None)
-        pri_gw = (
-            pri_fn()
-            if callable(pri_fn) and getattr(gw, "is_follower", False) is True
-            else None
-        )
-        root = pri_gw if pri_gw is not None else gw
-        sec_fn = getattr(root, "_get_secondary_for_who", None)
-        stb_fn = getattr(root, "_get_standby_gateway", None)
-        return tuple(
-            h
-            for h in (
-                gw,
-                pri_gw,
-                sec_fn(1) if callable(sec_fn) else None,
-                stb_fn() if callable(stb_fn) else None,
-            )
-            if h is not None
-        )
+        return who1_bus_gateways(self._gateway_handler)
 
     def _poll_targets_self(self, sent: Any) -> bool:
         """Return True if a WHO=1 status/dimension poll ``sent`` covers this light (point or scope)."""
-        if self._is_own_point_event(sent):
-            return True
-        raw_where = expose_message_where(sent)
-        if not raw_where:
-            return False
-        # Unrouted General '0' addresses the complete Lighting system (main bus + #4#II local buses;
-        # WHO_1.pdf §2.3 & F461 DALI capture tests/fixtures/plants/issue_288_f461_dali_dt8).
-        if raw_where == "0":
-            return True
-        base, sep, sent_iface_raw = raw_where.rpartition("#4#")
-        own_iface = normalize_iface(self._interface)
-        if sep:
-            sent_iface = normalize_iface(sent_iface_raw)
-            if sent_iface is None or self._interface is None or sent_iface != own_iface:
-                return False
-            scope_where = base.strip()
-        else:
-            if self._interface is not None:
-                return False
-            sent_iface = None
-            scope_where = raw_where
-        if scope_where == "0":
-            return True
-        if scope_where in AREA_WHERES:
-            own_canon = canonical_point_spelling(normalize_where(self._where) or self._where)
-            return is_valid_point_where(own_canon) and point_area(own_canon) == scope_where
-        grp = parse_hash_group(scope_where)
-        if grp is not None:
-            mgr = actuator_locks_of(self._gateway_handler)
-            if mgr is not None and entity_key(self) in mgr._resolve_group_keys(grp, sent_iface):
-                return True
-            grp_key = f"{grp}#4#{sent_iface}" if sent_iface is not None else grp
-            own_canon = canonical_point_spelling(normalize_where(self._where) or self._where)
-            own_ptp = f"{own_canon}#4#{own_iface}" if own_iface is not None else own_canon
-            return any(
-                own_ptp
-                in (getattr(getattr(h, "_resync_manager", None), "group_members", None) or {}).get(
-                    grp_key, ()
-                )
-                for h in self._bus_gateways_for_who1()
-            )
-        return False
+        return who1_poll_targets_entity(self, sent, is_own_point=self._is_own_point_event)
 
-    def _is_from_poll(self, message: Any, dimension: int) -> bool:
+    def _is_from_poll(self, message: Any, dimension: int | None) -> bool:
         """Return True when ``message`` is a reply to a status/dimension poll or sweep."""
-        if getattr(message, "_from_status_request", False) is True:
-            return True
-        allowed_dims = (None, 1) if dimension == 1 else (dimension,)
-        for h in self._bus_gateways_for_who1():
-            if getattr(h, "sweep_active", False) is True:
-                return True
-            in_flight = getattr(getattr(h, "_command_pool", None), "_in_flight_messages", ())
-            for sent in tuple(in_flight):
-                if (
-                    getattr(sent, "who", None) == 1
-                    and (
-                        getattr(sent, "is_dimension_request", False) is True
-                        or getattr(sent, "is_status_request", False) is True
-                    )
-                    and getattr(sent, "dimension", None) in allowed_dims
-                    and self._poll_targets_self(sent)
-                ):
-                    return True
-        return False
+        return is_who1_status_poll_reply(
+            self,
+            message,
+            dimension=dimension,
+            is_own_point=self._is_own_point_event,
+        )
 
     @callback
     def handle_actuator_lock(self, locked: bool) -> None:
@@ -2422,13 +2345,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             # Ignored while software_stepped fade is active — including under OWNd >= 2.0.0b12
             # where is_coarse_dimmer=True also populates message.brightness on *1*2..10*WHERE##
             # (86% -> WHAT 10 -> 100% has a 14 pp quantization jump that would self-cancel fades).
-            preset_from_poll = (
-                getattr(message, "_from_status_request", False) is True
-                or any(
-                    getattr(h, "sweep_active", False) is True
-                    for h in self._bus_gateways_for_who1()
-                )
-            )
+            preset_from_poll = self._is_from_poll(message, None)
             mapped = self._coarse_preset_pct(message, cast(int, preset))
             has_dimmer_capability = bool(
                 set(self._attr_supported_color_modes or ())
@@ -2579,9 +2496,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             for h in self._bus_gateways_for_who1()
         )
         from_status_poll = (
-            getattr(message, "_from_status_request", False) is True
-            or any_who1_sweep
-            or (isinstance(msg_dim, int) and self._is_from_poll(message, msg_dim))
+            any_who1_sweep
+            or self._is_from_poll(message, msg_dim if isinstance(msg_dim, int) else None)
         )
         live_refresh_dim1 = (
             msg_dim in (1, 4)
@@ -2592,7 +2508,18 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                 or time.monotonic() < self._brightness_refresh_after
             )
         )
-        if msg_dim in (1, 4) or any_who1_sweep:
+        if any_who1_sweep or (
+            msg_dim in (1, 4)
+            and (
+                not self._brightness_refresh_out
+                or getattr(message, "_from_status_request", False) is True
+                or (
+                    prev_brightness_pct is not None
+                    and self._attr_brightness_pct is not None
+                    and self._attr_brightness_pct != prev_brightness_pct
+                )
+            )
+        ):
             self._brightness_refresh_from_live = False
         if (
             self._actuator_locked is True

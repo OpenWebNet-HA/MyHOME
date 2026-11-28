@@ -37,7 +37,9 @@ from .const import (
     CONF_WHO,
     DOMAIN,
     LOGGER,
+    ROLE_SECONDARY,
     SERVICE_CALIBRATE_COVER,
+    TOPOLOGY_SHARED,
 )
 from .cover import is_native_point_cover
 from .cover_scope import CoverScope
@@ -51,6 +53,12 @@ from .discovery import (
 from .expose import is_exposed_on_bus
 from .myhome_device import MyHOMEEntity
 from .sound_source import source_address, tuner_source, uses_who22_commands
+from .topology import (
+    entry_delegated_whos,
+    entry_primary_mac,
+    entry_role,
+    entry_topology,
+)
 
 PARALLEL_UPDATES = 0
 PLATFORM = Platform.BUTTON
@@ -172,11 +180,32 @@ async def async_setup_entry(
                         )
                     )
 
-    supports_who14 = getattr(gateway, "supports_who14_commands", True) is not False
+    def _supports_who14() -> bool:
+        return getattr(gateway, "supports_who14_commands", True) is not False
+
+    def _has_pending_who14_secondary() -> bool:
+        """True when a shared-bus secondary delegating WHO 14 or {1, 2} has not loaded yet."""
+        delegated: set[int] = getattr(gateway, "delegated_away_whos", set())
+        if not (14 in delegated or {1, 2}.issubset(delegated)):
+            return False
+        for peer in hass.config_entries.async_entries(DOMAIN):
+            if peer.entry_id == config_entry.entry_id:
+                continue
+            if (
+                entry_topology(peer) == TOPOLOGY_SHARED
+                and entry_role(peer) == ROLE_SECONDARY
+                and entry_primary_mac(peer) == mac
+            ):
+                peer_whos = entry_delegated_whos(peer)
+                if (14 in peer_whos or {1, 2}.issubset(peer_whos)) and getattr(
+                    getattr(peer, "runtime_data", None), "gateway", None
+                ) is None:
+                    return True
+        return False
 
     def _create_buttons_for_device(dev_id: str | int, cfg: dict[str, Any]) -> list[ButtonEntity]:
         """Lock and unlock buttons for one actuator (a yaml entry or an announcement)."""
-        if not supports_who14:
+        if not _supports_who14():
             return []
         who = str(cfg.get(CONF_WHO, "1"))
         if who not in ("1", "2"):
@@ -245,7 +274,7 @@ async def async_setup_entry(
                     return registered.unique_id[len(prefix):]
         return ""
 
-    if not supports_who14:
+    if not _supports_who14() and not _has_pending_who14_secondary():
         for registered in list(registered_entries):
             if registered.domain != "button":
                 continue
@@ -403,6 +432,11 @@ class DisableCommandButtonEntity(ButtonEntity, MyHOMEEntity):
         if self._interface is not None:
             self._attr_extra_state_attributes["Int"] = self._interface
 
+    @property
+    def available(self) -> bool:
+        """WHO=14 lock buttons follow WHO=14 availability, not the parent actuator WHO."""
+        return self._gateway_handler.is_who_available(14)
+
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""
         self._register_availability_listener()
@@ -465,6 +499,11 @@ class EnableCommandButtonEntity(ButtonEntity, MyHOMEEntity):
         }
         if self._interface is not None:
             self._attr_extra_state_attributes["Int"] = self._interface
+
+    @property
+    def available(self) -> bool:
+        """WHO=14 unlock buttons follow WHO=14 availability, not the parent actuator WHO."""
+        return self._gateway_handler.is_who_available(14)
 
     async def async_added_to_hass(self) -> None:
         """When entity is added to hass."""

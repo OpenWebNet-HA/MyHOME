@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import itertools
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import CALLBACK_TYPE, callback
@@ -30,10 +31,13 @@ __all__ = [
     "entity_key",
     "is_lockable_entity",
     "is_valid_point_where",
+    "is_who1_status_poll_reply",
     "normalize_iface",
     "parse_hash_group",
     "point_area",
     "split_point_key",
+    "who1_bus_gateways",
+    "who1_poll_targets_entity",
 ]
 
 _AREA_WHERES = frozenset({"00", "1", "2", "3", "4", "5", "6", "7", "8", "9", "100"})
@@ -186,6 +190,117 @@ def actuator_locks_of(handler: Any) -> ActuatorLockManager | None:
         mgr._sync_secondary_gateways()
         return mgr
     return None
+
+
+def who1_bus_gateways(handler: Any) -> tuple[Any, ...]:
+    """Return candidate gateways on this bus that may hold WHO=1 sweeps or in-flight polls."""
+    if handler is None:
+        return ()
+    pri_fn = getattr(handler, "_get_primary_gateway", None)
+    pri_gw = (
+        pri_fn()
+        if callable(pri_fn) and getattr(handler, "is_follower", False) is True
+        else None
+    )
+    root = pri_gw if pri_gw is not None else handler
+    sec_fn = getattr(root, "_get_secondary_for_who", None)
+    stb_fn = getattr(root, "_get_standby_gateway", None)
+    return tuple(
+        h
+        for h in (
+            handler,
+            pri_gw,
+            sec_fn(1) if callable(sec_fn) else None,
+            stb_fn() if callable(stb_fn) else None,
+        )
+        if h is not None
+    )
+
+
+def who1_poll_targets_entity(
+    entity: Any,
+    sent: Any,
+    *,
+    is_own_point: Callable[[Any], bool] | None = None,
+) -> bool:
+    """Return True if a WHO=1 status/dimension poll ``sent`` covers ``entity`` (point or scope)."""
+    own_check = (
+        is_own_point if is_own_point is not None else getattr(entity, "_is_own_point_event", None)
+    )
+    if callable(own_check) and own_check(sent):
+        return True
+    raw_where = expose_message_where(sent)
+    if not raw_where:
+        return False
+    # Unrouted General '0' addresses the complete Lighting system (main bus + #4#II local buses;
+    # WHO_1.pdf §2.3 & F461 DALI capture tests/fixtures/plants/issue_288_f461_dali_dt8).
+    if raw_where == "0":
+        return True
+    base, sep, sent_iface_raw = raw_where.rpartition("#4#")
+    entity_iface = getattr(entity, "_interface", None)
+    own_iface = _normalize_iface(entity_iface)
+    if sep:
+        sent_iface = _normalize_iface(sent_iface_raw)
+        if sent_iface is None or entity_iface is None or sent_iface != own_iface:
+            return False
+        scope_where = base.strip()
+    else:
+        if entity_iface is not None:
+            return False
+        sent_iface = None
+        scope_where = raw_where
+    if scope_where == "0":
+        return True
+    entity_where = str(getattr(entity, "_where", ""))
+    if scope_where in _AREA_WHERES:
+        own_canon = canonical_point_spelling(normalize_where(entity_where) or entity_where)
+        return _is_valid_point_where(own_canon) and _point_area(own_canon) == scope_where
+    grp = _parse_hash_group(scope_where)
+    if grp is not None:
+        handler = getattr(entity, "_gateway_handler", None)
+        mgr = actuator_locks_of(handler)
+        if mgr is not None and _entity_key(entity) in mgr._resolve_group_keys(grp, sent_iface):
+            return True
+        grp_key = f"{grp}#4#{sent_iface}" if sent_iface is not None else grp
+        own_canon = canonical_point_spelling(normalize_where(entity_where) or entity_where)
+        own_ptp = f"{own_canon}#4#{own_iface}" if own_iface is not None else own_canon
+        return any(
+            own_ptp
+            in (getattr(getattr(h, "_resync_manager", None), "group_members", None) or {}).get(
+                grp_key, ()
+            )
+            for h in who1_bus_gateways(handler)
+        )
+    return False
+
+
+def is_who1_status_poll_reply(
+    entity: Any,
+    message: Any,
+    *,
+    dimension: int | None = None,
+    is_own_point: Callable[[Any], bool] | None = None,
+) -> bool:
+    """Return True when ``message`` is a reply to a WHO=1 status/dimension poll or sweep."""
+    if getattr(message, "_from_status_request", False) is True:
+        return True
+    allowed_dims: tuple[int | None, ...] = (None, 1) if dimension in (None, 1) else (dimension,)
+    for h in who1_bus_gateways(getattr(entity, "_gateway_handler", None)):
+        if getattr(h, "sweep_active", False) is True:
+            return True
+        in_flight = getattr(getattr(h, "_command_pool", None), "_in_flight_messages", ())
+        for sent in tuple(in_flight):
+            if (
+                getattr(sent, "who", None) == 1
+                and (
+                    getattr(sent, "is_dimension_request", False) is True
+                    or getattr(sent, "is_status_request", False) is True
+                )
+                and getattr(sent, "dimension", None) in allowed_dims
+                and who1_poll_targets_entity(entity, sent, is_own_point=is_own_point)
+            ):
+                return True
+    return False
 
 
 class ActuatorLockManager:

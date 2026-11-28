@@ -1145,22 +1145,17 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         return self._model_key in SOUND_STATUS_REQUEST_REFUSED
 
     @property
+    def _own_supports_who14_commands(self) -> bool:
+        """Whether this gateway itself accepts outbound WHO=14 lock/unlock commands."""
+        return self._model_key not in WHO14_COMMANDS_REFUSED
+
+    @property
     def supports_who14_commands(self) -> bool:
         """Whether this gateway (or its WHO=14 / WHO=1/2 secondary) accepts outbound WHO=14 lock/unlock commands."""
-        if 14 in self.delegated_away_whos:
-            sec = self._get_secondary_for_who(14)
-            if sec is not None and sec is not self:
-                return sec.supports_who14_commands
-        if (
-            not (self._profile_supports_who(1) or self._profile_supports_who(2))
-            or {1, 2}.issubset(self.delegated_away_whos)
-        ):
-            for cand_who in (1, 2):
-                if cand_who in self.delegated_away_whos:
-                    sec_lock = self._get_secondary_for_who(cand_who)
-                    if sec_lock is not None and sec_lock is not self:
-                        return sec_lock.supports_who14_commands
-        return self._model_key not in WHO14_COMMANDS_REFUSED
+        sec = self._who14_secondary()
+        if sec is not None:
+            return sec.supports_who14_commands
+        return self._own_supports_who14_commands
 
     @property
     def zone_actuator_request_refused(self) -> bool:
