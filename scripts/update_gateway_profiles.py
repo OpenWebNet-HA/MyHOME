@@ -239,7 +239,7 @@ GATEWAY_DISCOVERY_METADATA: list[dict[str, object]] = [
         "pinned_whos": [1, 2, 4, 18],
         "sweep_omits": [GENERAL_ZONE_STATUS],
         "sweep_replaces": [ALL_ACTUATORS_STATUS],
-        "notes": "Entry-level gateway: lighting, cover, and energy meter 51 queries. Not in own-firmware-oracle; a physical F455 1.0.76 ACKed `*#4*0##` after 9.1 s with no zone frame although its zones answer single reads (`tests/fixtures/traces/issue_466`), so the sweep asks every actuator in its place (`*#4*0#0*20##`); a climate zone that stays silent is asked read by read after the sweep (#466, #932). Sound (WHO 16/22) and Alarm (WHO 5) omitted per installer manual.",
+        "notes": "Entry-level gateway: lighting, cover, and energy meter 51 queries. Catalogued (not emulated) in own-firmware-oracle; a physical F455 1.0.76 ACKed `*#4*0##` after 9.1 s with no zone frame although its zones answer single reads (`tests/fixtures/traces/issue_466`), so the sweep asks every actuator in its place (`*#4*0#0*20##`); a climate zone that stays silent is asked read by read after the sweep (#466, #932). Sound (WHO 16/22) and Alarm (WHO 5) omitted per installer manual.",
     },
     {
         "model": "**MyHomeServer1**",
@@ -255,7 +255,7 @@ GATEWAY_DISCOVERY_METADATA: list[dict[str, object]] = [
         "profile_name": "MH201",
         "pinned_whos": [1, 2, 4, 16, 18],
         "sweep_omits": [GENERAL_ZONE_STATUS],
-        "notes": "Lighting, cover, climate, sound (unmeasured class default), and energy meter 51 queries. Not in own-firmware-oracle; a physical MH201 3.3.6 returned no zone frame to `*#4*0##` although its zones report (`tests/fixtures/traces/issue_466`), so the sweep leaves it out and each climate zone asks `*#4*<WHERE>*0##` itself. Alarm query omitted.",
+        "notes": "Lighting, cover, climate, sound (unmeasured class default), and energy meter 51 queries. Catalogued (not emulated) in own-firmware-oracle; a physical MH201 3.3.6 returned no zone frame to `*#4*0##` although its zones report (`tests/fixtures/traces/issue_466`), so the sweep leaves it out and each climate zone asks `*#4*<WHERE>*0##` itself. Alarm query omitted.",
     },
     {
         "model": "**MH200** *(Legacy)*",

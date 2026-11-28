@@ -295,10 +295,10 @@ SILENT_ZONE_GRACE = 30.0
 # one after another), and a single-dimension read on a probe-less channel holds a command
 # session ~9 s before the NACK.
 KNOB_READ_IN_SILENT_ZONE_POLL = frozenset({"F455"})
-# Zones behind an F422 bus interface (WHERE Z#4#II): zero of the twelve emulated gateways in
+# Zones behind an F422 bus interface (WHERE Z#4#II): zero of the thirteen emulated gateways in
 # own-firmware-oracle (findings/thermo-zone-requests.md) emit $06EC / $06E4 interface-routed SCS
 # frames for WHO 4. Gateways either NACK/drop Z#4#II queries, truncate Z#4#II at # and cross-poll
-# local main-bus zone Z (F450, F454, F459, F460, F461, H4684, MH200, MyHomeServer1), or on MH202
+# local main-bus zone Z (3488, F450, F454, F459, F460, F461, H4684, MH200, MyHomeServer1), or on MH202
 # 010024 misparse trailing #4#01 as local zone 4 actuator 1 and crash coso with SIGSEGV on
 # *#4*Z#4#01## (including while the profile is still Generic). ``interface_zone_request_refused``
 # therefore defaults to True across all models unless ``profile.supports_interface_zone_requests``
@@ -306,7 +306,7 @@ KNOB_READ_IN_SILENT_ZONE_POLL = frozenset({"F455"})
 
 # Gateways whose firmware drops the per-zone actuator request (``*#4*Z*20##``) instead of
 # forwarding it to the bus: own-firmware-oracle ``results/<P>/<V>/oracle/full/thermo-actuator.tsv``
-# (``*#4*1*20##`` "silent" on these six, "out" on F450, F454, F459, F460, F461, MyHomeServer1).
+# (``*#4*1*20##`` "silent" on these six, "out" on 3488, F450, F454, F459, F460, F461, MyHomeServer1).
 # Read from the OWNd profile first (``supports_heating_actuator_status``, OWNd#168 in 2.0.0b14);
 # this table is the fallback for ``GenericGatewayProfile`` / brand-prefixed model strings and
 # ``None`` (unverified) profile flags.
@@ -392,7 +392,7 @@ CENTRAL_STATUS_REQUEST = "*#4*#0##"
 HUMIDITY_REQUEST_REFUSED = frozenset({"F450", "F453", "F453AV", "F454", "F455", "H4684", "MH200", "MH200N", "MH202"})
 # The F455 is not in the oracle: a physical F455 1.0.76 NACKed *#4*2*60## in 19 ms with nothing on
 # the bus (issue_466/F455_direct_requests_2026-11-06.jsonl, t=68.6).
-# Every gateway model the request tables can be keyed on: the twelve images the oracle emulates
+# Every gateway model the request tables can be keyed on: the thirteen images the oracle emulates
 # (results/<P>/<V>, refusing and forwarding alike) and the other models OWNd profiles, so a
 # forwarding model named with a brand prefix ("BTicino F461") is keyed as itself (``F461``)
 # and not left as the whole string. The same key on every table of #792 / #793 / #794.
@@ -1207,7 +1207,7 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
     def interface_zone_request_refused(self) -> bool:
         """Whether WHO 4 requests behind an ``#4#II`` interface are dropped, misrouted, or crash the gateway.
 
-        Zero of the twelve emulated gateways in own-firmware-oracle (``findings/thermo-zone-requests.md``)
+        Zero of the thirteen emulated gateways in own-firmware-oracle (``findings/thermo-zone-requests.md``)
         emit ``$06EC`` / ``$06E4`` interface-routed SCS frames for WHO 4: gateways either NACK/drop them,
         truncate ``Z#4#II`` at ``#`` and cross-poll local zone ``Z`` on the main bus, or on MH202 ``010024``
         misparse trailing ``#4#01`` as local zone 4 actuator 1 and crash ``coso`` with ``SIGSEGV`` on

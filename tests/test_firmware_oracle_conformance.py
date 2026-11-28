@@ -37,7 +37,7 @@ def test_firmware_oracle_integrity():
     data = load_firmware_oracle()
     assert data["format_version"] == "1.0.0"
     assert data["generator"] == "own-firmware-oracle"
-    assert data["schema_version"] in ("1.0.0", "1.1.0")
+    assert data["schema_version"] in ("1.0.0", "1.1.0", "1.2.0")
 
     verdicts = data["verdicts"]
     canonical_verdicts = json.dumps(verdicts, sort_keys=True, separators=(",", ":"))
@@ -47,14 +47,42 @@ def test_firmware_oracle_integrity():
     )
 
     assert data["total_unique_inputs"] == len(verdicts)
-    assert len(data["gateways"]) == 17
+    assert len(data["gateways"]) == 18
 
     gateway_names = {f"{g['product']} {g['version']}" for g in data["gateways"]}
+    assert "3488 030205" in gateway_names
     assert "F453 010100" in gateway_names
     assert "L4686SDK 012001" in gateway_names
     assert "MH200 020102" in gateway_names
     assert "MH200N 010108" in gateway_names
     assert "MyHomeServer1 028206" in gateway_names
+
+
+# Oracle clock normalizer placeholders used in who13-clock*.tsv so verdicts stay
+# deterministic across wall-clock time; substitute valid concrete fields before parsing.
+_ORACLE_CLOCK_PLACEHOLDERS: tuple[tuple[str, str], ...] = (
+    ("{UTC}", "12"),
+    ("{M}", "34"),
+    ("{S}", "56"),
+    ("{W}", "03"),
+    ("{D}", "21"),
+    ("{MO}", "10"),
+    ("{Y}", "2026"),
+)
+
+# Deliberate non-standard / unconfigured WHO=13 firmware emissions recorded by
+# who13-clock and who13-identification suites that OWNd intentionally rejects
+# (invalid 4-digit/out-of-range TZ '0530'/'124' echoed back by firmware; empty
+# '#'-separated unconfigured Dim 27 model token on 3488/MH200/MH200N/MHS1).
+_KNOWN_UNPARSEABLE_ORACLE_EMITTED: frozenset[str] = frozenset(
+    {
+        "*#13**#0*14*30*00*0530##",
+        "*#13**#0*14*30*00*124##",
+        "*#13**#22*14*30*00*0530*03*21*10*2026##",
+        "*#13**0*{UTC}*{M}*{S}*0530##",
+        "*#13**27*#*#*1##",
+    }
+)
 
 
 def test_emitted_own_frames_parseable_by_ownd():
@@ -69,8 +97,13 @@ def test_emitted_own_frames_parseable_by_ownd():
 
     failures: list[str] = []
     for frame in sorted(all_emitted):
+        if frame in _KNOWN_UNPARSEABLE_ORACLE_EMITTED:
+            continue
+        candidate = frame
+        for placeholder, concrete in _ORACLE_CLOCK_PLACEHOLDERS:
+            candidate = candidate.replace(placeholder, concrete)
         try:
-            parsed = OWNMessage.parse(frame)
+            parsed = OWNMessage.parse(candidate)
             if parsed is None:
                 failures.append(f"Unparsed frame: {frame}")
         except Exception as exc:  # noqa: BLE001
@@ -100,13 +133,14 @@ def test_emitted_own_frames_parseable_by_ownd():
 
 # On these firmwares scsserver reports a bus write as delivered only when a device
 # acknowledges it (PIC answer $00800 on the F460/F461 3-digit protocol, $08 in the
-# MyHomeServer1 2.82.06 "v8" PIC mode); otherwise it retries three times and the
+# MyHomeServer1 2.82.06 "v8" PIC mode, and likewise 3488/030205 whose 345 empty-bus
+# forwarded rows return nack/out); otherwise it retries three times and the
 # command session replies NACK. The oracle's full suites run on an empty bus, so
 # their reply is NACK for almost every frame these gateways forward. The verdict
 # (out vs silent) is the evidence there: live F461 2.0.11 traces ACK every frame the
 # oracle saw go out (see test_f461_live_trace_agrees_with_oracle). Documented in
 # own-firmware-oracle README.md and findings/pic-inbound-protocol.md.
-EMPTY_BUS_NACK_GATEWAYS = frozenset({"F460", "F461", "MyHomeServer1"})
+EMPTY_BUS_NACK_GATEWAYS = frozenset({"3488", "F460", "F461", "MyHomeServer1"})
 
 
 def _refused(entry: dict[str, Any]) -> bool:
@@ -142,6 +176,7 @@ KNOWN_GATEWAY_DISCREPANCIES: dict[tuple[str, str], set[str]] = {
             "intercom.capture.call_pager.11",
         )
         for product in (
+            "3488",
             "F450",
             "F453",
             "F453AV",
@@ -157,18 +192,20 @@ KNOWN_GATEWAY_DISCREPANCIES: dict[tuple[str, str], set[str]] = {
         )
     },
     ("light.cmd.off.bus.25", "F450"): {"nack"},
-    ("light.cmd.off.bus.25", "MH202"): {"nack"},
     ("light.cmd.on.gen.0", "F450"): {"nack"},
+    ("load.cmd.force.priority1", "3488"): {"nack"},
     ("load.cmd.force.priority1", "F450"): {"nack"},
     ("load.cmd.force.priority1", "F460"): {"nack"},
     ("load.cmd.force.priority1", "F461"): {"nack"},
     ("load.cmd.force.priority1", "MyHomeServer1"): {"nack"},
+    ("sound.cmd.source.on.1", "3488"): {"nack"},
     ("sound.cmd.source.on.1", "F450"): {"nack"},
     ("sound.cmd.source.on.1", "F459"): {"nack"},
     ("sound.cmd.source.on.1", "F460"): {"nack"},
     ("sound.cmd.source.on.1", "F461"): {"nack"},
     ("sound.cmd.source.on.1", "MH202"): {"nack"},
     ("sound.cmd.source.on.1", "MyHomeServer1"): {"nack"},
+    ("sound.cmd.source.on.2", "3488"): {"nack"},
     ("sound.cmd.source.on.2", "F450"): {"nack"},
     ("sound.cmd.source.on.2", "F459"): {"nack"},
     ("sound.cmd.source.on.2", "F460"): {"nack"},
@@ -183,6 +220,8 @@ KNOWN_GATEWAY_DISCREPANCIES: dict[tuple[str, str], set[str]] = {
     ("thermo.capture.central.auto_generic.cu99.no_effect", "MH200"): {"nack"},
     ("thermo.cmd.central.mode.cool.cu99", "H4684"): {"nack"},
     ("thermo.cmd.central.mode.cool.cu99", "MH200"): {"nack"},
+    ("thermo.cmd.central.mode.heat.cu4", "H4684"): {"nack"},
+    ("thermo.cmd.central.mode.heat.cu4", "MH200"): {"nack"},
     ("thermo.cmd.central.mode.heat.cu99", "H4684"): {"nack"},
     ("thermo.cmd.central.mode.heat.cu99", "MH200"): {"nack"},
 }
@@ -298,7 +337,15 @@ def test_all_gateway_responses_conform_to_openwebnet_protocol():
     valid_verdicts = {"out", "silent", "timeout", "crash"}
 
     for inp, entries in ALL_VERDICTS.items():
-        assert inp.startswith("*") and inp.endswith("##"), f"Invalid input frame format: {inp}"
+        if entries and all(e.get("direction") == "up" for e in entries):
+            # Inbound SCS bus stimulus (schema 1.2.0+, e.g. thermo-four-zone-central / who1-motion-detector)
+            tokens = inp.split()
+            assert len(tokens) > 0, f"Empty inbound bus stimulus: {inp}"
+            for token in tokens:
+                assert len(token) == 2, f"Invalid hex token '{token}' in inbound bus stimulus '{inp}'"
+                int(token, 16)
+        else:
+            assert inp.startswith("*") and inp.endswith("##"), f"Invalid input frame format: {inp}"
         for entry in entries:
             assert entry["reply"] in valid_replies, (
                 f"Invalid reply '{entry['reply']}' for {inp} on {entry['product']}"

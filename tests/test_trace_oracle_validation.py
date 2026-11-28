@@ -58,7 +58,7 @@ CLOCK_DEPENDENT_TX_FRAMES: frozenset[str] = frozenset({
 
 
 # Requests sent to a physical gateway in a MyHOME capture for which the firmware oracle
-# (results/mcp_index.json at 53f9514, mirrored in tests/golden/firmware_oracle.json) has no
+# (results/mcp_index.json, mirrored in tests/golden/firmware_oracle.json) has no
 # stimulus at all - not even a canonical form of it - so tier 1 cannot ask for a verdict.
 # Each entry names the capture and what the live gateway answered, so the list documents
 # the gap instead of hiding it. An entry must be present in the corpus and absent from the
@@ -74,11 +74,9 @@ PHYSICAL_ONLY_TX_FRAMES: dict[str, str] = {
     "*#1004*2##": "F461 2026-10-15: NACK",
     "*#13**13##": "F461 2026-10-15: NACK",
     "*#13**17##": "F461 2026-10-15: ACK *#13**17*4*2*0##",
-    "*#13*0*0##": "F461 2026-10-15: NACK (WHERE 0 is not a gateway address)",
     "*#15*0##": "F461 2026-10-15: NACK (no CEN handler)",
     "*#18*0##": "F461 2026-10-15: NACK",
     "*#22*0##": "F461 2026-10-15: NACK",
-    "*#4*#0*22##": "F461 2026-10-15: NACK, then the gateway rebooted (dimension 22 crash)",
     "*#4*2*#30*25*12*2026##": "F461 2026-10-15: ACK (holiday end date write, no effect)",
     "*#4*2*#31*10*30##": "F461 2026-10-15: ACK (holiday end time write, no effect)",
     "*#4*2*#32*02*00##": "F461 2026-10-15: ACK (timed manual write, no effect)",
@@ -89,7 +87,6 @@ PHYSICAL_ONLY_TX_FRAMES: dict[str, str] = {
     "*#4*2*17##": "F461 2026-10-15: NACK",
     "*#4*2*2##": "F461 2026-10-15: NACK in run1, ACK *#4*2*2*0350## in run3",
     "*#4*2*21##": "F461 2026-10-15: NACK",
-    "*#4*2*22##": "F461 2026-10-15: NACK in 12 ms, then the gateway rebooted (dimension 22 crash)",
     "*#4*2*29##": "F461 2026-10-15: NACK",
     "*#4*2*3##": "F461 2026-10-15: NACK in run1, ACK *#4*2*3*0070## in run3",
     "*#4*2*30##": "F461 2026-10-15: NACK",
@@ -114,11 +111,7 @@ PHYSICAL_ONLY_TX_FRAMES: dict[str, str] = {
     "*4*312#0210#1*#2##": "F461 2026-10-15: ACK (central-unit form, no effect)",
     # --- F461 2.0.11, f461_live_2026-10-15 and f461_live_2026-10-18 and f461_live_2026-10-23
     "*#1*#1##": "F461 2026-10-15 / 10-18 / 10-23: ACK, members *1*0*06## *1*0*07## (10-18), no data (10-23)",
-    "*#13**10##": "F461 2026-10-15 / 10-23: ACK *#13**10*192*0*2*92## (documentation IP)",
-    "*#13**11##": "F461 2026-10-15 / 10-23: ACK *#13**11*255*255*255*0##",
-    "*#13**12##": "F461 2026-10-15 / 10-23, MyHomeServer1 3.87.13 2026-10-24: ACK with the MAC (synthetic in the fixtures)",
     "*#13**19##": "F461 2026-10-15 / 10-23: ACK *#13**19*0*0*38*54## (uptime)",
-    "*#4*2*60##": "F461 2026-10-15: NACK in run1, ACK *#4*2*60*34## later; 2026-10-23: ACK *#4*2*60*39## in 143 ms; 2026-10-25 (actuators): ACK *#4*2*60*34## in 124 ms (Home Assistant's startup sweep)",
     "*1*0*#1##": "F461 2026-10-15 / 10-18: ACK (group 1 off)",
     "*1*0*0##": "F461 2026-10-15 / 10-18: ACK (general off)",
     "*1*1*#1##": "F461 2026-10-15 / 10-18: ACK (group 1 on)",
@@ -168,12 +161,10 @@ PHYSICAL_ONLY_TX_FRAMES: dict[str, str] = {
     "*#13**2##": "F461 2026-10-23: NACK in 6 ms",
     "*#13**25##": "F461 2026-10-23: NACK in 5 ms",
     "*#13**26##": "F461 2026-10-23: NACK in 6 ms",
-    "*#13**27##": "F461 2026-10-23: ACK *#13**27*70#52#54#49## (F461); MyHomeServer1 2026-10-24: ACK (MyHomeServer1)",
     "*#13**3##": "F461 2026-10-23: NACK in 6 ms",
     "*#18*51*113*100##": "F461 2026-10-23: ACK in 1.41 s (report form accepted, not echoed)",
     "*#2*05*11##": "F461 2026-10-23: NACK in 6 ms (no position reporting on an F411/2)",
     "*#4*#0*0*0215##": "F461 2026-10-23: NACK after 4.13 s (central-unit report form, no central unit)",
-    "*#4*0*60##": "F461 2026-10-23: ACK *#4*2*60*39## after 2.13 s; MyHomeServer1 2026-10-24: ACK after 0.50 s with 8 replies; 17 zones by 0.97 s",
     # --- MyHomeServer1 3.87.13, myhomeserver1_live_2026-10-24 (the oracle emulates 2.82.06)
     "*#4*35*60##": "MyHomeServer1 2026-10-24: NACK after 2.13 s (no humidity probe in zone 35); 2026-10-25: NACK after 2.15 s",
     "*#4*39*60##": "MyHomeServer1 2026-10-24: ACK *#4*39*60*51## in 204 ms; 2026-10-25: ACK *#4*39*60*47## in 215 ms",
@@ -228,9 +219,6 @@ PHYSICAL_ONLY_TX_FRAMES: dict[str, str] = {
     # --- F461 2.0.11, central_restore_3100_live_2026-11-12 (3550 central unit #0, conditioning)
     "*4*2101*#0##": "F461 2026-11-12: ACK in 117 ms (weekly program 1, conditioning)",
     "*4*3100*#0##": "F461 2026-11-12: ACK in 97 / 111 ms, the 3550 answers *4*2101*#0## 131 to 154 ms after the send",
-    # --- F454 2.0.51 with a 4-zone central unit, issue_994 (emulated across 13/13 gateways in
-    # own-firmware-oracle#93; kept here until tests/golden/firmware_oracle.json is regenerated)
-    "*4*1103*#0#1##": "F454 2026-11-22: the central unit reports *4*1103*#0#1## 3.3 s after the send, its zones go to heating",
 }
 
 
@@ -546,7 +534,8 @@ def test_tier1_physical_only_frames_are_in_the_corpus_and_not_in_the_oracle():
 @pytest.mark.parametrize(
     ("query_frame", "product", "expected_emitted_prefix"),
     [
-        # WHO 13 Device Model ID (*#13**15##) across all 11 emulated gateways
+        # WHO 13 Device Model ID (*#13**15##) across all 13 emulated gateways
+        ("*#13**15##", "3488", "*#13**15*200##"),
         ("*#13**15##", "MH200", "*#13**15*4##"),
         ("*#13**15##", "H4684", "*#13**15*13##"),
         ("*#13**15##", "MyHomeServer1", "*#13**15*200##"),
@@ -559,7 +548,8 @@ def test_tier1_physical_only_frames_are_in_the_corpus_and_not_in_the_oracle():
         ("*#13**15##", "MH200N", "*#13**15*0##"),
         ("*#13**15##", "F453", "*#13**15*0##"),
         ("*#13**15##", "F453AV", "*#13**15*0##"),
-        # WHO 13 Firmware Version (*#13**16##) — exact compiled version across all 11 gateways
+        # WHO 13 Firmware Version (*#13**16##) — exact compiled version across all 13 gateways
+        ("*#13**16##", "3488", "*#13**16*3*2*5##"),
         ("*#13**16##", "MH200N", "*#13**16*1*1*8##"),
         ("*#13**16##", "MH200", "*#13**16*2*1*2##"),
         ("*#13**16##", "F454", "*#13**16*2*0*51##"),
@@ -573,11 +563,13 @@ def test_tier1_physical_only_frames_are_in_the_corpus_and_not_in_the_oracle():
         ("*#13**16##", "F460", "*#13**16*2*0*12##"),
         ("*#13**16##", "F450", "*#13**16*2*0*10##"),
         # WHO 13 Kernel & Distribution Version (*#13**23##, *#13**24##)
+        ("*#13**23##", "3488", "*#13**23*5*15*157##"),
         ("*#13**23##", "H4684", "*#13**23*2*0*5##"),
         ("*#13**23##", "MH200", "*#13**23*0*0*9##"),
         ("*#13**23##", "F454", "*#13**23*2*6*32##"),
         ("*#13**23##", "MyHomeServer1", "*#13**23*5*10*35##"),
         ("*#13**23##", "F461", "*#13**23*4*14*78##"),
+        ("*#13**24##", "3488", "*#13**24*2*18*3##"),
         ("*#13**24##", "H4684", "*#13**24*3*0*0##"),
         ("*#13**24##", "MH200", "*#13**24*3*0*5##"),
         ("*#13**24##", "MH200N", "*#13**24*3*0*1##"),
@@ -586,9 +578,9 @@ def test_tier1_physical_only_frames_are_in_the_corpus_and_not_in_the_oracle():
         # WHO 1013 Diagnostic Object Model (*#1013*0*1##) on H4684 & MH200
         ("*#1013*0*1##", "H4684", "*#1013**1*19##"),
         ("*#1013*0*1##", "MH200", "*#1013**1*4##"),
-        # WHO 5 Burglar Alarm status on MH200N & MH200 (bt_alarm phantom 8-zone response)
-        ("*#5*0##", "MH200N", "*5*1*##"),
-        ("*#5*0##", "MH200", "*5*1*##"),
+        # WHO 5 Burglar Alarm status on MH200N & MH200 (bt_alarm factory phantom 8-zone response)
+        ("*#5*0##", "MH200N", "*5*0*##"),
+        ("*#5*0##", "MH200", "*5*0*##"),
         # WHO 9 Auxiliary status on MH200N & MH200 (bt_alarm)
         ("*#9*0##", "MH200N", "*9*0*0##"),
         ("*#9*0##", "MH200", "*9*0*0##"),
@@ -622,10 +614,10 @@ def test_tier2_mh200n_and_mh200_phantom_alarm_8_zones_matches_issue_466_trace(pr
     assert entry["verdict"] == "out"
 
     expected_phantom_frames = [
-        "*5*1*##",
+        "*5*0*##",
         "*5*9*##",
-        "*5*10*##",
-        "*5*6*##",
+        "*5*5*##",
+        "*5*7*##",
         "*5*11*#1##",
         "*5*11*#2##",
         "*5*11*#3##",

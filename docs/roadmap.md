@@ -11,7 +11,7 @@ Our overarching mission is to provide the most reliable, complete, and high-perf
 
 ## 🗺️ Current Delivery Status (v2.0.0 Stable Release Ready)
 
-The major architectural milestones originally planned across Phases 1 through 4 have been **consolidated, fully implemented, and validated with 100% statement and branch test coverage** for **v2.0.0** on `OWNd==2.0.2`.
+The major architectural milestones originally planned across Phases 1 through 4 have been **consolidated, fully implemented, and validated with 100% statement and branch test coverage** (shipped in **v2.0.0**; currently pinned to `OWNd==2.0.2`).
 
 ```mermaid
 gantt

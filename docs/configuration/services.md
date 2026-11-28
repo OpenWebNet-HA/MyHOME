@@ -36,7 +36,7 @@ Sends an arbitrary, valid OpenWebNet message through the gateway command session
 
 > [!WARNING]
 > **`WHO = 4` Dimension 22 Firmware Crash Guard (`is_refused_dimension_22`)**:
-> Non-split `WHO = 4` Dimension 22 frames whose `WHERE` carries no actuator token (such as a zone `*#4*1*22##`, the general address `*#4*0*22##`, or the central unit `*#4*#0*22##`) kill the thermostat daemon on Linux IP gateways (`F461`, `F454`, `MH200N`, etc.) and are **strictly refused** before reaching the socket. Published split-unit forms (`*#4*3#Z#N*22##` and `*#4*3#Z#N*#22*MOD*SP*VEL*SWING##`) are safe across all twelve emulated gateway firmwares and are permitted.
+> Non-split `WHO = 4` Dimension 22 frames whose `WHERE` carries no actuator token (such as a zone `*#4*1*22##`, the general address `*#4*0*22##`, or the central unit `*#4*#0*22##`) kill the thermostat daemon on Linux IP gateways (`F461`, `F454`, `MH200N`, etc.) and are **strictly refused** before reaching the socket. Published split-unit forms (`*#4*3#Z#N*22##` and `*#4*3#Z#N*#22*MOD*SP*VEL*SWING##`) are safe across all thirteen emulated gateway firmwares and are permitted.
 
 ### Fields
 | Parameter | Type | Required | Description | Example |

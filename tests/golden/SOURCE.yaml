@@ -134,10 +134,10 @@ authorities:
     name: "OpenWebNet Firmware Translation Oracle"
     repository: "https://github.com/OpenWebNet-HA/own-firmware-oracle"
     snapshot_file: "tests/golden/firmware_oracle.json"
-    schema_version: "1.1.0"
-    verdicts_sha256: "e14901b758acdf4a90e7da2458dac86feb51bcabf8d4224ecc4f835299b61113"
-    total_unique_inputs: 520
-    role: "Provides hash-pinned empirical verdicts, gateway reply codes, and SCS bus frames from 12 emulated BTicino/Legrand gateway firmwares."
+    schema_version: "1.2.0"
+    verdicts_sha256: "203661e0e881ea50c5149a5ecb473eba78a917b945cb0ff088a4ddda4a6af831"
+    total_unique_inputs: 738
+    role: "Provides hash-pinned empirical verdicts, gateway reply codes, and SCS bus frames from 13 emulated BTicino/Legrand gateway firmwares."
 
   community_capture:
     name: "Physical Bus Captures Across Community BTicino & Legrand Installations"

@@ -16,7 +16,7 @@ To prevent divergence and eliminate guesswork, every protocol frame and capabili
 |---|---|---|
 | **1. The Judge** | Legrand OpenWebNet Official Specification Manuals (interrogated via `openwebnet-mcp`) | **Legal Grammar**: Defines whether a frame syntax, dimension boundary, or parameter structure is strictly valid per Legrand standards. |
 | **2. The Reference Oracle** | `openwebnet4j` & openHAB OpenWebNet Binding (by Massimo Valla) | **Wire Baseline**: Provides empirical on-wire factory strings, real-world edge cases, and 10+ years of mature production testing. |
-| **3. The Firmware Oracle** | `own-firmware-oracle` (`tests/golden/firmware_oracle.json`, 520 inputs across 12 emulated gateways) | **Hardware Truth**: Provides hash-pinned gateway replies, SCS bus forwarding verdicts, and crash boundaries from real gateway binaries. |
+| **3. The Firmware Oracle** | `own-firmware-oracle` (`tests/golden/firmware_oracle.json`, 738 inputs across 13 emulated gateways) | **Hardware Truth**: Provides hash-pinned gateway replies, SCS bus forwarding verdicts, and crash boundaries from real gateway binaries. |
 | **4. The SUT** | `OWNd` protocol engine & `custom_components/myhome` runtime | **System Under Test**: Must parse, validate, roundtrip serialize, and build frames with 100% fidelity. |
 
 ---
