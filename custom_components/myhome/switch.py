@@ -39,6 +39,7 @@ from OWNd.message import (
     OWNLightingEvent,
 )
 
+from .actuator_lock import is_who1_status_poll_reply
 from .binary_sensor import (
     binary_sensor_canonical_where,
     classify_binary_sensor_registry_entry,
@@ -719,11 +720,19 @@ class MyHOMESwitch(MyHOMEEntity, SwitchEntity):
                 message.human_readable_log,
             )
         prev_is_on = self._attr_is_on
+        was_bus_confirmed = self._bus_state_complete
         if message.is_on is not None:
             self._attr_is_on = message.is_on
             self._bus_state_complete = True
+        from_status_poll = is_who1_status_poll_reply(
+            self,
+            message,
+            is_own_point=self._is_own_point_event,
+        )
         if (
             self._actuator_locked is True
+            and was_bus_confirmed
+            and not from_status_poll
             and self._is_own_point_event(message)
             and prev_is_on is not None
             and self._attr_is_on is not None

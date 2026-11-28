@@ -44,13 +44,9 @@ from OWNd.message import (
 )
 
 from .actuator_lock import (
-    AREA_WHERES,
-    actuator_locks_of,
-    entity_key,
-    is_valid_point_where,
-    normalize_iface,
-    parse_hash_group,
-    point_area,
+    is_who1_status_poll_reply,
+    who1_bus_gateways,
+    who1_poll_targets_entity,
 )
 from .const import (
     BUS_ROUTING,
@@ -646,6 +642,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         self._pending_cmd_brightness_pct: _PendingCmdToken | None = None
         self._pending_cmd_color_temp: _PendingCmdToken | None = None
         self._brightness_restored: bool = False
+        self._color_temp_restored: bool = False
+        self._hs_color_restored: bool = False
         self._brightness_from_coarse_preset: bool = False
         # A fine dimmer has reported an exact level on Dimension 1 / 4 with a normal
         # speed; a coarse-only one (speed 240, #767) is still a coarse dimmer even if
@@ -660,6 +658,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         self._brightness_refresh_next_preset: int | None = None
         self._brightness_refresh_level: int | None = None
         self._brightness_refresh_repeats = 0
+        self._brightness_refresh_from_live = False
+        self._brightness_refresh_again_from_live = False
         self._exact_level_pct: int | None = None
         self._exact_level_since_refresh = False
         self._last_preset_echo_at: float | None = None
@@ -799,9 +799,11 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         if isinstance(last_kelvin, (int, float)):
             self._attr_color_temp_kelvin = int(last_kelvin)
             self._attr_color_temp = color_temperature_kelvin_to_mired(self._attr_color_temp_kelvin)
+            self._color_temp_restored = True
         elif isinstance(last_mired, (int, float)):
             self._attr_color_temp = int(last_mired)
             self._attr_color_temp_kelvin = color_temperature_mired_to_kelvin(self._attr_color_temp)
+            self._color_temp_restored = True
 
         # 4. Restore HS / RGB color
         last_hs = last_state.attributes.get(ATTR_HS_COLOR)
@@ -809,11 +811,13 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             self._attr_hs_color = (float(last_hs[0]), float(last_hs[1]))
             r, g, b = color_hs_to_RGB(self._attr_hs_color[0], self._attr_hs_color[1])
             self._attr_rgb_color = (r, g, b)
+            self._hs_color_restored = True
         else:
             last_rgb = last_state.attributes.get(ATTR_RGB_COLOR)
             if isinstance(last_rgb, (list, tuple)) and len(last_rgb) == 3:
                 self._attr_rgb_color = (int(last_rgb[0]), int(last_rgb[1]), int(last_rgb[2]))
                 self._attr_hs_color = color_RGB_to_hs(*self._attr_rgb_color)
+                self._hs_color_restored = True
 
         # 5. Restore power state
         if last_state.state == "on":
@@ -1000,99 +1004,28 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
 
     def _bus_gateways_for_who1(self) -> tuple[Any, ...]:
         """Return candidate gateways on this bus that may hold WHO=1 sweeps or in-flight polls."""
-        gw = self._gateway_handler
-        pri_fn = getattr(gw, "_get_primary_gateway", None)
-        pri_gw = (
-            pri_fn()
-            if callable(pri_fn) and getattr(gw, "is_follower", False) is True
-            else None
-        )
-        root = pri_gw if pri_gw is not None else gw
-        sec_fn = getattr(root, "_get_secondary_for_who", None)
-        stb_fn = getattr(root, "_get_standby_gateway", None)
-        return tuple(
-            h
-            for h in (
-                gw,
-                pri_gw,
-                sec_fn(1) if callable(sec_fn) else None,
-                stb_fn() if callable(stb_fn) else None,
-            )
-            if h is not None
-        )
+        return who1_bus_gateways(self._gateway_handler)
 
     def _poll_targets_self(self, sent: Any) -> bool:
         """Return True if a WHO=1 status/dimension poll ``sent`` covers this light (point or scope)."""
-        if self._is_own_point_event(sent):
-            return True
-        raw_where = expose_message_where(sent)
-        if not raw_where:
-            return False
-        # Unrouted General '0' addresses the complete Lighting system (main bus + #4#II local buses;
-        # WHO_1.pdf §2.3 & F461 DALI capture tests/fixtures/plants/issue_288_f461_dali_dt8).
-        if raw_where == "0":
-            return True
-        base, sep, sent_iface_raw = raw_where.rpartition("#4#")
-        own_iface = normalize_iface(self._interface)
-        if sep:
-            sent_iface = normalize_iface(sent_iface_raw)
-            if sent_iface is None or self._interface is None or sent_iface != own_iface:
-                return False
-            scope_where = base.strip()
-        else:
-            if self._interface is not None:
-                return False
-            sent_iface = None
-            scope_where = raw_where
-        if scope_where == "0":
-            return True
-        if scope_where in AREA_WHERES:
-            own_canon = canonical_point_spelling(normalize_where(self._where) or self._where)
-            return is_valid_point_where(own_canon) and point_area(own_canon) == scope_where
-        grp = parse_hash_group(scope_where)
-        if grp is not None:
-            mgr = actuator_locks_of(self._gateway_handler)
-            if mgr is not None and entity_key(self) in mgr._resolve_group_keys(grp, sent_iface):
-                return True
-            grp_key = f"{grp}#4#{sent_iface}" if sent_iface is not None else grp
-            own_canon = canonical_point_spelling(normalize_where(self._where) or self._where)
-            own_ptp = f"{own_canon}#4#{own_iface}" if own_iface is not None else own_canon
-            return any(
-                own_ptp
-                in (getattr(getattr(h, "_resync_manager", None), "group_members", None) or {}).get(
-                    grp_key, ()
-                )
-                for h in self._bus_gateways_for_who1()
-            )
-        return False
+        return who1_poll_targets_entity(self, sent, is_own_point=self._is_own_point_event)
 
-    def _is_from_poll(self, message: Any, dimension: int) -> bool:
+    def _is_from_poll(self, message: Any, dimension: int | None) -> bool:
         """Return True when ``message`` is a reply to a status/dimension poll or sweep."""
-        if getattr(message, "_from_status_request", False) is True:
-            return True
-        allowed_dims = (None, 1) if dimension == 1 else (dimension,)
-        for h in self._bus_gateways_for_who1():
-            if getattr(h, "sweep_active", False) is True:
-                return True
-            in_flight = getattr(getattr(h, "_command_pool", None), "_in_flight_messages", ())
-            for sent in tuple(in_flight):
-                if (
-                    getattr(sent, "who", None) == 1
-                    and (
-                        getattr(sent, "is_dimension_request", False) is True
-                        or getattr(sent, "is_status_request", False) is True
-                    )
-                    and getattr(sent, "dimension", None) in allowed_dims
-                    and self._poll_targets_self(sent)
-                ):
-                    return True
-        return False
+        return is_who1_status_poll_reply(
+            self,
+            message,
+            dimension=dimension,
+            is_own_point=self._is_own_point_event,
+        )
 
     @callback
     def handle_actuator_lock(self, locked: bool) -> None:
         """Apply WHO=14 lock state, cancelling active fades on lock and polling only if incomplete."""
         lock_state = bool(locked)
         prev_locked = self._actuator_locked
+        self._brightness_refresh_from_live = False
+        self._brightness_refresh_again_from_live = False
         if lock_state:
             self._fade_engine.cancel_fade_if_active()
             if (
@@ -1687,6 +1620,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         self._brightness_refresh_level = None
         self._brightness_refresh_repeats = 0
         self._brightness_refresh_again = False
+        self._brightness_refresh_from_live = False
+        self._brightness_refresh_again_from_live = False
         self._last_preset_echo_at = None
 
     def _request_brightness_refresh(self, force: bool = False) -> bool:
@@ -1745,9 +1680,12 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             self._brightness_refresh_after = time.monotonic() + _BRIGHTNESS_REFRESH_WINDOW_S
             if aborted:
                 self._brightness_refresh_again = False
+                self._brightness_refresh_again_from_live = False
                 self._brightness_refresh_next_preset = None
             elif self._brightness_refresh_again:
                 self._brightness_refresh_again = False
+                next_from_live = self._brightness_refresh_again_from_live
+                self._brightness_refresh_again_from_live = False
                 next_preset = self._brightness_refresh_next_preset
                 self._brightness_refresh_next_preset = None
                 if next_preset is not None:
@@ -1758,7 +1696,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                         else (self._attr_brightness_pct if self._actuator_locked is True else None)
                     )
                     self._brightness_refresh_repeats = 1
-                self._request_brightness_refresh(force=True)
+                if self._request_brightness_refresh(force=True) and next_from_live:
+                    self._brightness_refresh_from_live = True
         return not aborted
 
     def _request_status_check(self, background: bool) -> bool:
@@ -2050,6 +1989,8 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         prev_hs_color = self._attr_hs_color
         was_restored = self._is_on_restored
         was_brightness_restored = self._brightness_restored
+        was_color_temp_restored = self._color_temp_restored
+        was_hs_color_restored = self._hs_color_restored
         was_coarse_preset = self._brightness_from_coarse_preset
         was_fine = self._is_fine_dimmer(message)
         unknown_state = getattr(message, "unknown_state", None)
@@ -2213,6 +2154,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                     "tuple[int, int, int]", tuple(cast("tuple[int, int, int]", message.rgb))
                 )
                 self._attr_hs_color = color_RGB_to_hs(*self._attr_rgb_color)
+            self._hs_color_restored = False
 
             raw_v = getattr(message, "value", None)
             if isinstance(raw_v, (int, float)) and not isinstance(raw_v, bool):
@@ -2237,6 +2179,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             new_ct = cast(int, message.color_temp)
             self._attr_color_temp = new_ct
             self._attr_color_temp_kelvin = color_temperature_mired_to_kelvin(new_ct)
+            self._color_temp_restored = False
             any_sweep = any(
                 getattr(h, "sweep_active", False) is True
                 for h in self._bus_gateways_for_who1()
@@ -2402,6 +2345,7 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             # Ignored while software_stepped fade is active — including under OWNd >= 2.0.0b12
             # where is_coarse_dimmer=True also populates message.brightness on *1*2..10*WHERE##
             # (86% -> WHAT 10 -> 100% has a 14 pp quantization jump that would self-cancel fades).
+            preset_from_poll = self._is_from_poll(message, None)
             mapped = self._coarse_preset_pct(message, cast(int, preset))
             has_dimmer_capability = bool(
                 set(self._attr_supported_color_modes or ())
@@ -2449,6 +2393,15 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                     self._bus_state_complete = False
                     self._brightness_refresh_again = True
                     self._brightness_refresh_next_preset = cast(int, preset)
+                    if not preset_from_poll and (
+                        not was_brightness_restored
+                        or (
+                            self._brightness_refresh_preset is not None
+                            and preset != self._brightness_refresh_preset
+                        )
+                    ):
+                        self._brightness_refresh_from_live = True
+                        self._brightness_refresh_again_from_live = True
                 else:
                     # The same answer reaches every instance on the bus, so a read that
                     # brings nothing new is repeated at most _BRIGHTNESS_REFRESH_REPEATS
@@ -2488,6 +2441,10 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
                             )
                             self._brightness_refresh_preset = cast(int, preset)
                             self._brightness_refresh_level = ref_level
+                            self._brightness_refresh_from_live = (
+                                not preset_from_poll
+                                and (not was_brightness_restored or changed_preset)
+                            )
 
         if self._fade_engine.is_fading and self._is_own_point_event(message):
             fading_down = (
@@ -2533,32 +2490,68 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
             if step1_confirmed_by_event:
                 self._fade_engine.notify_bus_echo()
 
+        msg_dim = getattr(message, "dimension", None)
+        any_who1_sweep = any(
+            getattr(h, "sweep_active", False) is True
+            for h in self._bus_gateways_for_who1()
+        )
+        from_status_poll = (
+            any_who1_sweep
+            or self._is_from_poll(message, msg_dim if isinstance(msg_dim, int) else None)
+        )
+        live_refresh_dim1 = (
+            msg_dim in (1, 4)
+            and self._brightness_refresh_from_live
+            and not any_who1_sweep
+            and (
+                self._brightness_refresh_out
+                or time.monotonic() < self._brightness_refresh_after
+            )
+        )
+        if any_who1_sweep or (
+            msg_dim in (1, 4)
+            and (
+                not self._brightness_refresh_out
+                or getattr(message, "_from_status_request", False) is True
+                or (
+                    prev_brightness_pct is not None
+                    and self._attr_brightness_pct is not None
+                    and self._attr_brightness_pct != prev_brightness_pct
+                )
+            )
+        ):
+            self._brightness_refresh_from_live = False
         if (
             self._actuator_locked is True
+            and (not from_status_poll or live_refresh_dim1)
             and not is_no_load
             and not isinstance(unknown_state, int)
             and getattr(message, "what", None) not in (30, 31, "30", "31")
             and self._is_own_point_event(message)
         ):
             is_on_changed = (
-                prev_is_on is not None
+                not was_restored
+                and prev_is_on is not None
                 and self._attr_is_on is not None
                 and self._attr_is_on != prev_is_on
             )
             brightness_changed = (
-                not coarse_dim1_refinement
+                (not was_brightness_restored or live_refresh_dim1)
+                and not coarse_dim1_refinement
                 and prev_brightness_pct is not None
                 and self._attr_brightness_pct is not None
                 and self._attr_is_on is True
                 and self._attr_brightness_pct != prev_brightness_pct
             )
             ct_changed = (
-                prev_color_temp is not None
+                not was_color_temp_restored
+                and prev_color_temp is not None
                 and self._attr_color_temp is not None
                 and self._attr_color_temp != prev_color_temp
             )
             hs_changed = (
-                prev_hs_color is not None
+                not was_hs_color_restored
+                and prev_hs_color is not None
                 and self._attr_hs_color is not None
                 and self._attr_hs_color != prev_hs_color
             )
