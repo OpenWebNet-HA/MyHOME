@@ -133,7 +133,8 @@ def test_emitted_own_frames_parseable_by_ownd():
 
 # On these firmwares scsserver reports a bus write as delivered only when a device
 # acknowledges it (PIC answer $00800 on the F460/F461 3-digit protocol, $08 in the
-# MyHomeServer1 2.82.06 "v8" PIC mode); otherwise it retries three times and the
+# MyHomeServer1 2.82.06 "v8" PIC mode, and likewise 3488/030205 whose 345 empty-bus
+# forwarded rows return nack/out); otherwise it retries three times and the
 # command session replies NACK. The oracle's full suites run on an empty bus, so
 # their reply is NACK for almost every frame these gateways forward. The verdict
 # (out vs silent) is the evidence there: live F461 2.0.11 traces ACK every frame the
