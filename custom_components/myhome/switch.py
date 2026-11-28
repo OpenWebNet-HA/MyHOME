@@ -74,6 +74,7 @@ from .discovery import (
     default_known_keys,
     devices_with_binary_sensor,
     parse_unique_id,
+    prune_companions_for_removed_entity,
     prune_entity,
 )
 from .expose import is_exposed_on_bus
@@ -652,6 +653,11 @@ class MyHOMESwitch(MyHOMEEntity, SwitchEntity):
         own_canon = canonical_point_spelling(normalize_where(self._where) or self._where)
         msg_canon = canonical_point_spelling(normalize_where(target_pt) or target_pt)
         return bool(own_canon) and msg_canon == own_canon
+
+    async def async_removed_from_registry(self) -> None:
+        """Drop device fault issues and companion WHO=14 lock/unlock buttons on manual deletion."""
+        await super().async_removed_from_registry()
+        prune_companions_for_removed_entity(self)
 
     async def async_update(self) -> None:
         """Update the entity.

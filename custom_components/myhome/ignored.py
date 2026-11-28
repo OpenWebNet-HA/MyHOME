@@ -42,7 +42,11 @@ def _normalize_parsed_where(who: int, raw_where: str) -> str | None:
     where = raw_where.strip()
     if not where or not where.isascii():
         return None
-    base, iface, ok = _split_f422_suffix(where)
+    if who == 22:
+        # WHO=22 speaker addresses use ``3#<area>#<point>`` (e.g. ``3#4#1``), never F422 ``#4#II`` routing.
+        base, iface, ok = where, None, True
+    else:
+        base, iface, ok = _split_f422_suffix(where)
     if not ok:
         return None
 
@@ -70,7 +74,11 @@ def _normalize_parsed_where(who: int, raw_where: str) -> str | None:
                 return None
             clean_base = f"{int(parts[0])}#{int(parts[1])}"
         elif _is_ascii_digits(base):
-            clean_base = base.lstrip("0") or "0"
+            # In WHO=4, 3-digit 001..099 means "all probes of zone Z", distinct from zone 1..99.
+            if len(base) == 3 and base.startswith("0") and 1 <= int(base) <= 99:
+                clean_base = base
+            else:
+                clean_base = base.lstrip("0") or "0"
         else:
             return None
     elif base.startswith("#"):
@@ -78,6 +86,11 @@ def _normalize_parsed_where(who: int, raw_where: str) -> str | None:
         if not _is_ascii_digits(body):
             return None
         clean_base = "#" + (body.lstrip("0") or "0")
+    elif "#" in base:
+        parts = base.split("#")
+        if not all(_is_ascii_digits(part) for part in parts):
+            return None
+        clean_base = base
     elif base.isalnum():
         clean_base = base
     else:
@@ -231,9 +244,16 @@ class IgnoredAddresses:
     @staticmethod
     def _norm_where(where: str, who: int | None = None) -> str:
         """Normalize WHERE, preserving canonical A/PL, group ``#G``, and WHO=4 ``#0#N`` / ``Z#A`` forms."""
-        base, sep, iface = where.rpartition("#4#")
-        if not sep or not base:
+        if who == 22:
+            # WHO=22 speaker addresses use ``3#<area>#<point>`` (e.g. ``3#4#1``), never F422 ``#4#II`` routing.
             base, sep, iface = where, "", ""
+        else:
+            base, sep, iface = where.rpartition("#4#")
+            if not sep or not base:
+                base, sep, iface = where, "", ""
+        if who == 18 and base.endswith("#0") and _is_ascii_digits(base[:-2]):
+            # F522/F523 meter frames (*#18*71#0*...) strip #0 in sensor discovery (sensor.py:_sensor_address).
+            base = base[:-2]
         if _is_ascii_digits(base):
             if who in (0, 1, 2, 14, 15):
                 if is_apl_address(base):
@@ -243,6 +263,8 @@ class IgnoredAddresses:
                 else:
                     stripped = base.lstrip("0")
                     clean_base = stripped if len(stripped) == 2 and int(stripped) > 15 else base
+            elif who == 4 and len(base) == 3 and base.startswith("0") and 1 <= int(base) <= 99:
+                clean_base = base
             else:
                 clean_base = base.lstrip("0") or "0"
         elif base.startswith("#"):
@@ -295,6 +317,8 @@ class IgnoredAddresses:
             return False
 
         if interface:
+            if who_int == 22:
+                return False
             iface_str = interface.zfill(2) if interface.isascii() and interface.isdigit() else interface
             base_where, sep, inline_iface = where.rpartition("#4#")
             inline_norm = (
@@ -309,10 +333,11 @@ class IgnoredAddresses:
         else:
             candidates = {where}
 
-        # Strip legacy who- prefix if present; single-token WHO=4 '#' aliasing is handled by _norm_where
+        # Strip legacy ``{who}-`` prefix only; never split arbitrary hyphenated YAML keys (e.g. ``gate-31``).
+        who_prefix = f"{who_int}-"
         for c in list(candidates):
-            if "-" in c:
-                candidates.add(c.split("-")[-1])
+            if c.startswith(who_prefix) and len(c) > len(who_prefix):
+                candidates.add(c[len(who_prefix):])
         if who_int == 25:
             candidates.update([canonical_contact_where(self._norm_where(c, who_int)) for c in candidates])
 

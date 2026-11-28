@@ -75,7 +75,12 @@ from .const import (
 )
 from .data import get_runtime_data
 from .device_health import FaultKind
-from .discovery import DeviceContext, PlatformDiscovery, prune_entity
+from .discovery import (
+    DeviceContext,
+    PlatformDiscovery,
+    prune_climate_companions_for_removed,
+    prune_entity,
+)
 from .expose import is_exposed_on_bus
 from .gateway import (
     _ZONE_WHERE,
@@ -1977,6 +1982,31 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         registry = er.async_get(target_hass)
         if (entry := registry.async_get(entity_id)) is not None:
             prune_entity(target_hass, registry, entry, entry.config_entry_id or "")
+
+    async def async_removed_from_registry(self) -> None:
+        """Drop device fault issues and companion temperature/humidity/output-level sensors on manual deletion."""
+        await super().async_removed_from_registry()
+        if (self._central and not self._is_four_zone_central) or is_probe(self._where):
+            return
+        if not self._is_four_zone_central and canonical_thermo_zone(self._where) is None:
+            return
+        target_hass = self.hass or self._hass
+        entry = getattr(self._gateway_handler, "config_entry", None)
+        if target_hass is None or entry is None:
+            return
+        try:
+            reg = er.async_get(target_hass)
+            device_id = self.registry_entry.device_id if self.registry_entry is not None else None
+            prune_climate_companions_for_removed(
+                target_hass,
+                reg,
+                self.unique_id,
+                device_id,
+                entry.entry_id,
+                removed_entity_id=self.entity_id,
+            )
+        except Exception:  # pragma: no cover - registry unavailable in minimal mocks
+            pass
 
     async def async_added_to_hass(self) -> None:
         """Run when entity about to be added to hass."""

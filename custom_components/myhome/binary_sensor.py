@@ -56,7 +56,13 @@ from .const import (
     SIGNAL_NEW_BINARY_SENSOR,
     normalize_where,
 )
-from .discovery import Address, DeviceContext, PlatformDiscovery, is_motion_end
+from .discovery import (
+    Address,
+    DeviceContext,
+    PlatformDiscovery,
+    is_motion_end,
+    prune_companions_for_removed_entity,
+)
 from .gateway import MyHOMEGatewayHandler
 from .myhome_device import MyHOMEEntity
 from .where_grammar import (
@@ -241,12 +247,18 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
             name = cfg[CONF_NAME]
         elif ctx.source == "registry":
             raw = ctx.address.key
-            clean_raw = raw.split("-")[-1]
             norm_raw = binary_sensor_canonical_where("1", raw)
-            clean_norm = binary_sensor_canonical_where("1", clean_raw)
-            cfg = _first_config(configured, f"1-{norm_raw}", f"1-{raw}", norm_raw, raw, clean_norm, clean_raw)
+            lookup_keys = list(
+                dict.fromkeys(
+                    k
+                    for s in (norm_raw, raw, *_motion_spellings(raw))
+                    if s
+                    for k in (f"1-{s}", s)
+                )
+            )
+            cfg = _first_config(configured, *lookup_keys)
             where = Address.from_config(raw, cfg).key if cfg else (norm_raw or raw)
-            device_id = raw if raw in configured else (norm_raw or clean_norm or clean_raw)
+            device_id = raw if raw in configured else (norm_raw or raw)
             reg_dev_id = getattr(ctx.registry_entry, "device_id", None)
             if isinstance(reg_dev_id, str) and reg_dev_id:
                 existing_dev = dr.async_get(hass).async_get(reg_dev_id)
@@ -255,7 +267,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
                         if dom == DOMAIN and "-1-" in ident:
                             device_id = ident.split("-1-", 1)[1]
                             break
-            default_label = ctx.address.suffix if ctx.address.interface else (clean_norm or clean_raw)
+            default_label = ctx.address.suffix if ctx.address.interface else (norm_raw or raw)
             name = cfg.get(CONF_NAME, f"Motion Sensor {default_label}")
         else:
             cfg, where, device_id = {}, ctx.address.key, ctx.address.key
@@ -313,7 +325,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
             return
         claim = getattr(gateway, "claim_in_flight_dimension_where", None)
         where = claim(1, dimension) if callable(claim) else None
-        if isinstance(where, str) and where and any(k in ctx_discovery["1"].known for k in _spellings(where)):
+        if isinstance(where, str) and where and any(k in ctx_discovery["1"].known for k in _motion_spellings(where)):
             ctx_discovery["1"].route(message, Address.from_device_id(where))
 
     common = dict(hass=hass, config_entry=config_entry, async_add_entities=async_add_entities, platform=PLATFORM)
@@ -333,6 +345,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
         registry_address=registry_address("1"), reject_registry_entry=duplicate,
         accept=yaml_who(1, BinarySensorDeviceClass.MOTION),
         known_keys=known_keys, route_keys=route_keys, address=_motion_address,
+        peer_spellings=_motion_peer_spellings,
         on_general=anonymous_sensor_reply, **common,  # type: ignore
     )
 
@@ -410,9 +423,62 @@ def _contact_peer_spellings(unique_id: str) -> list[str]:
     return list(dict.fromkeys(peers))
 
 
+def _motion_peer_spellings(unique_id: str) -> list[str]:
+    """Symmetric peer spellings for WHO 1 motion sensors (``0004`` <-> ``04``, with or without ``-1-``)."""
+    stem = _strip_class_suffix(unique_id)
+    head, sep, where = stem.rpartition("-")
+    if not sep or not head:
+        return []
+    if head.endswith("-1"):
+        mac_part = head[:-2]
+        if not mac_part or "-" in mac_part:
+            return []
+        alt_heads = (head, mac_part)
+    elif "-" not in head:
+        alt_heads = (head, f"{head}-1")
+    else:
+        return []
+    aliases = _motion_spellings(where)
+    suffix = unique_id[len(stem) :]
+    return list(
+        dict.fromkeys(
+            f"{h}-{alias}{suffix}"
+            for h in alt_heads
+            for alias in aliases
+            if f"{h}-{alias}{suffix}" != unique_id
+        )
+    )
+
+
+def _motion_spellings(where: str) -> list[str]:
+    """Spellings of a WHO 1 motion address, unifying Area-00 ``0001..0009`` with ``01..09``."""
+    head, sep, _tail = where.rpartition("-")
+    if sep and head != "1":
+        return [where]
+    keys = _spellings(where)
+    extra: list[str] = []
+    for key in keys:
+        clean = key.split("-")[-1]
+        base, sep, iface = clean.partition(BUS_ROUTING)
+        if base.isascii() and base.isdigit():
+            if len(base) == 4 and base.startswith("000") and base[3] != "0":
+                alt: str | None = base[2:]
+            elif len(base) == 2 and base.startswith("0") and base[1] != "0":
+                alt = f"00{base}"
+            else:
+                alt = None
+            if alt is not None:
+                extra.append(f"{alt}{BUS_ROUTING}{iface}" if sep else alt)
+    return list(dict.fromkeys([*keys, *extra]))
+
+
 def _spellings_for(who: str) -> typing.Callable[[str], list[str]]:
-    """The spellings of an address of ``who``: only a WHO 25 contact has a padded one."""
-    return _contact_spellings if str(who) == "25" else _spellings
+    """The spellings of an address of ``who``: contacts carry 301/31 aliases and motion carries 0001..0009/01..09."""
+    if str(who) == "25":
+        return _contact_spellings
+    if str(who) == "1":
+        return _motion_spellings
+    return _spellings
 
 
 def dry_contact_config_keys(candidate: str) -> tuple[str, ...]:
@@ -534,10 +600,9 @@ def classify_binary_sensor_registry_entry(
     ):
         raw = after_mac.replace("25-", "", 1) if after_mac.startswith("25-") else after_mac
         return "25", _strip_class_suffix(raw)
-    if "-motion" in unique_id or entry.original_device_class == BinarySensorDeviceClass.MOTION:
-        where = after_mac.replace("-motion", "")
-        parts = where.split("-", 1)
-        return "1", parts[-1] if len(parts) > 1 else where
+    if unique_id.endswith("-motion") or entry.original_device_class == BinarySensorDeviceClass.MOTION:
+        where = after_mac.removesuffix("-motion")
+        return "1", where.removeprefix("1-")
     return None
 
 
@@ -675,6 +740,11 @@ class _MyHOMEInvertibleBinarySensor(MyHOMEEntity, BinarySensorEntity):
     async def async_will_remove_from_hass(self) -> None:
         """When entity is removed from hass."""
         self._unregister_entity_ref(self._attr_device_class)  # type: ignore
+
+    async def async_removed_from_registry(self) -> None:
+        """Drop device fault issues and companion invert switch on manual deletion."""
+        await super().async_removed_from_registry()
+        prune_companions_for_removed_entity(self)
 
     @callback
     def handle_event(self, message: typing.Any) -> None:

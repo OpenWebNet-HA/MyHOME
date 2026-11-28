@@ -30,6 +30,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 from typing import Any, cast
 
 from homeassistant.components.climate import ClimateEntity
@@ -575,6 +576,59 @@ def _prune_climate_companions(
     config_entry_id: str,
 ) -> tuple[set[str], set[str]]:
     """Remove WHO=4 companion sensors of a pruned climate entry unless kept by YAML, sibling, or ``#0#N``."""
+    return _prune_climate_companions_by_id(
+        hass,
+        registry,
+        entry.unique_id,
+        entry.device_id,
+        config_entry_id,
+        removed_entity_id=entry.entity_id,
+    )
+
+
+@callback
+def prune_climate_companions_for_removed(
+    hass: HomeAssistant,
+    registry: er.EntityRegistry,
+    unique_id: str | None,
+    device_id: str | None,
+    config_entry_id: str,
+    *,
+    removed_entity_id: str | None = None,
+) -> None:
+    """Remove WHO=4 companion sensors and empty devices after a manual climate entity deletion."""
+    extra_devices, protected_devices = _prune_climate_companions_by_id(
+        hass,
+        registry,
+        unique_id,
+        device_id,
+        config_entry_id,
+        removed_entity_id=removed_entity_id,
+    )
+    devices_to_check = set(extra_devices)
+    if device_id:
+        devices_to_check.add(device_id)
+    devices_to_check -= protected_devices
+    if devices_to_check:
+        dev_reg = dr.async_get(hass)
+        for dev_id in devices_to_check:
+            if dev_reg.async_get(dev_id) is not None and not er.async_entries_for_device(
+                registry, dev_id, include_disabled_entities=True
+            ):
+                dev_reg.async_remove_device(dev_id)
+
+
+@callback
+def _prune_climate_companions_by_id(
+    hass: HomeAssistant,
+    registry: er.EntityRegistry,
+    unique_id: str | None,
+    device_id: str | None,
+    config_entry_id: str,
+    *,
+    removed_entity_id: str | None = None,
+) -> tuple[set[str], set[str]]:
+    """Remove WHO=4 companion sensors of a climate entity unless kept by YAML, sibling, or ``#0#N``."""
     touched_devices: set[str] = set()
     cfg_entry = hass.config_entries.async_get_entry(config_entry_id)
     runtime = get_runtime_data(cfg_entry) if cfg_entry is not None else None
@@ -586,7 +640,7 @@ def _prune_climate_companions(
         else ""
     )
     zone, iface, macs = _climate_zone_from_unique_id(
-        entry.unique_id, gw_mac, entry_mac, runtime_mac
+        unique_id, gw_mac, entry_mac, runtime_mac
     )
     if runtime_mac:
         macs.add(runtime_mac)
@@ -594,7 +648,11 @@ def _prune_climate_companions(
     sibling_climate = False
     if zone is not None:
         for other in er.async_entries_for_config_entry(registry, config_entry_id):
-            if other.domain != "climate" or not other.unique_id:
+            if (
+                other.domain != "climate"
+                or not other.unique_id
+                or (removed_entity_id is not None and other.entity_id == removed_entity_id)
+            ):
                 continue
             o_zone, o_iface, _ = _climate_zone_from_unique_id(
                 other.unique_id, gw_mac, entry_mac, runtime_mac
@@ -635,7 +693,7 @@ def _prune_climate_companions(
         registry.async_remove(entity_id)
 
     if not sibling_climate:
-        stems: set[str] = {entry.unique_id} if entry.unique_id else set()
+        stems: set[str] = {unique_id} if unique_id else set()
         if zone is not None:
             zkey = f"{zone}{BUS_ROUTING}{iface}" if iface else zone
             stems.update(f"{m}-4-{zkey}" for m in macs if m)
@@ -665,10 +723,12 @@ def _prune_climate_companions(
                     if (m_zone, norm_iface) == (zone, iface):
                         _remove_sensor(cand.entity_id)
 
-    if entry.device_id and not sibling_climate:
-        remaining = er.async_entries_for_device(registry, entry.device_id, include_disabled_entities=True)
+    if device_id and not sibling_climate:
+        remaining = er.async_entries_for_device(registry, device_id, include_disabled_entities=True)
         if not any(
-            e.domain == "climate" and e.config_entry_id == config_entry_id
+            e.domain == "climate"
+            and e.config_entry_id == config_entry_id
+            and (removed_entity_id is None or e.entity_id != removed_entity_id)
             for e in remaining
         ):
             for e in list(remaining):
@@ -697,41 +757,49 @@ def _prune_climate_companions(
 
 
 @callback
-def prune_entity(hass: HomeAssistant, registry: er.EntityRegistry, entry: er.RegistryEntry, config_entry_id: str) -> None:
-    """Remove an entity with its lock / unlock / calibrate buttons, and its device once empty (#524).
-
-    Removing only the entity would leave its buttons behind as orphans ("no
-    longer provided") on a device without its actuator.
-    """
-    registry.async_remove(entry.entity_id)
+def prune_companions_for_removed_entry(
+    hass: HomeAssistant,
+    registry: er.EntityRegistry,
+    entry: Any,
+    config_entry_id: str,
+) -> None:
+    """Remove companion buttons/numbers/switches/sensors and empty devices for a removed entry."""
     if not isinstance(getattr(registry, "entities", None), Mapping):
         return
     kept_by_sibling, candidate_uids = _kept_by_sibling_actuator(hass, registry, entry, config_entry_id)
+    touched_devices: set[str] = set()
+
+    def _remove_companion(entity_id: str) -> None:
+        comp = registry.async_get(entity_id)
+        if comp is not None and comp.device_id:
+            touched_devices.add(comp.device_id)
+        registry.async_remove(entity_id)
+
     if not kept_by_sibling:
         for uid in candidate_uids:
             for suffix in COMPANION_SUFFIXES:
                 button = registry.async_get_entity_id("button", DOMAIN, f"{uid}{suffix}")
                 if button is not None:
-                    registry.async_remove(button)
+                    _remove_companion(button)
     if entry.domain == "cover":
         for uid in candidate_uids:
             delta_number = registry.async_get_entity_id(
                 "number", DOMAIN, f"{uid}-min_position_delta"
             )
             if delta_number is not None:
-                registry.async_remove(delta_number)
+                _remove_companion(delta_number)
     if entry.domain == "binary_sensor" and entry.device_id:
         remaining = er.async_entries_for_device(registry, entry.device_id, include_disabled_entities=True)
-        if not any(e.domain == "binary_sensor" for e in remaining):
+        if not any(e.domain == "binary_sensor" and e.entity_id != entry.entity_id for e in remaining):
             for e in list(remaining):
                 if e.domain == "switch" and (e.unique_id or "").endswith("-invert"):
-                    registry.async_remove(e.entity_id)
+                    _remove_companion(e.entity_id)
     extra_devices, protected_devices = (
         _prune_climate_companions(hass, registry, entry, config_entry_id)
         if entry.domain == "climate"
         else (set(), set())
     )
-    devices_to_check = set(extra_devices)
+    devices_to_check = set(extra_devices) | touched_devices
     if not kept_by_sibling and entry.device_id:
         devices_to_check.add(entry.device_id)
     elif entry.device_id:
@@ -744,6 +812,54 @@ def prune_entity(hass: HomeAssistant, registry: er.EntityRegistry, entry: er.Reg
                 registry, dev_id, include_disabled_entities=True
             ):
                 dev_reg.async_remove_device(dev_id)
+
+
+@callback
+def prune_companions_for_removed_entity(entity: Any) -> None:
+    """Prune companion entities and empty devices when a MyHOME entity is manually deleted."""
+    target_hass = getattr(entity, "hass", None) or getattr(entity, "_hass", None)
+    cfg_entry = getattr(getattr(entity, "_gateway_handler", None), "config_entry", None)
+    if (
+        target_hass is None
+        or cfg_entry is None
+        or not isinstance(getattr(cfg_entry, "entry_id", None), str)
+    ):
+        return
+    reg_entry = getattr(entity, "registry_entry", None)
+    if reg_entry is None:
+        domain = getattr(entity, "_platform", None)
+        who = str(getattr(entity, "_who", "") or "")
+        dev_id = str(getattr(entity, "_device_id", "") or "")
+        gw_mac = str(getattr(getattr(entity, "_gateway_handler", None), "mac", "") or "")
+        if who in ("1", "2") and dev_id and gw_mac:
+            clean_dev = dev_id.removeprefix(f"{who}-")
+            unique_id: str | None = f"{gw_mac}-{who}-{clean_dev}"
+        else:
+            unique_id = getattr(entity, "unique_id", None)
+        if not unique_id or not domain:
+            return
+        reg_entry = SimpleNamespace(
+            domain=domain,
+            entity_id=getattr(entity, "entity_id", None) or "",
+            unique_id=unique_id,
+            device_id=None,
+        )
+    try:
+        reg = er.async_get(target_hass)
+        prune_companions_for_removed_entry(target_hass, reg, reg_entry, cfg_entry.entry_id)
+    except Exception:  # pragma: no cover - registry unavailable in minimal mocks
+        pass
+
+
+@callback
+def prune_entity(hass: HomeAssistant, registry: er.EntityRegistry, entry: er.RegistryEntry, config_entry_id: str) -> None:
+    """Remove an entity with its lock / unlock / calibrate buttons, and its device once empty (#524).
+
+    Removing only the entity would leave its buttons behind as orphans ("no
+    longer provided") on a device without its actuator.
+    """
+    registry.async_remove(entry.entity_id)
+    prune_companions_for_removed_entry(hass, registry, entry, config_entry_id)
 
 
 @callback

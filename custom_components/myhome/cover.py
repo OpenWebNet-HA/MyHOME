@@ -178,6 +178,7 @@ from .discovery import (
     config_for,
     default_known_keys,
     parse_unique_id,
+    prune_companions_for_removed_entity,
 )
 from .gateway import (
     FrameScheduler,
@@ -761,6 +762,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
         self._stopped_event: asyncio.Event = asyncio.Event()
         self._last_stop_at: float | None = None
         self._live_position_seen: bool = False
+        self._tilt_assumed_from_end: bool = False
         # Set once a real curtain run or slat pulse finishes (never by a static
         # *2*0*WHERE## poll reply while idle, nor by an aborted write).
         self._ran_since_start: bool = False
@@ -1999,12 +2001,42 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             self._attr_extra_state_attributes["min_position_delta"] = clamped
             self._publish_state()
 
+    def _restore_tilt_from_state(
+        self,
+        last_state: Any,
+        record: Mapping[str, Any],
+        *,
+        saved_unavailable: bool,
+    ) -> None:
+        """Restore saved slat tilt unless live motion already moved the slats since startup."""
+        if not (
+            self._slat_tilt
+            and not self._ran_since_start
+            and (self._attr_current_cover_tilt_position is None or self._tilt_assumed_from_end)
+        ):
+            return
+        last_tilt = last_state.attributes.get(ATTR_CURRENT_TILT_POSITION)
+        if last_tilt is None and saved_unavailable:
+            last_tilt = record.get("tilt")
+        if last_tilt is not None:
+            try:
+                self._attr_current_cover_tilt_position = max(
+                    0, min(100, int(round(float(last_tilt))))
+                )
+                self._tilt_assumed_from_end = False
+            except (ValueError, TypeError):
+                pass
+
     async def async_restore_last_state(self, last_state: Any) -> None:
         """Restore cover position and closure state."""
         self._restored_in_add = True
         record = await self._async_last_restore_record()
         await self._async_restore_actuator_lock(last_state, record)
         if self._advanced:
+            saved_unavailable = last_state.state == STATE_UNAVAILABLE
+            self._restore_tilt_from_state(
+                last_state, record, saved_unavailable=saved_unavailable
+            )
             self._restore_last_run(record)
             self._restore_strategy_state(record)
             return
@@ -2071,15 +2103,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 if moving_on_add:
                     self._run_start_position = self._start_position
 
-        if self._slat_tilt and not ran_since_start and not self._live_position_seen:
-            last_tilt = last_state.attributes.get(ATTR_CURRENT_TILT_POSITION)
-            if last_tilt is None and saved_unavailable and self._attr_current_cover_tilt_position is None:
-                last_tilt = record.get("tilt")
-            if last_tilt is not None:
-                try:
-                    self._attr_current_cover_tilt_position = max(0, min(100, int(round(float(last_tilt)))))
-                except (ValueError, TypeError):
-                    pass
+        self._restore_tilt_from_state(last_state, record, saved_unavailable=saved_unavailable)
         if (
             not self._advanced
             and not ran_since_start
@@ -2154,8 +2178,6 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 data["is_closed"] = position == 0
             elif not (self.is_opening or self.is_closing) and (is_closed := self.is_closed) is not None:
                 data["is_closed"] = is_closed
-            if self._slat_tilt and (tilt := self.current_cover_tilt_position) is not None:
-                data["tilt"] = tilt
             if self._motion_started_at:
                 data["motion_started_at"] = self._motion_started_at
                 if self.is_opening or self.is_closing:
@@ -2172,6 +2194,10 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                     data["relay_hold_direction"] = "open" if self._relay_hold_opening else "close"
             elif self._relay_hold_cleared and (self._last_run or self._motion_started_at):
                 data["relay_hold_until"] = None
+        if self._slat_tilt and (tilt := self.current_cover_tilt_position) is not None:
+            # WHO=2 Dimension 10 reports curtain height only, never slat angle; persist
+            # slat tilt for both timed and advanced (Dim 10) Venetian blinds.
+            data["tilt"] = tilt
         if self._last_run:
             data["last_run"] = dict(self._last_run)
         if self._actuator_locked is not None and self.scope is None:
@@ -2229,11 +2255,13 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
             return
         options = dict(getattr(entry, "options", None) or {})
         key = str(self._device_id)
+        dev_str = key[2:] if key.startswith("2-") else key
+        keys_to_drop = {key, dev_str}
         changed = False
         for option_key in (CONF_ADVANCED_COVERS, CONF_COVER_MIN_POSITION_DELTAS):
             stored = options.get(option_key)
-            if isinstance(stored, Mapping) and key in stored:
-                updated = {k: v for k, v in stored.items() if k != key}
+            if isinstance(stored, Mapping) and any(k in stored for k in keys_to_drop):
+                updated = {k: v for k, v in stored.items() if k not in keys_to_drop}
                 if updated:
                     options[option_key] = updated
                 else:
@@ -2241,6 +2269,7 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 changed = True
         if changed:
             hass.config_entries.async_update_entry(entry, options=options)
+        prune_companions_for_removed_entity(self)
 
 
     # ── Calibration ──────────────────────────────────────────────────────
@@ -4619,11 +4648,13 @@ class MyHOMECover(MyHOMEEntity, CoverEntity):
                 elif (
                     position != previous_position
                     and position in (0, 100)
+                    and self._attr_current_cover_tilt_position is None
                     and (self._pulse_ended_at is None or now - self._pulse_ended_at > ECHO_WINDOW)
                 ):
-                    # The first level known is an end: the slats are at that end too. Not right
-                    # after our own slat pulse, which left them at its angle.
+                    # The first level known is an end, and no tilt is known yet: assume slats
+                    # are at that end until restored state or a real move says otherwise.
                     self._attr_current_cover_tilt_position = position
+                    self._tilt_assumed_from_end = True
             if own_point and not self._is_tilting:
                 # A pulse's claim is for one stopped level: a later jump is an external move.
                 self._clear_pulse_end()
