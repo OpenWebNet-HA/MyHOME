@@ -32,7 +32,7 @@ from custom_components.myhome.climate_discovery import (
 from custom_components.myhome.climate_discovery import (
     _zone_address,
 )
-from custom_components.myhome.const import CONF_ENTITY, CONF_PLATFORMS, DOMAIN
+from custom_components.myhome.const import DOMAIN
 from custom_components.myhome.gateway import _zone_request_frame
 from tests.conftest import attach_runtime
 
@@ -122,6 +122,33 @@ def test_p2_13_pump_call_does_not_alter_climate_state() -> None:
     assert zone.target_temperature == 22.0
 
 
+def _attach_primary_runtime(
+    hass: HomeAssistant,
+    entry: MockConfigEntry,
+    *,
+    switch_entities: dict[str, dict[str, str]] | None = None,
+) -> MagicMock:
+    """Attach a primary (discovering) gateway MagicMock with climate platform enabled."""
+    gw = MagicMock()
+    gw.mac = MAC
+    gw.model = "F461"
+    gw.log_id = "[F461]"
+    gw.is_follower = False
+    gw.delegated_whos = set()
+    gw.delegated_away_whos = set()
+    gw.is_device_ignored = MagicMock(return_value=False)
+    gw.read_zone_temperature = AsyncMock(return_value=False)
+    gw.request_zone_dimension = MagicMock()
+    gw.send_status_request = AsyncMock()
+    gw.wait_for_initial_discovery = AsyncMock(return_value=False)
+    gw.watch_zone_actuators = MagicMock(return_value=lambda: None)
+    runtime = attach_runtime(hass, entry, gateway=gw)
+    runtime.platforms["climate"] = {}
+    if switch_entities:
+        runtime.platforms["switch"] = dict(switch_entities)
+    return gw
+
+
 async def test_p2_13_typed_pump_calls_still_defer_thermo_switch_zones(hass: HomeAssistant) -> None:
     """Typed MESSAGE_TYPE_PUMP_CALL must still defer phantom climate creation on #785 switch zones."""
     entry = MockConfigEntry(
@@ -134,19 +161,14 @@ async def test_p2_13_typed_pump_calls_still_defer_thermo_switch_zones(hass: Home
             CONF_MAC: MAC,
             CONF_NAME: "F461",
         },
-        options={
-            CONF_PLATFORMS: {
-                "switch": {
-                    CONF_ENTITY: {
-                        "pump_zone_valve": {"where": "7#1", "who": "4", "name": "Zone 7 Valve"},
-                    }
-                }
-            }
-        },
         unique_id=MAC,
     )
     entry.add_to_hass(hass)
-    attach_runtime(hass, entry)
+    _attach_primary_runtime(
+        hass,
+        entry,
+        switch_entities={"pump_zone_valve": {"where": "7#1", "who": "4", "name": "Zone 7 Valve"}},
+    )
 
     added: list[MyHOMEClimate] = []
     await climate_setup_entry(hass, entry, added.extend)
@@ -167,21 +189,71 @@ async def test_p2_13_typed_pump_calls_still_defer_thermo_switch_zones(hass: Home
 
 
 def test_p2_13_zero_calling_zone_pump_call_has_no_discovery_address() -> None:
-    ev = _parse_typed("*4*4001#0*0#3##", _MESSAGE_TYPE_PUMP_CALL)
-    assert _zone_address(ev) is None
+    for frame in ("*4*4001#0*0#3##", "*4*4001#105*0#3##", "*4*4002*#0#3##"):
+        ev = _parse_typed(frame, _MESSAGE_TYPE_PUMP_CALL)
+        assert _zone_address(ev) is None
 
 
-def test_p2_14_local_offset_release_refreshes_dim13_only_when_needed() -> None:
+async def test_p2_14_local_offset_release_never_promotes_unconfigured_held_zone(
+    hass: HomeAssistant,
+) -> None:
+    """*4*40*Z## is a bus command echo and must not promote even a non-switch held actuator zone."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="F461",
+        data={
+            CONF_HOST: "192.0.2.10",
+            CONF_PORT: 20000,
+            CONF_PASSWORD: "12345",
+            CONF_MAC: MAC,
+            CONF_NAME: "F461",
+        },
+        unique_id=MAC,
+    )
+    entry.add_to_hass(hass)
+    _attach_primary_runtime(hass, entry)
+
+    added: list[MyHOMEClimate] = []
+    await climate_setup_entry(hass, entry, added.extend)
+
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*9#1*20*0##"))
+    async_dispatcher_send(
+        hass,
+        f"myhome_message_{MAC}",
+        _parse_typed("*4*40*9##", _MESSAGE_TYPE_LOCAL_OFFSET_RELEASE),
+    )
+    await hass.async_block_till_done()
+    assert added == []
+
+    # Positive control: genuine telemetry for zone 9 DOES confirm the held actuator zone
+    async_dispatcher_send(hass, f"myhome_message_{MAC}", OWNHeatingEvent("*#4*9*0*0215##"))
+    await hass.async_block_till_done()
+    assert len(added) == 1
+    assert added[0]._where == "9"
+
+
+def test_p2_14_local_offset_release_refreshes_dim13_and_dim12_only_when_needed() -> None:
     zone = _make_zone("2")
     zone.handle_event(OWNHeatingEvent("*#4*2*13*02##"))
     assert zone._local_offset == 2
     assert zone._knob_pos == "+2"
     zone._gateway_handler.request_zone_dimension.reset_mock()
 
-    # Inbound *4*40*2## refreshes DIM 13 when offset is non-zero
+    # Inbound *4*40*2## refreshes both DIM 13 and DIM 12 when offset is non-zero
     release = _parse_typed("*4*40*2##", _MESSAGE_TYPE_LOCAL_OFFSET_RELEASE)
+    frames_before = zone._poll_health.frames
     zone.handle_event(release)
-    zone._gateway_handler.request_zone_dimension.assert_called_once_with("2", 13)
+    assert [c.args for c in zone._gateway_handler.request_zone_dimension.call_args_list] == [
+        ("2", 13),
+        ("2", 12),
+    ]
+    # Bus command echo must not count as thermostat telemetry in poll health
+    assert zone._poll_health.frames == frames_before
+
+    # Synthetic *4*40*#2## via central unit is ignored on a standalone zone
+    zone._gateway_handler.request_zone_dimension.reset_mock()
+    zone.handle_event(_parse_typed("*4*40*#2##", _MESSAGE_TYPE_LOCAL_OFFSET_RELEASE))
+    zone._gateway_handler.request_zone_dimension.assert_not_called()
 
     # Once DIM 13 reports normal 00, another *4*40*2## does not re-poll unnecessarily
     zone._gateway_handler.request_zone_dimension.reset_mock()
@@ -201,12 +273,56 @@ def test_p2_14_central_unit_and_unified_four_zone_local_offset_release() -> None
 
     unified = _make_zone("#0#1", central=True)
     unified._unified_master = True
+    unified.handle_event(OWNHeatingEvent("*4*1101*#0#1##"))
     unified.handle_event(OWNHeatingEvent("*#4*1*13*02##"))
+    unified.handle_event(OWNHeatingEvent("*#4*1*12*0220*3##"))
     assert unified._local_offset == 2
+    assert unified.target_temperature == 22.0
     unified._gateway_handler.request_zone_dimension.reset_mock()
     release_master = _parse_typed("*4*40*1##", _MESSAGE_TYPE_LOCAL_OFFSET_RELEASE)
     unified.handle_event(release_master)
-    unified._gateway_handler.request_zone_dimension.assert_called_once_with("1", 13)
+    assert [c.args for c in unified._gateway_handler.request_zone_dimension.call_args_list] == [
+        ("1", 13),
+        ("1", 12),
+    ]
+    # Replaying both requested reads resets local offset AND target_temperature cleanly
+    unified.handle_event(OWNHeatingEvent("*#4*1*13*00##"))
+    unified.handle_event(OWNHeatingEvent("*#4*1*12*0200*3##"))
+    assert unified._local_offset == 0
+    assert unified.target_temperature == 20.0
+
+
+@pytest.mark.asyncio
+async def test_p2_14_restored_plain_zone_local_offset_release_preserves_nominal() -> None:
+    """Restored plain zone with offset +2 + DIM 12 push recovers nominal 20.0 on WHAT 40."""
+    from homeassistant.core import State
+
+    zone = _make_zone("2", model="F455")
+    zone._gateway_handler.supports_zone_status = False
+    await zone.async_restore_last_state(
+        State(
+            "climate.zone_2",
+            "heat",
+            {
+                "temperature": 22.0,
+                "nominal_temperature": 20.0,
+                "local_offset": 2,
+                "knob_pos": "+2",
+            },
+        )
+    )
+    zone.handle_event(OWNHeatingEvent("*#4*2*12*0220*3##"))
+    zone._gateway_handler.request_zone_dimension.reset_mock()
+    zone.handle_event(_parse_typed("*4*40*2##", _MESSAGE_TYPE_LOCAL_OFFSET_RELEASE))
+    assert [c.args for c in zone._gateway_handler.request_zone_dimension.call_args_list] == [
+        ("2", 13),
+        ("2", 12),
+    ]
+    zone.handle_event(OWNHeatingEvent("*#4*2*13*00##"))
+    zone.handle_event(OWNHeatingEvent("*#4*2*12*0200*3##"))
+    assert zone._local_offset == 0
+    assert zone.target_temperature == 20.0
+    assert zone._target_temperature == 20.0
 
 
 @pytest.mark.parametrize(

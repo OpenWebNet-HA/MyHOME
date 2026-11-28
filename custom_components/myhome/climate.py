@@ -4326,6 +4326,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             MESSAGE_TYPE_MODE_TARGET,
             MESSAGE_TYPE_SEASON,
             MESSAGE_TYPE_TARGET_TEMPERATURE,
+            _MESSAGE_TYPE_LOCAL_OFFSET_RELEASE,
         ):
             return False
         if self._is_own_four_zone_central_report(message):
@@ -4450,7 +4451,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 if callable(ask):
                     ask()  # the central unit has no entity until a frame of its own comes
         self._note_own_state(message)
-        if self._poll_health.frame_seen():
+        if (
+            message.message_type != _MESSAGE_TYPE_LOCAL_OFFSET_RELEASE
+            and self._poll_health.frame_seen()
+        ):
             self._clear_unresponsive_issue()
         if self._is_central_addressed_mode_frame(message):
             LOGGER.debug(
@@ -5383,6 +5387,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 or self._knob_pos not in (None, "0")
             ):
                 self._request_zone_dimension(13)
+                self._request_zone_dimension(12)
 
         self._settle_action_of_active_actuators()
         self._ask_actuators_assumed_off()

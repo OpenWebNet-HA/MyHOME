@@ -222,13 +222,16 @@ def _calling_zones(message: Any) -> tuple[list[str], str | None]:
     # switch zone 2 (#431).
     if zone is not None and zone > 0:
         zones.append(str(zone))
-    if what in ("4001", "4002", 4001, 4002) and what_param:
-        try:
-            calling_zone = int(what_param[0])
-            if calling_zone > 0:
-                zones.append(str(calling_zone))
-        except (ValueError, TypeError):
-            pass
+    if what in ("4001", "4002", 4001, 4002):
+        if four_zone_central_where(message) is not None:
+            return [], interface
+        if what_param:
+            try:
+                calling_zone = int(what_param[0])
+                if 0 < calling_zone <= 99:
+                    zones.append(str(calling_zone))
+            except (ValueError, TypeError):
+                pass
     clean_raw = str(raw_where).split("-")[-1] if raw_where is not None else ""
     if (
         not zones
@@ -790,11 +793,18 @@ class ZoneDiscovery:
                     ctx.address.key,
                 )
                 return False
+        msg_type = getattr(ctx.message, "message_type", None)
+        if ctx.source == "bus" and msg_type == _MESSAGE_TYPE_LOCAL_OFFSET_RELEASE:
+            LOGGER.debug(
+                "Deferring climate zone %s creation on bus command echo (%s)",
+                ctx.address.key,
+                ctx.message,
+            )
+            return False
         if (
             ctx.source == "bus"
             and _zone_pair(ctx.address) in self._switch_actuator_zones
-            and getattr(ctx.message, "message_type", None)
-            in (None, _MESSAGE_TYPE_PUMP_CALL, _MESSAGE_TYPE_LOCAL_OFFSET_RELEASE)
+            and msg_type in (None, _MESSAGE_TYPE_PUMP_CALL)
         ):
             LOGGER.debug(
                 "Deferring climate zone %s creation on non-telemetry WHO=4 frame (%s) for thermo switch zone (#785)",
