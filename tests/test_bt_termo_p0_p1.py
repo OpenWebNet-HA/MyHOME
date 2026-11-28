@@ -264,7 +264,7 @@ async def test_p0_4_inbound_dim14_on_f455_and_dim11_write_echoes(hass: HomeAssis
     ],
 )
 def test_p1_9_trigger_validator_refuses_bt_termo_crash_frames(bad_frame: str) -> None:
-    with pytest.raises(ValueError, match="Refusing destructive OpenWebNet frame"):
+    with pytest.raises(ValueError, match=r"Refusing .*OpenWebNet"):
         validate_thermo_trigger_command(bad_frame)
 
 
@@ -679,6 +679,12 @@ def test_group1d_3488_and_067259_supported_models_and_spelling_alias() -> None:
     """BTicino 3488 and Legrand 067259 are selectable models and resolve cleanly to 3488."""
     from custom_components.myhome.const import SUPPORTED_GATEWAY_MODELS
     from custom_components.myhome.gateway import _MODEL_SPELLINGS, _resolve_model_key
+    from custom_components.myhome.topology import (
+        DOOR_ENTRY_WHO8_ONLY_MODELS,
+        gateway_delegatable_whos,
+        gateway_supported_whos,
+        gateway_tier,
+    )
 
     assert "3488" in SUPPORTED_GATEWAY_MODELS
     assert "067259" in SUPPORTED_GATEWAY_MODELS
@@ -686,4 +692,233 @@ def test_group1d_3488_and_067259_supported_models_and_spelling_alias() -> None:
     assert _resolve_model_key("3488") == "3488"
     assert _resolve_model_key("067259") == "3488"
     assert _resolve_model_key("BTicino 3488") == "3488"
+    assert _resolve_model_key("BTicino3488") == "3488"
+    assert _resolve_model_key("Legrand067259") == "3488"
+    assert _resolve_model_key("BTicinoHometouch") == "3488"
+    assert _resolve_model_key("BTicinoF461") == "F461"
+    # Bare 3488 must never false-match IP/MAC/host strings
+    assert _resolve_model_key("192.168.34.88") != "3488"
+    assert _resolve_model_key("00:03:50:34:88:12") != "3488"
+    assert _resolve_model_key("Gateway 192.168.1.1:3488") != "3488"
+    assert _resolve_model_key("34.88") == ""
+    assert _resolve_model_key("UnknownModel") == "UNKNOWNMODEL"
+    # 3488 topology: Tier 2 (Touch), WHO 8 only (no WHO 6)
+    assert "3488" in DOOR_ENTRY_WHO8_ONLY_MODELS
+    assert gateway_tier("3488") == 2
+    assert gateway_tier("BTicino 3488") == 2
+    assert gateway_tier("067259") == 2
+    assert gateway_tier("HOMETOUCH") == 2
+    assert gateway_tier("192.168.34.88") == 3
+    whos_3488 = gateway_supported_whos("3488")
+    assert 8 in whos_3488
+    assert 6 not in whos_3488
+    assert 6 not in gateway_delegatable_whos("3488")
+    # IP string containing 3488 stays Generic in topology lookup
+    assert 6 not in gateway_supported_whos("192.168.34.88")
+
+
+def test_resolve_model_key_and_topology_on_generic_profile_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """3488 / 067259 still resolve when OWNd returns GenericGatewayProfile (e.g. OWNd 2.0.2)."""
+    from OWNd.profiles import GenericGatewayProfile
+
+    from custom_components.myhome.gateway import _resolve_model_key
+    from custom_components.myhome.topology import _profile_and_model
+
+    monkeypatch.setattr(
+        "custom_components.myhome.gateway.get_gateway_profile",
+        lambda _model: GenericGatewayProfile(),
+    )
+    monkeypatch.setattr(
+        "OWNd.profiles.get_gateway_profile",
+        lambda _model: GenericGatewayProfile(),
+    )
+    assert _resolve_model_key("Legrand 067259") == "3488"
+    assert _resolve_model_key("BTicino 3488") == "3488"
+    assert _resolve_model_key("Legrand067259") == "3488"
+    assert _resolve_model_key("BTicino3488") == "3488"
+    assert _resolve_model_key("192.168.34.88") != "3488"
+    _prof, model_name = _profile_and_model("Legrand 067259")
+    assert model_name == "3488"
+
+
+def test_supports_zone_status_delegates_through_who4_target(hass: HomeAssistant) -> None:
+    """supports_zone_status follows _who4_target() during failover/delegation (F461 -> F455)."""
+    f461 = _handler(hass, "F461")
+    f455 = _handler(hass, "F455")
+    assert f461.supports_zone_status is True
+    assert f455.supports_zone_status is False
+    f461._who4_target = lambda: f455  # type: ignore[method-assign]
+    assert f461.supports_zone_status is False
+
+
+def test_seasonless_auto_cleared_across_dim7_off_mode_target_auto_and_central_mode(
+    hass: HomeAssistant,
+) -> None:
+    """_seasonless_auto never leaks across DIM 7 OFF, explicit MODE_TARGET AUTO, or central updates."""
+    # 1. DIM 7 OFF / protection clears _seasonless_auto
+    z1 = _make_zone(hass, "2", standalone=True)
+    z1._handle_event(OWNMessage.parse("*4*410*2##"))
+    assert z1._seasonless_auto is True
+    z1._handle_event(OWNMessage.parse("*#4*2*7*1*5##"))
+    assert z1.hvac_mode == HVACMode.OFF
+    assert z1._seasonless_auto is False
+
+    # 2. Explicit MODE_TARGET AUTO (*4*310#0210*2##) clears _seasonless_auto so *4*1*2## keeps AUTO
+    z2 = _make_zone(hass, "2", standalone=True)
+    z2._handle_event(OWNMessage.parse("*4*410*2##"))
+    assert z2._seasonless_auto is True
+    z2._handle_event(OWNMessage.parse("*4*310#0210*2##"))
+    assert z2._seasonless_auto is False
+    z2._handle_event(OWNMessage.parse("*4*1*2##"))
+    assert z2.hvac_mode == HVACMode.AUTO
+    assert z2._zone_operation == "manual"
+
+    # 3. _handle_central_mode_update clears _seasonless_auto on OFF and on HEAT/COOL
+    z3 = _make_zone(hass, "2", standalone=False)
+    z3._seasonless_auto = True
+    z3._handle_central_mode_update(HVACMode.HEAT)
+    assert z3._seasonless_auto is False
+    z3._seasonless_auto = True
+    z3._handle_central_mode_update(HVACMode.OFF)
+    assert z3._seasonless_auto is False
+
+
+@pytest.mark.asyncio
+async def test_restored_auto_manual_zone_clears_manual_on_season_frame(hass: HomeAssistant) -> None:
+    """Restoring AUTO + zone_operation='manual' and receiving *4*1*2## clears manual operation."""
+    from homeassistant.core import State
+
+    z = _make_zone(hass, "2", standalone=True)
+    await z.async_restore_last_state(State("climate.zone_2", "auto", {"zone_operation": "manual"}))
+    assert z._hvac_mode_restored is True
+    assert z._seasonless_auto is False
+    z._handle_event(OWNMessage.parse("*4*1*2##"))
+    assert z.hvac_mode == HVACMode.HEAT
+    assert z._zone_operation is None
+
+
+def test_dim7_protection_generic_and_automatic_and_on_fallback(hass: HomeAssistant) -> None:
+    """DIM 7 0*2 / 3*2 preserves zone_operation='protection'; 0*3 and 3*0 never stick in OFF."""
+    # Protection 0*2 and 3*2 preserve "protection"
+    z = _make_zone(hass, "2", standalone=True)
+    z._handle_event(OWNMessage.parse("*4*402*2##"))
+    assert z._zone_operation == "protection"
+    z._handle_event(OWNMessage.parse("*#4*2*7*3*2##"))
+    assert z.hvac_mode == HVACMode.OFF
+    assert z._zone_operation == "protection"
+    z._handle_event(OWNMessage.parse("*#4*2*7*0*2##"))
+    assert z.hvac_mode == HVACMode.OFF
+    assert z._zone_operation == "protection"
+
+    # Generic 0*3 from OFF falls back to active mode (season-aware, never stuck OFF)
+    z._handle_event(OWNMessage.parse("*#4*2*7*0*3##"))
+    assert z.hvac_mode == HVACMode.HEAT
+    assert z.hvac_action == HVACAction.IDLE
+    assert z._zone_operation == "comfort"
+
+    # Generic 0*3 while already in COOL keeps COOL (never flips to HEAT)
+    z._handle_event(OWNMessage.parse("*4*0*2##"))
+    assert z.hvac_mode == HVACMode.COOL
+    z._handle_event(OWNMessage.parse("*#4*2*7*0*3##"))
+    assert z.hvac_mode == HVACMode.COOL
+    assert z._zone_operation == "comfort"
+
+    # Standalone zone on a central plant (no AUTO advertised) receiving 3*0 from OFF
+    z_cu = _make_zone(hass, "3", standalone=True)
+    z_cu._gateway_handler.has_central_unit = True
+    z_cu._cooling = True
+    z_cu._refresh_hvac_modes()
+    assert HVACMode.AUTO not in z_cu.hvac_modes
+    z_cu._attr_hvac_mode = HVACMode.OFF
+    z_cu._attr_hvac_action = HVACAction.OFF
+    z_cu._season = "conditioning"
+    z_cu._handle_event(OWNMessage.parse("*#4*3*7*3*0##"))
+    assert z_cu.hvac_mode == HVACMode.COOL
+    assert z_cu.hvac_action == HVACAction.IDLE
+    assert z_cu._zone_operation == "manual"
+
+
+@pytest.mark.asyncio
+async def test_restore_does_not_overwrite_live_fan_coil_sides(hass: HomeAssistant) -> None:
+    """Live DIM 19 fan_coil_sides stays intact when async_restore_last_state runs."""
+    from homeassistant.core import State
+
+    z = _make_zone(hass, "2", standalone=True)
+    z._handle_event(OWNMessage.parse("*#4*2*19**5##"))
+    assert z._fan_coil_sides == {"heating": True}
+    await z.async_restore_last_state(
+        State(
+            "climate.zone_2",
+            "heat",
+            {"fan_coil_heating": False, "fan_coil_cooling": False},
+        )
+    )
+    assert z._fan_coil_sides == {"heating": True, "cooling": False}
+
+
+def test_single_side_empty_dim19_clears_pending_and_probes_missing_side(
+    hass: HomeAssistant,
+) -> None:
+    """Single-side non-fan DIM 19 clears pending immediately and allows one probe before DIM 11."""
+    # A7a: solicited *#4*3*19*0*## clears _fan_coil_sides_asked_at immediately (no 30 s stall)
+    z1 = _make_zone(hass, "3", standalone=True)
+    z1._season = "heating"
+    z1._gateway_handler.request_zone_dimension = MagicMock(return_value=True)
+    z1._ask_fan_coil_sides()
+    assert z1._fan_coil_sides_pending() is True
+    assert z1._season_has_fan_coil() is False
+    z1._handle_event(OWNMessage.parse("*#4*3*19*0*##"))
+    assert z1._fan_coil_sides == {"cooling": False}
+    assert z1._fan_coil_sides_asked_at is None
+    assert z1._fan_coil_sides_pending() is False
+    assert z1._season_has_fan_coil() is True
+    # Subsequent DIM 20 fan frame does not re-probe in a loop once probed
+    z1._gateway_handler.request_zone_dimension.reset_mock()
+    z1._handle_event(OWNMessage.parse("*#4*3#1*20*5##"))
+    assert all(c.args != ("3", 19) for c in z1._gateway_handler.request_zone_dimension.call_args_list)
+
+    # A7b: unsolicited *#4*3*19*0*## followed by tentative DIM 20 *5## probes DIM 19, not DIM 11
+    z2 = _make_zone(hass, "3", standalone=True)
+    z2._season = None
+    z2._gateway_handler.request_zone_dimension = MagicMock(return_value=True)
+    z2._handle_event(OWNMessage.parse("*#4*3*19*0*##"))
+    z2._gateway_handler.request_zone_dimension.reset_mock()
+    z2._handle_event(OWNMessage.parse("*#4*3#1*20*5##"))
+    assert [c.args for c in z2._gateway_handler.request_zone_dimension.call_args_list] == [("3", 19)]
+    assert z2._season_has_fan_coil() is False
+    # Answering *#4*3*19*0*0## retracts tentative fan_mode with zero DIM 11 sent
+    z2._handle_event(OWNMessage.parse("*#4*3*19*0*0##"))
+    assert z2._fan is False
+    assert [c.args for c in z2._gateway_handler.request_zone_dimension.call_args_list] == [("3", 19)]
+
+
+@pytest.mark.asyncio
+async def test_gateway_events_normalizes_leading_zero_and_bounds_f422_interface(
+    hass: HomeAssistant,
+) -> None:
+    """Inbound #14/#11 echoes normalize 02 -> 2 and reject out-of-range F422 interfaces 00 / 16."""
+    handler = MagicMock()
+    handler.hass = hass
+    handler.mac = "00:03:50:8a:06:1d"
+    handler.log_id = "[f455]"
+    handler.supports_zone_status = False
+    handler.interface_zone_request_refused = False
+    handler.send_status_request = AsyncMock()
+    handler.request_zone_dimension = MagicMock()
+    handler.owned_whos = None
+    dispatcher = GatewayEventDispatcher(handler)
+    dispatcher._is_active_for_who = lambda who: True  # type: ignore[method-assign]
+
+    await dispatcher.process_message(OWNMessage.parse("*#4*02*#14*0215*3##"))
+    handler.request_zone_dimension.assert_called_once_with("2", 14)
+
+    handler.request_zone_dimension.reset_mock()
+    for bad_iface in ("00", "16", "99"):
+        msg = OWNMessage.parse("*#4*2*#14*0215*3##")
+        msg._where_param = ["4", bad_iface]
+        await dispatcher.process_message(msg)
+    handler.request_zone_dimension.assert_not_called()
+
 

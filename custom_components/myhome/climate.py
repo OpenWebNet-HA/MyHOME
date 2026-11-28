@@ -568,6 +568,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._fan_coil_sides_asked_at: float | None = None
         # The dimension 19 request was queued while a sweep held the zone requests back.
         self._fan_coil_sides_held = False
+        # True once a one-shot *#4*Z*19## probe has been answered (guards single-side replies).
+        self._fan_coil_sides_probed = False
         if fan and not self._central:
             self._enable_fan_mode()
 
@@ -1251,13 +1253,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 and not self._local_offset_reported
             ):
                 self._knob_pos = restored_knob
-            restored_fan_sides: dict[str, bool] = {}
-            if "fan_coil_heating" in last_state.attributes:
-                restored_fan_sides["heating"] = bool(last_state.attributes["fan_coil_heating"])
-            if "fan_coil_cooling" in last_state.attributes:
-                restored_fan_sides["cooling"] = bool(last_state.attributes["fan_coil_cooling"])
-            if restored_fan_sides:
-                self._fan_coil_sides = restored_fan_sides
+            for side, attr in (("heating", "fan_coil_heating"), ("cooling", "fan_coil_cooling")):
+                if attr in last_state.attributes:
+                    self._fan_coil_sides.setdefault(side, bool(last_state.attributes[attr]))
             if (
                 "fan_mode" in last_state.attributes
                 or bool(last_state.attributes.get("supported_features", 0) & ClimateEntityFeature.FAN_MODE)
@@ -1650,7 +1648,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # is NACKed after 2.1 s. Do not ask blindly while the answer is pending.
             return not self._fan_coil_sides_pending()
         if self._season is None:
-            return True
+            return not self._fan_coil_sides_pending()
         side = "heating" if self._season == SEASON_HEATING else "cooling"
         if side not in self._fan_coil_sides:
             return not self._fan_coil_sides_pending()
@@ -1691,7 +1689,13 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         valve's season too and NACKed after 2.1 s on the F461. Every gateway firmware of the
         oracle forwards ``*#4*Z*19##`` (own-firmware-oracle thermo-zone-requests).
         """
-        if self._central or self._fan_coil_sides or self._fan_coil_sides_pending():
+        has_both_sides = "cooling" in self._fan_coil_sides and "heating" in self._fan_coil_sides
+        if (
+            self._central
+            or has_both_sides
+            or self._fan_coil_sides_probed
+            or self._fan_coil_sides_pending()
+        ):
             return  # not asked for a central unit, as on add and on restore
         if self._request_zone_dimension(19):
             self._fan_coil_sides_asked_at = time.monotonic()
@@ -3145,6 +3149,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         prev_mode = self._attr_hvac_mode
         if master_mode == HVACMode.OFF:
             self._attr_hvac_mode = HVACMode.OFF
+            self._seasonless_auto = False
             self._attr_hvac_action = HVACAction.OFF
             self._zone_operation = None
             self._mark_actuators_off()
@@ -3152,6 +3157,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         elif master_mode in (HVACMode.HEAT, HVACMode.COOL):
             if self._attr_hvac_mode != HVACMode.OFF:
                 self._attr_hvac_mode = master_mode
+                self._seasonless_auto = False
         self._hydrate_nominal_from_local(prev_mode)
         self._refresh_hvac_modes()
         if self.hass is not None:
@@ -3981,6 +3987,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._zone_operation = {
                     "heating": "antifreeze",
                     "cooling": "thermal_protection",
+                    "generic": "protection",
+                    "automatic": "protection",
                 }.get(getattr(message, "zone_context", None) or "")
             elif state in ("comfort", "eco", "manual"):
                 self._zone_operation = state
@@ -3990,6 +3998,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._restore_nominal_before_protection()
             self._attr_hvac_mode = HVACMode.OFF
             self._hvac_mode_restored = False
+            self._seasonless_auto = False
             self._attr_hvac_action = HVACAction.OFF
             self._mark_actuators_off()
             self._holiday_days = None
@@ -3999,7 +4008,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if state not in _ZONE_STATES_ON:
             return
         prev_mode = self._attr_hvac_mode
-        mode = _ZONE_CONTEXT_MODES.get(getattr(message, "zone_context", None) or "")
+        zone_context = getattr(message, "zone_context", None) or ""
+        mode = _ZONE_CONTEXT_MODES.get(zone_context)
         if (
             mode == HVACMode.COOL
             and not self._cooling_configured
@@ -4014,6 +4024,31 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._seasonless_auto = False
             if self._attr_hvac_action == HVACAction.OFF:
                 self._attr_hvac_action = HVACAction.IDLE
+        elif self._attr_hvac_mode in (None, HVACMode.OFF) and (
+            mode == HVACMode.AUTO
+            or (zone_context == "generic" and state in ("comfort", "eco", "manual"))
+        ):
+            season_mode = (
+                HVACMode.HEAT
+                if self._season == SEASON_HEATING
+                else HVACMode.COOL
+                if self._season in (SEASON_CONDITIONING, "cooling")
+                else None
+            )
+            fallback = next(
+                (
+                    m
+                    for m in (season_mode, HVACMode.HEAT, HVACMode.COOL)
+                    if m is not None and m in self._attr_hvac_modes
+                ),
+                None,
+            )
+            if fallback is not None:
+                self._attr_hvac_mode = fallback
+                self._hvac_mode_restored = False
+                self._seasonless_auto = False
+                if self._attr_hvac_action == HVACAction.OFF:
+                    self._attr_hvac_action = HVACAction.IDLE
         temperature = message.set_temperature if state == "setpoint" else None
         if temperature is not None:
             self._target_temperature = temperature
@@ -4813,7 +4848,11 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 or (
                     self._standalone
                     and self._zone_operation == "manual"
-                    and (self._attr_hvac_mode != HVACMode.AUTO or self._seasonless_auto)
+                    and (
+                        self._attr_hvac_mode != HVACMode.AUTO
+                        or self._seasonless_auto
+                        or self._hvac_mode_restored
+                    )
                 )
             ):
                 # A zone in protection (102 / 202) or a preset (107 / 108 / 207 / 208) reports
@@ -5104,6 +5143,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._gateway_handler.log_id,
                     message.human_readable_log,
                 )
+                self._seasonless_auto = False
                 self._attr_hvac_mode = HVACMode.AUTO
                 if self._attr_hvac_action == HVACAction.OFF:
                     self._attr_hvac_action = HVACAction.IDLE
@@ -5248,9 +5288,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     sides_resolved = (not had_both_sides and now_has_both) or (
                         not prev_had_fan and now_has_fan
                     )
-                    if now_has_both or now_has_fan:
-                        self._fan_coil_sides_asked_at = None
-                        self._fan_coil_sides_held = False
+                    if self._fan_coil_sides_asked_at is not None:
+                        self._fan_coil_sides_probed = True
+                    self._fan_coil_sides_asked_at = None
+                    self._fan_coil_sides_held = False
                     if now_has_both and self._has_no_fan_coil_sides() and not self._fan_configured:
                         self._disable_fan_mode()
             elif dimension == 20:

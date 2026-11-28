@@ -563,14 +563,19 @@ class GatewayEventDispatcher:
                 if getattr(self.handler, "interface_zone_request_refused", False):
                     return
                 raw_iface = iface if isinstance(iface, str) and iface else str(tail[1])
-                if not raw_iface.isascii() or not raw_iface.isdigit() or len(raw_iface) > 2:
+                if (
+                    not raw_iface.isascii()
+                    or not raw_iface.isdigit()
+                    or len(raw_iface) > 2
+                    or not (1 <= int(raw_iface) <= 15)
+                ):
                     return
                 iface_str: str | None = raw_iface.zfill(2)
                 base_tail = tail[:-2] if len(tail) >= 2 and tail[-2] == "4" else []
             else:
                 iface_str = None
                 base_tail = tail
-            where_str = cast(str, message.where)
+            where_str = str(message.where or "")
             where = where_str[1:] if where_str.startswith("#") else where_str
             if (
                 not where
@@ -582,6 +587,7 @@ class GatewayEventDispatcher:
                 or base_tail
             ):
                 return
+            where = str(int(where))
             if iface_str is not None:
                 where = f"{where}{BUS_ROUTING}{iface_str}"
             if message.dimension == 14:
