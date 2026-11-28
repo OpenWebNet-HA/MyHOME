@@ -317,6 +317,8 @@ class IgnoredAddresses:
             return False
 
         if interface:
+            if who_int == 22:
+                return False
             iface_str = interface.zfill(2) if interface.isascii() and interface.isdigit() else interface
             base_where, sep, inline_iface = where.rpartition("#4#")
             inline_norm = (

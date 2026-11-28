@@ -88,6 +88,7 @@ from .discovery import (
     PlatformDiscovery,
     is_motion_end,
     parse_unique_id,
+    prune_companions_for_removed_entity,
 )
 from .gateway import MyHOMEGatewayHandler
 from .gateway_confirm import ECHO_CONFIRM_DELAY_S
@@ -1118,6 +1119,11 @@ class MyHOMELight(MyHOMEEntity, LightEntity):
         if self._level_zero_check_task is not None:
             self._level_zero_check_task.cancel()
         await super().async_will_remove_from_hass()
+
+    async def async_removed_from_registry(self) -> None:
+        """Drop device fault issues and companion WHO=14 lock/unlock buttons on manual deletion."""
+        await super().async_removed_from_registry()
+        prune_companions_for_removed_entity(self)
 
     async def _async_fade_to(
         self, start_pct: int, target_pct: int, duration: float, fade_id: int

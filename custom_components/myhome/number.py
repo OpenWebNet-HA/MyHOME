@@ -280,7 +280,7 @@ async def async_setup_entry(
                 ):
                     continue
                 for prefix in prefixes:
-                    if reg_entry.unique_id.startswith(prefix):
+                    if reg_entry.unique_id.lower().startswith(prefix.lower()):
                         dev_str = reg_entry.unique_id[len(prefix) : -len(suffix)]
                         if dev_str and dev_str not in known_cover_delta_numbers:
                             prune_entity(hass, registry, reg_entry, config_entry.entry_id)

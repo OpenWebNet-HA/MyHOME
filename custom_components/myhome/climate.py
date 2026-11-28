@@ -1986,9 +1986,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
     async def async_removed_from_registry(self) -> None:
         """Drop device fault issues and companion temperature/humidity/output-level sensors on manual deletion."""
         await super().async_removed_from_registry()
-        if self._central or is_probe(self._where):
+        if (self._central and not self._is_four_zone_central) or is_probe(self._where):
             return
-        if canonical_thermo_zone(self._where) is None:
+        if not self._is_four_zone_central and canonical_thermo_zone(self._where) is None:
             return
         target_hass = self.hass or self._hass
         entry = getattr(self._gateway_handler, "config_entry", None)

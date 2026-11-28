@@ -1,7 +1,7 @@
 """Regression tests for Group 3 audit fixes (advanced Venetian tilt restore, ignored.py, WHO=1 motion 0004/04, manual-delete orphans)."""
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 from homeassistant.const import (
     CONF_HOST,
@@ -511,4 +511,290 @@ async def test_group3_audit_fixes_who22_who18_motion_and_climate_safeguards(
         State("cover.venetian_22", "open", {"current_position": 50, "current_tilt_position": "not-a-number"})
     )
     assert cov_bad_tilt.current_cover_tilt_position is None
+
+
+async def test_group3_audit_dim10_end_tilt_who22_motion_and_companion_pruning(
+    hass: HomeAssistant,
+) -> None:
+    """Verify #1033 audit fixes: Dim 10 pos=0/100 tilt preservation, WHO 22 interface guard, motion hall-04/0004/peer spellings, and companion pruning."""
+    from homeassistant.helpers import device_registry as dr
+
+    from custom_components.myhome.binary_sensor import (
+        MyHOMEAuxiliary,
+        MyHOMEDryContact,
+        _motion_peer_spellings,
+        classify_binary_sensor_registry_entry,
+    )
+    from custom_components.myhome.ignored import IgnoredAddresses
+    from custom_components.myhome.light import MyHOMELight
+    from custom_components.myhome.switch import MyHOMESwitch
+
+    entry, handler = _make_gateway(hass, model="F461")
+    assert entry.runtime_data is not None
+    ent_reg = er.async_get(hass)
+    dev_reg = dr.async_get(hass)
+
+    # 1. A1 Path 1 (Dim 10 pos=0/100 AFTER restore preserves restored tilt 50 on advanced Venetian)
+    cov_after = MyHOMECover(
+        hass=hass,
+        name="Venetian 23",
+        entity_name=None,
+        device_id="23",
+        who="2",
+        where="23",
+        interface=None,
+        device_class=None,
+        manufacturer="BTicino",
+        model="F401",
+        gateway=handler,
+        advanced=True,
+        slat_tilt=True,
+        slat_time=2.0,
+    )
+    cov_after.async_get_last_extra_data = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    cov_after.async_schedule_update_ha_state = MagicMock()  # type: ignore[method-assign]
+    await cov_after.async_restore_last_state(
+        State("cover.venetian_23", "closed", {"current_position": 0, "current_tilt_position": 50})
+    )
+    assert cov_after.current_cover_tilt_position == 50
+    cov_after.handle_event(OWNEvent.parse("*#2*23*10*10*0*001*0##"))
+    assert cov_after.current_cover_position == 0
+    assert cov_after.current_cover_tilt_position == 50
+
+    # 2. A1 Path 2 (Dim 10 pos=0 BEFORE restore still lets async_restore_last_state restore saved tilt 50)
+    cov_before = MyHOMECover(
+        hass=hass,
+        name="Venetian 24",
+        entity_name=None,
+        device_id="24",
+        who="2",
+        where="24",
+        interface=None,
+        device_class=None,
+        manufacturer="BTicino",
+        model="F401",
+        gateway=handler,
+        advanced=True,
+        slat_tilt=True,
+        slat_time=2.0,
+    )
+    cov_before.async_get_last_extra_data = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    cov_before.async_schedule_update_ha_state = MagicMock()  # type: ignore[method-assign]
+    cov_before.handle_event(OWNEvent.parse("*#2*24*10*10*0*001*0##"))
+    assert cov_before.current_cover_tilt_position == 0
+    await cov_before.async_restore_last_state(
+        State("cover.venetian_24", "closed", {"current_position": 0, "current_tilt_position": 50})
+    )
+    assert cov_before.current_cover_tilt_position == 50
+
+    # 3. A2 (Non-advanced Venetian receiving Dim 10 BEFORE restore still restores saved tilt 50)
+    cov_timed = MyHOMECover(
+        hass=hass,
+        name="Venetian 25",
+        entity_name=None,
+        device_id="25",
+        who="2",
+        where="25",
+        interface=None,
+        device_class=None,
+        manufacturer="BTicino",
+        model="F401",
+        gateway=handler,
+        advanced=False,
+        travel_time=20.0,
+        slat_tilt=True,
+        slat_time=2.0,
+        allow_auto_advanced=False,
+    )
+    cov_timed.async_get_last_extra_data = AsyncMock(return_value=None)  # type: ignore[method-assign]
+    cov_timed.async_schedule_update_ha_state = MagicMock()  # type: ignore[method-assign]
+    cov_timed.handle_event(OWNEvent.parse("*#2*25*10*10*60*001*0##"))
+    assert cov_timed._live_position_seen is True
+    await cov_timed.async_restore_last_state(
+        State("cover.venetian_25", "open", {"current_position": 60, "current_tilt_position": 50})
+    )
+    assert cov_timed.current_cover_tilt_position == 50
+
+    # 4. A3 (WHO=22 with explicit interface never false-matches 22/3#4#1)
+    ign22 = IgnoredAddresses(["22/3#4#1"])
+    assert ign22.is_ignored(22, "3", interface="1") is False
+    assert ign22.is_ignored(22, "3#4#1", interface="01") is False
+    assert ign22.is_ignored(22, "3#4#1") is True
+
+    # 5. A5 + A6 + B4 (classify_binary_sensor_registry_entry preserves hall-04; build_motion matches 0004 <-> 04; _motion_peer_spellings)
+    hall_entry = ent_reg.async_get_or_create(
+        "binary_sensor",
+        DOMAIN,
+        f"{MAC}-hall-04-motion",
+        config_entry=entry,
+        original_device_class="motion",
+    )
+    assert classify_binary_sensor_registry_entry(hall_entry, MAC, MAC) == ("1", "hall-04")
+    assert _motion_peer_spellings(f"{MAC}-0004-motion") == [
+        f"{MAC}-04-motion",
+        f"{MAC}-1-0004-motion",
+        f"{MAC}-1-04-motion",
+    ]
+    assert _motion_peer_spellings(f"{MAC}-1-04-motion") == [
+        f"{MAC}-1-0004-motion",
+        f"{MAC}-04-motion",
+        f"{MAC}-0004-motion",
+    ]
+    assert _motion_peer_spellings(f"{MAC}-hall-04-motion") == []
+    assert _motion_peer_spellings("badid") == []
+    assert _motion_peer_spellings("a-b-1-04-motion") == []
+
+    # Registry restore of {MAC}-0004-motion picks up YAML config keyed as "04"
+    ent_reg.async_remove(hall_entry.entity_id)
+    ent_reg.async_get_or_create(
+        "binary_sensor",
+        DOMAIN,
+        f"{MAC}-0004-motion",
+        config_entry=entry,
+        original_device_class="motion",
+    )
+    entry.runtime_data.platforms["binary_sensor"] = {
+        "04": {"who": "1", "where": "04", "name": "Hallway PIR", "device_class": "motion"}
+    }
+    restored_motion: list = []
+    assert await binary_sensor_mod.async_setup_entry(hass, entry, restored_motion.extend) is True
+    assert len(restored_motion) == 1
+    assert restored_motion[0]._device_name == "Hallway PIR"
+
+    # 6. B1 (Manual cover delete prunes -min_position_delta, -calibrate, -disable, -enable AND empty device)
+    cov_dev = dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, f"{MAC}-2-34")},
+        name="Cover 34",
+    )
+    c_num = ent_reg.async_get_or_create("number", DOMAIN, f"{MAC}-2-34-min_position_delta", config_entry=entry, device_id=cov_dev.id)
+    c_cal = ent_reg.async_get_or_create("button", DOMAIN, f"{MAC}-2-34-calibrate", config_entry=entry, device_id=cov_dev.id)
+    c_dis = ent_reg.async_get_or_create("button", DOMAIN, f"{MAC}-2-34-disable", config_entry=entry, device_id=cov_dev.id)
+    c_en = ent_reg.async_get_or_create("button", DOMAIN, f"{MAC}-2-34-enable", config_entry=entry, device_id=cov_dev.id)
+    cov34 = MyHOMECover(
+        hass=hass,
+        name="Cover 34",
+        entity_name=None,
+        device_id="34",
+        who="2",
+        where="34",
+        interface=None,
+        device_class=None,
+        manufacturer="BTicino",
+        model="F401",
+        gateway=handler,
+        advanced=True,
+    )
+    cov34.entity_id = "cover.cover_34"
+    await cov34.async_removed_from_registry()
+    assert ent_reg.async_get(c_num.entity_id) is None
+    assert ent_reg.async_get(c_cal.entity_id) is None
+    assert ent_reg.async_get(c_dis.entity_id) is None
+    assert ent_reg.async_get(c_en.entity_id) is None
+    assert dev_reg.async_get(cov_dev.id) is None
+
+    # 7. B2 (Manual light, switch, dry contact, and auxiliary delete prunes companions + empty devices)
+    lt_dev = dev_reg.async_get_or_create(config_entry_id=entry.entry_id, identifiers={(DOMAIN, f"{MAC}-1-41")}, name="Light 41")
+    lt_dis = ent_reg.async_get_or_create("button", DOMAIN, f"{MAC}-1-41-disable", config_entry=entry, device_id=lt_dev.id)
+    lt_en = ent_reg.async_get_or_create("button", DOMAIN, f"{MAC}-1-41-enable", config_entry=entry, device_id=lt_dev.id)
+    lt = MyHOMELight(
+        hass=hass, name="Light 41", entity_name=None, icon=None, icon_on=None,
+        device_id="41", who="1", where="41", interface=None, dimmable=False,
+        manufacturer="BTicino", model="Relay", gateway=handler,
+    )
+    lt.entity_id = "light.light_41"
+    await lt.async_removed_from_registry()
+    assert ent_reg.async_get(lt_dis.entity_id) is None
+    assert ent_reg.async_get(lt_en.entity_id) is None
+    assert dev_reg.async_get(lt_dev.id) is None
+
+    sw_dev = dev_reg.async_get_or_create(config_entry_id=entry.entry_id, identifiers={(DOMAIN, f"{MAC}-1-42")}, name="Switch 42")
+    sw_dis = ent_reg.async_get_or_create("button", DOMAIN, f"{MAC}-1-42-disable", config_entry=entry, device_id=sw_dev.id)
+    sw = MyHOMESwitch(
+        hass=hass, name="Switch 42", entity_name=None, icon=None, icon_on=None,
+        device_id="42", who="1", where="42", interface=None, device_class="switch",
+        manufacturer="BTicino", model="F411", gateway=handler,
+    )
+    sw.entity_id = "switch.switch_42"
+    await sw.async_removed_from_registry()
+    assert ent_reg.async_get(sw_dis.entity_id) is None
+    assert dev_reg.async_get(sw_dev.id) is None
+
+    dc_dev = dev_reg.async_get_or_create(config_entry_id=entry.entry_id, identifiers={(DOMAIN, f"{MAC}-25-31")}, name="Contact 31")
+    dc_reg = ent_reg.async_get_or_create("binary_sensor", DOMAIN, f"{MAC}-25-31-opening", config_entry=entry, device_id=dc_dev.id)
+    dc_inv = ent_reg.async_get_or_create("switch", DOMAIN, f"{MAC}-25-31-invert", config_entry=entry, device_id=dc_dev.id)
+    dc = MyHOMEDryContact(
+        hass=hass, device_id="31", who="25", where="31", name="Contact 31",
+        entity_name=None, inverted=False, device_class="opening",
+        manufacturer="BTicino", model="F428", gateway=handler,
+    )
+    dc.entity_id = dc_reg.entity_id
+    dc.registry_entry = dc_reg
+    ent_reg.async_remove(dc_reg.entity_id)
+    await dc.async_removed_from_registry()
+    assert ent_reg.async_get(dc_inv.entity_id) is None
+    assert dev_reg.async_get(dc_dev.id) is None
+
+    aux_dev = dev_reg.async_get_or_create(config_entry_id=entry.entry_id, identifiers={(DOMAIN, f"{MAC}-9-1")}, name="Aux 1")
+    aux_reg = ent_reg.async_get_or_create("binary_sensor", DOMAIN, f"{MAC}-9-1-opening", config_entry=entry, device_id=aux_dev.id)
+    aux_inv = ent_reg.async_get_or_create("switch", DOMAIN, f"{MAC}-9-1-invert", config_entry=entry, device_id=aux_dev.id)
+    aux = MyHOMEAuxiliary(
+        hass=hass, device_id="1", who="9", where="1", name="Aux 1",
+        entity_name=None, inverted=False, device_class="opening",
+        manufacturer="BTicino", model="Aux", gateway=handler,
+    )
+    aux.entity_id = aux_reg.entity_id
+    aux.registry_entry = aux_reg
+    ent_reg.async_remove(aux_reg.entity_id)
+    await aux.async_removed_from_registry()
+    assert ent_reg.async_get(aux_inv.entity_id) is None
+    assert dev_reg.async_get(aux_dev.id) is None
+
+    # 8. B3 (4-zone central unit #0#1 manual delete prunes -output-level sensor & empty device)
+    cu_dev = dev_reg.async_get_or_create(config_entry_id=entry.entry_id, identifiers={(DOMAIN, f"{MAC}-4-#0#1")}, name="Central Unit 01")
+    cu_reg = ent_reg.async_get_or_create("climate", DOMAIN, f"{MAC}-4-#0#1", config_entry=entry, device_id=cu_dev.id)
+    cu_out = ent_reg.async_get_or_create("sensor", DOMAIN, f"{MAC}-4-1#1-output-level", config_entry=entry, device_id=cu_dev.id)
+    cu = MyHOMEClimate(
+        hass=hass, name="Central Unit 01", device_id="#0#1", who="4", where="#0#1",
+        heating=True, cooling=True, fan=False, standalone=False, central=True,
+        manufacturer="BTicino", model="4695", gateway=handler,
+    )
+    cu.entity_id = cu_reg.entity_id
+    cu.registry_entry = cu_reg
+    ent_reg.async_remove(cu_reg.entity_id)
+    await cu.async_removed_from_registry()
+    assert ent_reg.async_get(cu_out.entity_id) is None
+    assert dev_reg.async_get(cu_dev.id) is None
+
+    # 9. Early-return guards in prune_companions_for_removed_entity (no config_entry, missing unique_id)
+    from types import SimpleNamespace
+
+    from custom_components.myhome.discovery import prune_companions_for_removed_entity
+
+    prune_companions_for_removed_entity(SimpleNamespace(hass=None, _hass=None, _gateway_handler=None))
+    prune_companions_for_removed_entity(
+        SimpleNamespace(
+            hass=hass,
+            _hass=hass,
+            _gateway_handler=handler,
+            registry_entry=None,
+            _platform="sensor",
+            _who="18",
+            _device_id="51",
+            unique_id=None,
+        )
+    )
+    prune_companions_for_removed_entity(
+        SimpleNamespace(
+            hass=hass,
+            _hass=hass,
+            _gateway_handler=handler,
+            registry_entry=None,
+            _platform="binary_sensor",
+            _who="25",
+            _device_id="99",
+            unique_id=f"{MAC}-25-99-opening",
+        )
+    )
+
 
