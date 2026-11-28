@@ -521,6 +521,11 @@ def _zone_request_frame(where: str, dimension: int) -> str:
     copy of the address grammar.
     """
     where = _validate_zone_where(where)
+    if dimension == 0:
+        zone_part, routing, iface = where.partition(BUS_ROUTING)
+        if len(zone_part) == 2 and zone_part[0] == "0" and zone_part[1] in "123456789":
+            where = f"{zone_part[1]}{routing}{iface}"
+        return str(OWNHeatingCommand.get_temperature(where))
     if dimension == 20:
         return str(OWNHeatingCommand.actuators_status(where))
     return f"*#4*{where}*{dimension}##"
