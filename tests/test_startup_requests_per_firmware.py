@@ -1,12 +1,14 @@
 """Startup requests the firmware forwards, per gateway (own-firmware-oracle verdicts, #185, #257, #674).
 
-- ``*#4*0##`` is refused (not forwarded to the bus) by F450, F454, F459, F460, F461, H4684,
-  MH200, MH202 and MyHomeServer1; F453, F453AV and MH200N forward it
-  (``results/<P>/<V>/oracle/full/trace-corpus.tsv``). The MH201 is not in the oracle: a
+- ``*#4*0##`` is refused or misrouted by all thirteen emulated gateway firmwares
+  (``3488``, ``F450``, ``F453``, ``F453AV``, ``F454``, ``F459``, ``F460``, ``F461``,
+  ``H4684``, ``MH200``, ``MH200N``, ``MH202`` and ``MyHomeServer1``; Gen B
+  ``F453``/``F453AV``/``MH200N`` misroute ``*#4*0##`` to non-existent zone 0 per
+  QUIRK-15 and stall with 0 replies). The MH201 is catalogued (not emulated): a
   physical MH201 3.3.6 answered ``*#4*0##`` with no zone frame (``issue_466`` sweep trace). Where it is refused, an SCS-only
   gateway's zones ask for their temperature one by one (``*#4*Z*0##``), which every
   emulated gateway forwards.
-- ``*#16*0*5##`` is refused by F450, F459, F460, F461, MH202 and MyHomeServer1
+- ``*#16*0*5##`` is refused by 3488, F450, F459, F460, F461, MH202 and MyHomeServer1
   (``results/<P>/<V>/oracle/full/sound-who16-source.tsv``).
 - A restored ``current_temperature`` is flagged ``current_temperature_restored`` until the
   zone reports again.
@@ -79,11 +81,11 @@ def _zone(hass, handler, where="3", fan=False, **kwargs) -> MyHOMEClimate:
 @pytest.mark.parametrize(
     ("model", "zone_sweep", "sound"),
     [
-        ("F461", False, False), ("MyHomeServer1", False, False), ("MH202", False, False),
+        ("F461", False, False), ("MyHomeServer1", False, False), ("3488", False, False), ("MH202", False, False),
         ("F459", False, False), ("F460", False, False), ("F450", False, False),
         ("F454", False, True), ("MH200", False, True), ("MH201", False, True),
         ("H4684", False, True), ("HL4684", False, True), ("H/L4684", False, True),
-        ("F453", True, True), ("F453AV", True, True), ("MH200N", True, True), ("Generic", True, True),
+        ("F453", False, True), ("F453AV", False, True), ("MH200N", False, True), ("Generic", True, True),
     ],
 )
 def test_sweep_skips_requests_the_gateway_refuses(hass, model, zone_sweep, sound):
@@ -104,7 +106,7 @@ def test_hardware_compatibility_table_matches_the_sweep(hass):
 
     from custom_components.myhome.gateway import DISCOVERY_REQUESTS
 
-    assert len(ugp.GATEWAY_DISCOVERY_METADATA) == 11
+    assert len(ugp.GATEWAY_DISCOVERY_METADATA) == 12
     for row in ugp.calibrate_discovery_with_ownd():
         frames = _handler(hass, str(row["profile_name"]))._discovery_frames()
         omitted = [frame for who, frame in DISCOVERY_REQUESTS if who in row["queried_whos"] and frame not in frames]
@@ -210,8 +212,9 @@ def test_profile_without_who_16_skips_the_sound_request(hass):
     [
         ("MH201", True), ("F450", True), ("MH200", True), ("H4684", True),
         ("HL4684", True), ("H/L4684", True), ("F459", True),
-        ("F455", False), ("F453", False), ("MH200N", False),  # unknown, or the sweep answers
-        ("F454", False), ("MH202", False), ("F460", False), ("F461", False), ("MyHomeServer1", False), ("Generic", False),  # polled with *#4*Z##
+        ("F453", True), ("F453AV", True), ("MH200N", True),
+        ("F455", False),  # F455 defers to silent-zone poll
+        ("3488", False), ("F454", False), ("MH202", False), ("F460", False), ("F461", False), ("MyHomeServer1", False), ("Generic", False),  # polled with *#4*Z##
     ],
 )
 def test_which_gateways_need_a_zone_temperature_poll(hass, model, expected):
@@ -361,7 +364,7 @@ async def test_a_malformed_restored_temperature_is_ignored(hass):
     [
         ("MH200", True, False),  # listed in the fallback table, but the profile says the sweep is answered
         ("MH201", True, False),  # the #185 field-report entry yields to a stated profile flag too
-        ("F453", False, True),  # not in the table; the profile says the sweep is refused
+        ("F452", False, True),  # not in the table; the profile says the sweep is refused
         ("F461", False, False),  # polled with *#4*Z##: never a temperature poll
     ],
 )

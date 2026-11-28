@@ -808,11 +808,12 @@ class ZoneDiscovery:
                 if dim19 is not None and zone_pair is not None:
                     if self._accept_candidate_actuator(zone_pair):
                         return True
-                    events = self._held.setdefault(zone_pair, {})
-                    if dim19[2]:
+                    if dim19[2] is True:
+                        events = self._held.setdefault(zone_pair, {})
                         events.pop("dim19", None)
                         events["dim19"] = ctx.message
-                    else:
+                    elif dim19[2] is False:
+                        events = self._held.setdefault(zone_pair, {})
                         events.pop("dim19", None)
                         events.pop("dim19_off", None)
                         events["dim19_off"] = ctx.message

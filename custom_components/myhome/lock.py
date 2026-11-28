@@ -132,8 +132,8 @@ def warn_if_locks_unsupported(gateway: Any, entities: Sequence[Any]) -> bool:
         "%s Configured WHO=6 door-entry lock(s) (%s) on gateway %s, whose firmware routes "
         "no WHO 6 door-entry translator (bt_vct). Unlock commands (*6*10*WHERE##) will be "
         "NACKed unless WHO 6 is delegated on a shared bus to a gateway that routes it and "
-        "sees the door-entry riser (MH200, MH202 or F453, e.g. through an F422; F454 and "
-        "F459 route only WHO 8) or the strike/gate is driven by an MH-bus relay (WHO=1 "
+        "sees the door-entry riser (MH200, MH202 or F453, e.g. through an F422; F454, F459, "
+        "and 3488 route only WHO 8) or the strike/gate is driven by an MH-bus relay (WHO=1 "
         "impulse cover).",
         gateway.log_id,
         wheres,

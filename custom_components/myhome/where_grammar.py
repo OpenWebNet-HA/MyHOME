@@ -527,12 +527,15 @@ def central_unit_where(message: Any) -> str | None:
     return None
 
 
-# Zone operation mode by central unit with its season (WHO 4 p. 65, 1.9.4; p. 9): 110 / 210
-# manual, 111 / 211 automatic, 103 / 203 off, 102 / 202 protection. The generic 310 / 311
-# (p. 9 lists them on the monitor session too) are also the command text, and an F455
-# makes up *4*311*#Z## for a standalone thermostat; the live 3550 reported its zone 4 as
-# *4*210*#4##, also in its quarter-hour push, so a central unit is still found.
-_CENTRAL_ZONE_STATUS_WHATS = frozenset({"110", "210", "111", "211", "103", "203", "102", "202"})
+# Zone operation mode by central unit with its season (WHO 4 p. 65, 1.9.4; p. 9; bt_termo
+# D2 04 C2 19/29): 110 / 210 manual, 104 / 204 timed manual, 111 / 211 automatic, 103 / 203 off,
+# 102 / 202 protection. The generic 304 / 310 / 311 (p. 9 lists them on the monitor session too)
+# are also the command text, and an F455 makes up *4*311*#Z## for a standalone thermostat; the
+# live 3550 reported its zone 4 as *4*210*#4##, also in its quarter-hour push, so a central unit
+# is still found.
+_CENTRAL_ZONE_STATUS_WHATS = frozenset(
+    {"110", "210", "104", "204", "111", "211", "103", "203", "102", "202"}
+)
 
 
 def is_actuator_status(message: Any) -> bool:
@@ -1273,7 +1276,7 @@ def thermo_dim20_whole_zone_target(message: Any) -> bool:
 
 def thermo_dim19_status(
     message: Any,
-) -> tuple[bool, bool, bool, bool | None, bool | None, int | None] | None:
+) -> tuple[bool | None, bool | None, bool | None, bool | None, bool | None, int | None] | None:
     """Return ``(cooling_active, heating_active, zone_active, cooling_fan_on, heating_fan_on, fan_speed)``.
 
     Decodes WHO=4 Dimension 19 (``*#4*WHERE*19*CV*HV##``) directly via
@@ -1283,11 +1286,16 @@ def thermo_dim19_status(
     ``10..13`` and ``17..22`` follow the ``MyHomeServer1`` ``bt_thermo_manager``
     bitmask in alignment with ``OWNd#178`` (``549da04``; older ``OWNd``
     ``b2a1f9ee`` returned ``None``), and active fan speed is preserved across both
-    the heating (``HV``) and cooling (``CV``) sides. Frames with an empty field
-    (such as ``*#4*1*19*0*##``, emitted by emulated ``MyHomeServer1`` ``028206``
-    and ``F461`` ``020011`` for out-of-table SCS bytes) stay untyped in ``OWNd``
-    and return ``None``. Falls back to ``message.is_active()`` only for
-    unit-test mocks without a ``dimension_value`` sequence.
+    the heating (``HV``) and cooling (``CV``) sides.
+
+    When ``bt_termo`` emits a single empty field for an unmapped SCS byte
+    (``*#4*Z*19**1##`` or ``*#4*Z*19*0*##``, ``findings/bt-termo.md`` QUIRK-03),
+    the populated side is decoded independently while the empty side stays ``None``;
+    ``zone_active`` is ``True`` if the populated side is active and ``None``
+    otherwise (never claiming the zone is idle while the other side is unknown).
+    Both-empty frames or an explicit unrecognized non-empty code still return
+    ``None``. Falls back to ``message.is_active()`` only for unit-test mocks
+    without a ``dimension_value`` sequence.
     """
     who = getattr(message, "who", None)
     if isinstance(who, (int, str)) and str(who) != "4":
@@ -1299,31 +1307,59 @@ def thermo_dim19_status(
         return None
     vals = getattr(message, "dimension_value", None)
     if isinstance(vals, (list, tuple)):
-        if (
-            len(vals) < 2
-            or not _is_ascii_uint(str(vals[0]))
-            or not _is_ascii_uint(str(vals[1]))
-        ):
+        if len(vals) < 2:
             return None
-        c_dec = _decode_thermo_output_code(int(str(vals[0])))
-        h_dec = _decode_thermo_output_code(int(str(vals[1])))
-        if c_dec is None or h_dec is None:
-            return None
-        fan_speed = (
-            h_dec[2]
-            if h_dec[1] is True
-            else c_dec[2]
-            if c_dec[1] is True
-            else None
-        )
-        return (
-            c_dec[0],
-            h_dec[0],
-            bool(c_dec[0] or h_dec[0]),
-            c_dec[1],
-            h_dec[1],
-            fan_speed,
-        )
+        raw_c = str(vals[0])
+        raw_h = str(vals[1])
+        c_is_uint = _is_ascii_uint(raw_c)
+        h_is_uint = _is_ascii_uint(raw_h)
+        if c_is_uint and h_is_uint:
+            c_dec = _decode_thermo_output_code(int(raw_c))
+            h_dec = _decode_thermo_output_code(int(raw_h))
+            if c_dec is None or h_dec is None:
+                return None
+            fan_speed = (
+                h_dec[2]
+                if h_dec[1] is True
+                else c_dec[2]
+                if c_dec[1] is True
+                else None
+            )
+            return (
+                c_dec[0],
+                h_dec[0],
+                bool(c_dec[0] or h_dec[0]),
+                c_dec[1],
+                h_dec[1],
+                fan_speed,
+            )
+        if raw_c == "" and h_is_uint:
+            h_dec = _decode_thermo_output_code(int(raw_h))
+            if h_dec is None:
+                return None
+            fan_speed = h_dec[2] if h_dec[1] is True else None
+            return (
+                None,
+                h_dec[0],
+                True if h_dec[0] else None,
+                None,
+                h_dec[1],
+                fan_speed,
+            )
+        if raw_h == "" and c_is_uint:
+            c_dec = _decode_thermo_output_code(int(raw_c))
+            if c_dec is None:
+                return None
+            fan_speed = c_dec[2] if c_dec[1] is True else None
+            return (
+                c_dec[0],
+                None,
+                True if c_dec[0] else None,
+                c_dec[1],
+                None,
+                fan_speed,
+            )
+        return None
     if callable(getattr(message, "is_active", None)):
         raw_cfan = getattr(message, "cooling_fan_on", None)
         raw_hfan = getattr(message, "fan_on", None)
@@ -1386,6 +1422,12 @@ def validate_thermo_trigger_command(raw: str | None) -> str:
                 "WHO=4 Dimension 22 in this form crashes the gateway's thermostat daemon; "
                 + detail
             )
+    from .services import destructive_frame_reason
+
+    if (destructive_reason := destructive_frame_reason(frame)) is not None:
+        raise ValueError(
+            f"Refusing destructive OpenWebNet frame `{frame}`: {destructive_reason}"
+        )
     if not _TRIGGER_COMMAND_RE.fullmatch(frame):
         raise ValueError(f"Invalid OpenWebNet command frame: {frame}")
     try:

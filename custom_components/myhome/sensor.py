@@ -2648,7 +2648,7 @@ class MyHOMEActuatorOutputSensor(MyHOMEEntity, SensorEntity):
                         new_val = 0
         elif dimension == 19:
             dim19 = thermo_dim19_status(message)
-            if dim19 is not None and not dim19[2]:
+            if dim19 is not None and dim19[2] is False:
                 new_val = 0
         elif message.message_type in (MESSAGE_TYPE_MODE, MESSAGE_TYPE_MODE_TARGET):
             if is_central_thermo_where(message):

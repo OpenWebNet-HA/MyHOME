@@ -270,8 +270,8 @@ def test_a_generic_profile_reads_the_configured_model_not_its_own_name(hass):
 async def test_vendor_prefixed_refusing_gateway_zone_does_not_ask(hass):
     handler = _handler(hass, "Legrand MH200N")
     await _humidity_zone(hass, handler).async_update()
-    # #466: MH200N has no temperature poll, but a non-silent gateway still asks the knob once.
-    assert _sent(handler) == ["*#4*2*13##"]
+    # Gen B MH200N skips useless *#4*0## sweep and asks per-zone temperature + knob; never *60##.
+    assert _sent(handler) == ["*#4*2*0##", "*#4*2*13##"]
 
 
 # ------------------------------------------------------------------ gateway: WHO 4 delegation and warm standby (review 5644219403, 1)
@@ -377,18 +377,17 @@ async def test_a_configured_standby_decides_while_the_primary_is_down(hass):
 
 # ------------------------------------------------------------------ climate: nothing to send, nothing to count (review 5644219403, 4)
 
-@pytest.mark.parametrize("model", ["F453", "F453AV", "Legrand MH200N"])
+@pytest.mark.parametrize("model", ["F455"])
 async def test_a_refusing_scs_gateway_s_humidity_zone_never_reaches_poll_health(hass, model):
-    """No zone status (``*#4*Z##``), no per-zone temperature poll (the sweep's ``*#4*0##`` is
-    forwarded on these three), no fan, humidity refused: ``async_update`` returns before ``_poll_health``.
+    """No zone status (``*#4*Z##``), no per-zone temperature poll on add, no fan, humidity refused:
+    ``async_update`` returns before ``_poll_health``.
     """
     handler = _handler(hass, model)
     zone = _humidity_zone(hass, handler)
     zone._poll_health.should_skip = MagicMock(side_effect=AssertionError("should_skip must not run"))
     zone._raise_unresponsive_issue = MagicMock()
     await zone.async_update()
-    # #466: a non-silent SCS gateway asks the knob once; it is uncounted, so should_skip is not consulted.
-    assert _sent(handler) == ["*#4*2*13##"]
+    assert _sent(handler) == []
     zone._raise_unresponsive_issue.assert_not_called()
 
 

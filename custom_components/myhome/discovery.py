@@ -931,7 +931,7 @@ def message_has_state(entity: MyHOMEEntity, message: Any) -> bool:
                 return not polls_temperature or getattr(message, "main_temperature", None) is not None
             # A zone that will ask *#4*Z*13## (#466) is not complete until the knob arrives.
             # No single frame carries both the temperature and the knob, so a temperature-poll
-            # zone keeps polling; a non-temperature-poll zone (MH200N, F453) is complete only
+            # zone keeps polling; a non-temperature-poll zone (F455) is complete only
             # when the revealing frame is itself a Dimension 13 report. Match on the dimension,
             # not local_offset: a local-OFF (*13*4##) or protection (*13*5##) knob is a valid
             # Dimension 13 report that handle_event treats as reported, yet OWNd leaves its

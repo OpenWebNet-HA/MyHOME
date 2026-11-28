@@ -91,8 +91,16 @@ def gateway_tier(model: str | None) -> int:
             "573958",
             "078479",
             "78479",
+            "067259",
+            "67259",
+            "HOMETOUCH",
+            "SMARTDES",
         )
     ):
+        return 2
+    from .gateway import _resolve_model_key
+
+    if _resolve_model_key(model) == "3488":
         return 2
     return 3
 
@@ -106,8 +114,9 @@ DOOR_ENTRY_WHOS: tuple[int, ...] = (6, 8)
 DOOR_ENTRY_AV_MODELS: frozenset[str] = frozenset({"F452", "F452V", "F453AV"})
 #: A/V gateways that route WHO 8 but not WHO 6: the F454 ``020051`` ``stack_open.xml`` gives
 #: ``bt_vct`` ``<chi>8</chi>`` and no program ``6``; the F459 ships the same image
-#: (``art.xml.F459``). They hear doorbells but NACK ``*6*10*WHERE##`` unlocks.
-DOOR_ENTRY_WHO8_ONLY_MODELS: frozenset[str] = frozenset({"F454", "F459"})
+#: (``art.xml.F459``); and the 3488 HOMETOUCH ``030205`` ``bt_vct`` routes WHO 8 only
+#: (``own-firmware-oracle/findings/3488/README.md``). They hear doorbells but NACK ``*6*10*WHERE##``.
+DOOR_ENTRY_WHO8_ONLY_MODELS: frozenset[str] = frozenset({"3488", "F454", "F459"})
 #: ``MH`` scenario programmers that route WHO 6 to ``bt_vct`` (``<chi>6.7</chi>`` on MH202
 #: ``010024``, WHO 6/7 on MH200 ``020102``) and pass WHO 6 / WHO 8 bus frames to the event
 #: session when the door-entry riser reaches their bus, e.g. through an ``F422`` (inferred:
@@ -131,29 +140,23 @@ DELEGATABLE_WHOS: tuple[int, ...] = (1, 2, 4, 5, 6, 8, 9, 15, 16, 18, 22, 25)
 
 def _profile_and_model(model: str | None, firmware: str | None = None) -> tuple[Any, str]:
     """Return ``(profile, canonical_model_name)`` for ``model``."""
-    import re
-
     import OWNd.profiles as _ownd_profiles
 
-    from .gateway import _ZONE_REQUEST_MODELS, _alnum, _profile_for_model, _resolved_model
+    from .gateway import _ZONE_REQUEST_MODELS, _profile_for_model, _resolve_model_key
 
     raw = model or ""
     profile = _profile_for_model(raw, firmware, lookup=_ownd_profiles.get_gateway_profile)
     if isinstance(profile, _ownd_profiles.GenericGatewayProfile) and raw:
-        for word in re.findall(r"[A-Za-z0-9]+", raw):
-            resolved = _resolved_model(word)
-            if resolved is not None:
-                profile = _profile_for_model(
-                    resolved, firmware, lookup=_ownd_profiles.get_gateway_profile
-                )
-                break
+        resolved = _resolve_model_key(raw, profile=profile)
+        if resolved in _ZONE_REQUEST_MODELS:
+            profile = _profile_for_model(
+                resolved, firmware, lookup=_ownd_profiles.get_gateway_profile
+            )
+            model_name = str(getattr(profile, "model_name", "") or "").upper()
+            if isinstance(profile, _ownd_profiles.GenericGatewayProfile):
+                model_name = resolved
+            return profile, model_name
     model_name = str(getattr(profile, "model_name", "") or "").upper()
-    if isinstance(profile, _ownd_profiles.GenericGatewayProfile):
-        normalized = _alnum(raw)
-        for candidate in _ZONE_REQUEST_MODELS:
-            if candidate in normalized:
-                model_name = candidate
-                break
     return profile, model_name
 
 

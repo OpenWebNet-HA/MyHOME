@@ -14,6 +14,7 @@ The MyHOME integration communicates with SCS bus gateways over TCP/IP:
 | **F454** | OpenWebNet / HMAC | 4 workers | 50 ms | ✅ Port 49153 | Full high-speed multi-session support |
 | **F455** | OpenWebNet / HMAC | 4 workers | 50 ms | ✅ Port 49153 | Basic gateway (single SCS bus) |
 | **F461** | OpenWebNet / HMAC | 4 workers | 50 ms | ❌ Manual | Compact DIN Ethernet Web Server |
+| **3488 / 067259** | OpenWebNet / HMAC | 1 worker | 50 ms | ❌ Manual | 7" HOMETOUCH colour touch screen (SMARTDES, local OpenWebNet server on port 20000) |
 | **MH202** | OpenWebNet / HMAC | 2 workers | 100 ms | ✅ Port 49153 | Modern scenario programmer gateway |
 | **MH201** | OpenWebNet | 1 worker | 100 ms | ✅ Port 49153 | Second-generation scenario programmer |
 | **MyHomeServer1** | OpenWebNet / HMAC | 4 workers | 20 ms | ✅ SSDP | Cloud/local hybrid gateway |
@@ -46,7 +47,7 @@ The MyHOME integration communicates with SCS bus gateways over TCP/IP:
 | `custom` | **Port** | `port` | Integer | `20000` | TCP port for the OpenWebNet service (`1–65535`, standard default `20000`). Home Assistant then attempts a UPnP `get_gateway` metadata lookup at that IP. |
 | `custom_manual` *(only if UPnP lookup fails)* | **MAC Address** | `serialNumber` *(stored as `mac`)* | String | `00:03:50:00:00:00` | Gateway MAC address (`unique_id`). Automatically replaced after authentication if the gateway safely answers `*#13**12##` (`F461`, `MyHomeServer1`). |
 | `custom_manual` *(only if UPnP lookup fails)* | **Device Type** | `modelName` *(stored as `name`)* | Select | `MyHomeServer1` | Hardware model (`SUPPORTED_GATEWAY_MODELS`, including `"Generic"`). Probed and refined post-auth via `*#13**15##`, `*#13**16##`, and `*#1013**1##`. |
-| `password` *(only when required by gateway)* | **Password** | `password` | String | — | Numeric OPEN password (`MH200`, `MH200N`, `MH201`, `F452`, `F453`, `F453AV`, `H4684`) or alphanumeric SHA-256 HMAC password (`F454`, `F455`, `F461`, `MH202`, `MyHomeServer1`). |
+| `password` *(only when required by gateway)* | **Password** | `password` | String | — | Numeric OPEN password (`MH200`, `MH200N`, `MH201`, `F452`, `F453`, `F453AV`, `H4684`) or alphanumeric SHA-256 HMAC password (`3488`, `F454`, `F455`, `F461`, `MH202`, `MyHomeServer1`). |
 
 ---
 
@@ -122,7 +123,7 @@ You can adjust integration runtime parameters at any time without re-adding the 
 ### 1. Command Worker Concurrency (`command_worker_count`)
 - **Range**: `1` to `4` on profiled gateways (`1` to `10` on `Generic`).
 - Dynamically capped and validated against the gateway model's hardware limit:
-    - **1 worker**: `MH200`, `MH200N`, `MH201`, `F452`, `F452V`, `F453`, `F453AV`, `H4684`, `AM4890` / `H4890` / `LN4890`.
+    - **1 worker**: `3488` / `067259`, `MH200`, `MH200N`, `MH201`, `F452`, `F452V`, `F453`, `F453AV`, `H4684`, `AM4890` / `H4890` / `LN4890`.
     - **Up to 2 workers**: `MH202` (default `1`).
     - **Up to 4 workers**: `F454`, `F461` (default `1`); `F455`, `MyHomeServer1` (default `2`).
 - Prevents socket flooding and gateway CPU exhaustion while maximizing throughput on modern multi-session gateways.

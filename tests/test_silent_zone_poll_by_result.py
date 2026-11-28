@@ -60,15 +60,15 @@ KNOB = "*#4*2*13*00##"
 SCS_ONLY = {
     "F450": (["*#4*2*0##", "*#4*2*13##"], ["*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]),
     "F452": (["*#4*2*13##"], ["*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]),
-    "F453": (["*#4*2*13##"], ["*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]),
-    "F453AV": (["*#4*2*13##"], ["*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]),
+    "F453": (["*#4*2*0##", "*#4*2*13##"], ["*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]),
+    "F453AV": (["*#4*2*0##", "*#4*2*13##"], ["*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]),
     "F455": ([], ["*#4*2*13##", "*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##", "*#4*2*19##"]),
     "F458": (["*#4*2*13##"], ["*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]),
     "F459": (["*#4*2*0##", "*#4*2*13##"], ["*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]),
     "H4684": (["*#4*2*0##", "*#4*2*13##"], ["*#4*2*14##", "*#4*2*12##"]),
     "BTicino H/L4684": (["*#4*2*0##", "*#4*2*13##"], ["*#4*2*14##", "*#4*2*12##"]),
     "MH200": (["*#4*2*0##", "*#4*2*13##"], ["*#4*2*14##", "*#4*2*12##"]),
-    "MH200N": (["*#4*2*13##"], ["*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]),
+    "MH200N": (["*#4*2*0##", "*#4*2*13##"], ["*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]),
     "MH201": (["*#4*2*0##", "*#4*2*13##"], ["*#4*2*14##", "*#4*2*12##", "*#4*2#1*20##"]),
 }
 # model: whether the poll may ask for actuator 1 (the gateway does not drop the actuator form of the
@@ -628,14 +628,14 @@ async def test_a_zone_without_a_temperature_asks_for_it_first(hass, model) -> No
 async def test_a_refused_read_ends_the_poll(hass) -> None:
     handler = _handler(hass, "MH200N")
     refused = hass.loop.create_future()
-    _ready(handler, side_effect=[None, refused])  # the knob read on add, then the poll's first read
+    _ready(handler, side_effect=[None, None, refused])  # *0 and *13 on add, then the poll's first read
     zone = _zone(hass, handler)
     await zone.async_update()
     task = asyncio.ensure_future(zone._poll_if_silent(grace=0))
     await _spin()
     refused.cancel()
     await task
-    assert _queued(handler) == ["*#4*2*13##", "*#4*2*0##"]
+    assert _queued(handler) == ["*#4*2*0##", "*#4*2*13##", "*#4*2*0##"]
 
 
 async def test_a_knob_that_answered_on_add_is_not_asked_again(hass) -> None:

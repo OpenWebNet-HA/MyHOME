@@ -181,6 +181,8 @@ async def test_dimension_7_protection_names_the_operation(hass):
     _feed(zone, "*#4*2*7*2*2##")
     assert _operation(zone) == "thermal_protection"
     _feed(zone, "*#4*2*7*2*3##")  # cooling comfort (F461 KW4691, 2026-10-24)
+    assert _operation(zone) == "comfort"
+    _feed(zone, "*#4*2*7*2*1*0220##")  # setpoint clears preset operation
     assert _operation(zone) is None
 
 

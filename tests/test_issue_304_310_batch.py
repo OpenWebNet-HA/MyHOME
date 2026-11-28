@@ -285,7 +285,17 @@ async def test_discovery_asks_an_mh200n_for_its_amplifiers(gateway_handler, fast
     queued = []
     while not gateway_handler.send_buffer.empty():
         queued.append(str(gateway_handler.send_buffer.get_nowait()["message"]))
-    assert queued == ["*#1*0##", "*#2*0##", "*#4*0##", "*#16*0*5##", "*#18*51*51##", "*#18*51*113##"]
+    # Gen B MH200N *#4*0## polls non-existent zone 0 (findings/bt-termo.md QUIRK-15),
+    # so the sweep omits *#4*0## and sends the oracle-verified all-actuators read *#4*0#0*20##
+    # while still querying lighting, covers, sound, and energy.
+    assert queued == [
+        "*#1*0##",
+        "*#2*0##",
+        "*#4*0#0*20##",
+        "*#16*0*5##",
+        "*#18*51*51##",
+        "*#18*51*113##",
+    ]
 
 
 # OWNd up to 2.0.0b8 gives the MH200 the MH200N profile, which advertises no WHO 16.

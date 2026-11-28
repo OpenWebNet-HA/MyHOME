@@ -220,30 +220,39 @@ DISCOVERY_REQUESTS: tuple[tuple[int, str], ...] = (
 # (``supports_general_heating_status``, ``supports_who(16)``); these tables are the fallback
 # until the flags exist there. Gateways not listed keep sending the request.
 GENERAL_ZONE_REQUEST_REFUSED = frozenset(
-    {"F450", "F454", "F455", "F459", "F460", "F461", "H4684", "MH200", "MH201", "MH202", "MYHOMESERVER1"}
-)  # *#4*0## (trace-corpus.tsv); F453, F453AV and MH200N forward it. The MH201 is not in the
-# oracle: a physical MH201 3.3.6 sent *#4*0## and got no zone frame back although zones 2, 3
-# and 4 report on that plant (tests/fixtures/traces/issue_466, sweep 19-11-35 frame 11 against
-# trace 19-05-42 frames 0-10). The F455 is not in the oracle either: a physical F455 1.0.76
-# ACKed *#4*0## after 9.1 s with no frame on either session, on a plant whose zones answer
-# every single read (tests/fixtures/traces/issue_466/F455_direct_requests_2026-11-06.jsonl),
+    {
+        "3488", "F450", "F453", "F453AV", "F454", "F455", "F459",
+        "F460", "F461", "H4684", "MH200", "MH200N", "MH201", "MH202", "MYHOMESERVER1",
+    }
+)  # *#4*0## (trace-corpus.tsv); Gen B (F453, F453AV, MH200N) forwards *#4*0## only because
+# its zone check omits zone > 0, emitting point-to-point $04 99 00 30 {00,12,0E,0D} to
+# non-existent zone 0 (thermo-four-zone-central.tsv:41, findings/bt-termo.md QUIRK-15) and
+# stalling 1.3-8.8 s with 0 replies on physical plants (discussion_856, issue_466, issue_619).
+# The MH201 is not in the oracle: a physical MH201 3.3.6 sent *#4*0## and got no zone frame
+# back although zones 2, 3 and 4 report on that plant (tests/fixtures/traces/issue_466,
+# sweep 19-11-35 frame 11 against trace 19-05-42 frames 0-10). The F455 is not in the oracle
+# either: a physical F455 1.0.76 ACKed *#4*0## after 9.1 s with no frame on either session, on
+# a plant whose zones answer every single read (tests/fixtures/traces/issue_466/F455_direct_requests_2026-11-06.jsonl),
 # and again after about 9 s with no frame at every start on 2026-11-17 (#932); the request
 # holds a command session for those 9 s.
 SOUND_STATUS_REQUEST_REFUSED = frozenset(
-    {"F450", "F459", "F460", "F461", "MH202", "MYHOMESERVER1"}
+    {"3488", "F450", "F459", "F460", "F461", "MH202", "MYHOMESERVER1"}
 )  # *#16*0*5## (sound-who16-source.tsv)
 # Zones of these SCS-only gateways report nothing after the startup sweep, so each zone asks
 # for its temperature (*#4*Z*0##, one bus query answered in ~120 ms on a populated zone): the
 # single-session or uncaptured models refusing *#4*0## whose *#4*Z## is expanded into four bus
-# queries ($0499ZZ3000 / 12 / 0E / 0D in trace-corpus.tsv), and the MH201, whose standalone
-# thermostats stayed unknown after every restart (#185; its *#4*0## refusal is the issue_466
-# sweep trace, the MH201 is not in the oracle). F454, MH202, F460, F461 and MyHomeServer1 refuse
+# queries ($0499ZZ3000 / 12 / 0E / 0D in trace-corpus.tsv), Gen B models whose *#4*0## polls
+# non-existent zone 0 (F453, F453AV, MH200N), and the MH201, whose standalone thermostats
+# stayed unknown after every restart (#185; its *#4*0## refusal is the issue_466 sweep trace,
+# the MH201 is not in the oracle). F454, MH202, 3488, F460, F461 and MyHomeServer1 refuse
 # *#4*0## too but answer *#4*Z## themselves (F454 supports up to 4 command sessions and answers
 # all five frames in ~1.3 s on both central-unit #629 and standalone #866 plants; MH202 answers
-# all five frames in ~160-250 ms, #866; F460, F461 and MyHomeServer1 expand it into $0499013000 in
-# trace-corpus.tsv and answer all five frames on the SCS bus in ~1.3-1.9 s, #649 / #714 / #886),
-# so their zones keep the zone status poll and are not listed here.
-ZONE_TEMPERATURE_POLL = frozenset({"F450", "F459", "H4684", "MH200", "MH201"})
+# all five frames in ~160-250 ms, #866; 3488, F460, F461 and MyHomeServer1 expand it into
+# $0499013000 in trace-corpus.tsv and answer all five frames on the SCS bus in ~1.3-1.9 s,
+# #649 / #714 / #886), so their zones keep the zone status poll and are not listed here.
+ZONE_TEMPERATURE_POLL = frozenset(
+    {"F450", "F453", "F453AV", "F459", "H4684", "MH200", "MH200N", "MH201"}
+)
 # The silent-zone poll (#466, #932), on every gateway. Whether a gateway answers the general
 # request (*#4*0##) or the zone status request (*#4*Z##) with the state of a zone is known for
 # the models in the tables above and unknown for any other, and a zone whose thermostat nobody
@@ -349,9 +358,10 @@ ZONE_ACTUATOR_REQUEST_REFUSED = frozenset({"F455"})
 # and the live F461 2.0.11 answered it in 2.13 s (f461_live_2026-10-23).
 ALL_ACTUATORS_REQUEST = "*#4*0#0*20##"
 ALL_ZONE_REQUESTS: dict[str, dict[int, str]] = {
+    "3488": {20: ALL_ACTUATORS_REQUEST, 60: "*#4*0*60##"},
     "F455": {20: ALL_ACTUATORS_REQUEST},
     "F459": {60: "*#4*0*60##"},
-    "F460": {60: "*#4*0*60##"},
+    "F460": {20: ALL_ACTUATORS_REQUEST, 60: "*#4*0*60##"},
     "F461": {20: ALL_ACTUATORS_REQUEST, 60: "*#4*0*60##"},
     "MYHOMESERVER1": {20: ALL_ACTUATORS_REQUEST, 60: "*#4*0*60##"},
 }
@@ -361,12 +371,14 @@ ALL_ZONE_REQUESTS: dict[str, dict[int, str]] = {
 # unit's quarter-hour push): a new F461 entry sent no WHO 4 frame and had no climate entity two
 # minutes later; twelve seconds after ``*#4*#0##`` and the zones were read from another client
 # it had its central unit and three zones (2026-11-18).
-# - The all-actuator request, where the firmware forwards it: live on F455, F461 and
-#   MyHomeServer1 (above); F450, F454, F459 and F460 by the oracle row above (not tried on a
-#   plant). Not sent where the oracle shows it dropped (H4684, MH200, MH202) nor on the MH201
-#   (not in the oracle, no capture). Every actuator answers as ``Z#N``: a fan coil creates its
-#   zone at once, a plain valve is kept until the zone is known to be a thermostat (#785), see
-#   ``climate._ask_actuator_only_zones``.
+# - The all-actuator request, where the firmware forwards it: live on 3488, F455, F461 and
+#   MyHomeServer1 (above); F450, F453, F453AV, F454, F459, F460 and MH200N by the oracle
+#   row above (`thermo-zone-requests.tsv:17` -> `$04B9003010\r` on F450/F453/F453AV/F454/F459/MH200N,
+#   `$004B9003010\r` on F460, `$104B9003010\r` on 3488; findings/bt-termo.md §7; F450/F453/F453AV/
+#   F454/F459/F460/MH200N not tried on a plant). Not sent where the oracle shows it dropped
+#   (H4684, MH200, MH202) nor on the MH201 (catalogued, no capture). Every actuator answers as
+#   ``Z#N``: a fan coil creates its zone at once, a plain valve is kept until the zone is known
+#   to be a thermostat (#785), see ``climate._ask_actuator_only_zones``.
 # - The central unit's status, ``*#4*#0##``, where an unanswered request is cheap: the F461
 #   answered it in 0.16 s with the 3550's state, and a MyHomeServer1 with no central unit
 #   NACKed it after 2.09 s. Not on the F455: it answered in 1.07 s on a plant with a 3550, but
@@ -374,7 +386,9 @@ ALL_ZONE_REQUESTS: dict[str, dict[int, str]] = {
 #   8.95 s), the reason ``*#4*0##`` is not sent there. Not in the sweep of the models nobody
 #   tried it on. On every model the same request is sent once later, when a report about a
 #   zone shows that a central unit is there to answer it (``request_central_status``).
-STARTUP_ALL_ACTUATORS_REQUEST = frozenset({"F450", "F454", "F455", "F459", "F460", "F461", "MYHOMESERVER1"})
+STARTUP_ALL_ACTUATORS_REQUEST = frozenset(
+    {"3488", "F450", "F453", "F453AV", "F454", "F455", "F459", "F460", "F461", "MH200N", "MYHOMESERVER1"}
+)
 STARTUP_CENTRAL_STATUS_REQUEST = frozenset({"F461", "MYHOMESERVER1"})
 # A zone created from the answers to the sweep's all-actuator request asks for its actuators as
 # it is added (``watch_zone_actuators``). For this long after the sweep sent that request the
@@ -398,7 +412,7 @@ HUMIDITY_REQUEST_REFUSED = frozenset({"F450", "F453", "F453AV", "F454", "F455", 
 # and not left as the whole string. The same key on every table of #792 / #793 / #794.
 KNOWN_GATEWAY_MODELS = frozenset(
     {
-        "F450", "F452", "F452V", "F453", "F453AV", "F454", "F455", "F459", "F460", "F461",
+        "3488", "F450", "F452", "F452V", "F453", "F453AV", "F454", "F455", "F459", "F460", "F461",
         "H4684", "H4890", "MH200", "MH200N", "MH201", "MH202", "MYHOMESERVER1",
     }
 )
@@ -424,20 +438,48 @@ _ZONE_REQUEST_MODELS = sorted(
     key=len,
     reverse=True,
 )
-# Legrand 067292 Céliane 3.5" touch screen family (issue #832) SSDP model names mapped
-# to the H4890 profile until OWNd aliases them upstream.
+# Legrand 067292 Céliane 3.5" touch screen family (issue #832) and 3488 HOMETOUCH
+# catalogue/firmware spellings mapped until OWNd aliases them upstream.
 _MODEL_SPELLINGS = {
     "067292": "H4890",
     "67292": "H4890",
     "573958": "H4890",
     "078479": "H4890",
     "78479": "H4890",
+    "HOMETOUCH": "3488",
+    "067259": "3488",
+    "67259": "3488",
+    "SMARTDES": "3488",
 }
+
+_NUMERIC_BOUNDARY_CHARS = (".", ":")
+_MODEL_SPELLINGS_SORTED = tuple(
+    sorted(_MODEL_SPELLINGS.items(), key=lambda kv: len(kv[0]), reverse=True)
+)
+_NETWORK_ADDR_RE = re.compile(
+    r"\[[0-9A-Fa-f:]+\](?::[0-9]+)?"
+    r"|(?:[0-9A-Fa-f]{0,4}:){2,}[0-9A-Fa-f:]*"
+    r"|[0-9A-Fa-f]{2}(?:-[0-9A-Fa-f]{2}){5}"
+    r"|[0-9]{1,3}(?:\.[0-9]{1,3}){3}(?::[0-9]+)?",
+    re.ASCII,
+)
 
 
 def _alnum(name: object) -> str:
     """A model string reduced to its upper-case letters and digits (``"BTicino F461"`` -> ``BTICINOF461``)."""
     return "".join(character for character in str(name).upper() if character.isalnum())
+
+
+def _is_isolated_numeric_span(raw: str, start: int, end: int) -> bool:
+    """True when ``raw[start:end]`` is not adjacent to digits, ``.`` or ``:``."""
+    before = raw[start - 1] if start > 0 else ""
+    after = raw[end] if end < len(raw) else ""
+    return (
+        before not in _NUMERIC_BOUNDARY_CHARS
+        and after not in _NUMERIC_BOUNDARY_CHARS
+        and not before.isdigit()
+        and not after.isdigit()
+    )
 
 
 def _resolved_model(word: str) -> str | None:
@@ -447,10 +489,14 @@ def _resolved_model(word: str) -> str | None:
     ``03565`` -> ``MH200N`` (OWNd's aliases and catalogue item numbers); spellings OWNd has no
     alias for are mapped first via ``_MODEL_SPELLINGS``.
     """
-    key = _MODEL_SPELLINGS.get(_alnum(word), word)
+    alnum = _alnum(word)
+    mapped = _MODEL_SPELLINGS.get(alnum)
+    key = mapped if mapped is not None else word
     profile = get_gateway_profile(key)
     if isinstance(profile, GenericGatewayProfile):
-        return None
+        if mapped is not None:
+            return mapped
+        return alnum if alnum in KNOWN_GATEWAY_MODELS else None
     return _alnum(profile.model_name)
 
 
@@ -460,12 +506,38 @@ def _resolve_model_key(model: str | None, *, profile: Any = None) -> str:
         name: object = getattr(profile, "model_name", None) or model or ""
     else:
         name = model or ""
-    for word in re.findall(r"[A-Za-z0-9]+", str(name)):
+    raw = str(name)
+    cleaned = _NETWORK_ADDR_RE.sub(" : ", raw)
+    for match in re.finditer(r"[A-Za-z0-9]+", cleaned):
+        word = match.group(0)
+        if word.isdigit() and not _is_isolated_numeric_span(cleaned, match.start(), match.end()):
+            continue
         resolved = _resolved_model(word)
         if resolved is not None:
             return resolved
-    normalized = _MODEL_SPELLINGS.get(_alnum(name), _alnum(name))
-    return next((known for known in _ZONE_REQUEST_MODELS if known in normalized), normalized)
+    alnum = _alnum(raw)
+    searchable = "".join(
+        ch for ch in cleaned.upper() if ch.isalnum() or ch in _NUMERIC_BOUNDARY_CHARS
+    )
+    for spelling, target in _MODEL_SPELLINGS_SORTED:
+        if spelling.isdigit():
+            if any(
+                _is_isolated_numeric_span(cleaned, m.start(), m.end())
+                for m in re.finditer(re.escape(spelling), cleaned)
+            ):
+                return target
+        elif spelling in searchable:
+            return target
+    for known in _ZONE_REQUEST_MODELS:
+        if known.isdigit():
+            if any(
+                _is_isolated_numeric_span(cleaned, m.start(), m.end())
+                for m in re.finditer(re.escape(known), cleaned)
+            ):
+                return known
+        elif known in searchable:
+            return known
+    return "" if (alnum in _ZONE_REQUEST_MODELS or alnum in _MODEL_SPELLINGS) else alnum
 
 
 def gateway_emits_cover_pre_move_stop(model: str | None, *, profile: Any = None) -> bool | None:
@@ -767,10 +839,10 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         firmware: str | None = self.gateway.firmware
         return firmware
 
-    @property
-    def supports_zone_status(self) -> bool:
-        """Whether the gateway supports point-to-point zone status queries (*#4*Z##)."""
-        profile = getattr(getattr(self, "gateway", None), "profile", None)
+    @staticmethod
+    def _own_supports_zone_status(handler: MyHOMEGatewayHandler) -> bool:
+        """Whether ``handler`` itself supports point-to-point zone status queries (*#4*Z##)."""
+        profile = getattr(getattr(handler, "gateway", None), "profile", None)
         supported = getattr(profile, "supports_heating_zone_status", None)
         if isinstance(supported, bool):
             return supported
@@ -778,9 +850,9 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
         # "HL4684"), and the profile model _profile_for_model resolves it to (L4684, NT4684,
         # H/L4684, HL4684, HC4684, and MyHOME_Suite catalogue codes such as 003598).
         names = (
-            self.model.upper(),
-            _alnum(self.model),
-            str(_profile_for_model(self.model).model_name).upper(),
+            handler.model.upper(),
+            _alnum(handler.model),
+            str(_profile_for_model(handler.model).model_name).upper(),
         )
         return not any(
             k in norm
@@ -798,6 +870,14 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                 "H4684",
             )
         )
+
+    @property
+    def supports_zone_status(self) -> bool:
+        """Whether the gateway serving WHO 4 supports point-to-point zone status queries (*#4*Z##)."""
+        target = self._who4_target()
+        if target is not self and isinstance(getattr(target, "model", None), str):
+            return MyHOMEGatewayHandler._own_supports_zone_status(target)
+        return MyHOMEGatewayHandler._own_supports_zone_status(self)
 
     @property
     def _model_key(self) -> str:
@@ -1585,6 +1665,10 @@ class MyHOMEGatewayHandler(GatewayTopologyMixin, GatewayIdentityMixin):
                     written.done() and not written.cancelled() and written.exception() is None
                 ):
                     delivered.append(frame)
+                # Wait for the bus to go quiet before the next request. This also drains
+                # late replies 9..N after bt_termo's 8-reply cap (findings/bt-termo.md
+                # QUIRK-08: *#4*0#0*20## and *#4*0*60## return *#*1## after reply #8
+                # while replies 9..N continue arriving on the event session).
                 await self._wait_for_bus_quiet(time.monotonic())
                 if getattr(cmd, "who", None) == 4:
                     await self._wait_for_who4_recovery(written)

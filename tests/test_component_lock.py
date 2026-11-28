@@ -513,7 +513,7 @@ async def test_lock_setup_warns_only_on_unsupported_undelegated_gateway(
             "4000, 5#4#01" in msg
             and "MyHomeServer1" in msg
             and "bt_vct" in msg
-            and "F454 and F459 route only WHO 8" in msg
+            and "F454, F459, and 3488 route only WHO 8" in msg
             for msg in warnings
         )
 

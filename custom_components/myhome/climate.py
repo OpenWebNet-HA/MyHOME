@@ -164,27 +164,47 @@ _PROTECTION_FRAME_WINDOW = 2.0
 # #994 trace 2 frames 56-65, ~2.1 s on 4 zones).
 _FOUR_ZONE_BURST_WINDOW = 5.0
 _ZONE_CONTEXT_MODES = {"heating": HVACMode.HEAT, "cooling": HVACMode.COOL, "automatic": HVACMode.AUTO}
-_ZONE_STATES_ON = ("setpoint", "comfort", "eco")
+_ZONE_STATES_ON = ("setpoint", "comfort", "eco", "manual")
 _ZONE_STATES_OFF = ("protection", "off")
 # Central unit protection modes (WHO 4 p. 5 and p. 64): the plant keeps its season and
 # regulates to the protection setpoint; it is not switched off.
 _CENTRAL_PROTECTION = {"102": ("antifreeze", HVACMode.HEAT), "202": ("thermal_protection", HVACMode.COOL)}
 # 302 is generic protection (WHO 4 p. 5): the protection of the season the plant is in.
-_CENTRAL_GENERIC_PROTECTION = "302"
+# 402 / 502 are Auto / extended-context Protection (own-firmware-oracle findings/bt-termo.md §4.5.1,
+# D2 04 C1 mode byte 0x1D -> 402): same season-preserving protection on central units.
+_CENTRAL_GENERIC_PROTECTION = frozenset({"302", "402", "502"})
 # What a zone's mode frame says besides its season (WHO 4 WHAT table, p. 5: 102 "Anti Freeze",
 # 202 "Thermal Protection", 302 "Protection (generic)", 110 / 210 / 310 "Manual-adjustment
 # Mode", 111 / 211 / 311 "Programming Mode"; p. 9 monitor frames "111 -> Automatic heating",
-# "211 -> Automatic Conditioning"). The mode shown stays what it was: a zone in protection is
-# OFF holding its protection setpoint (#383), and 111 / 211 are HEAT / COOL as OWNd decodes
-# them; the attribute ``zone_operation`` tells them from a zone that is switched off (103 / 203
-# / 303) or in manual. 302 on a zone is in no capture, so it is not given a season.
+# "211 -> Automatic Conditioning"; own-firmware-oracle findings/bt-termo.md §4.4/4.5.1:
+# 104 / 204 / 304 CU zone timed manual, 107 / 207 / 407 / 507 Eco, 108 / 208 / 408 / 508
+# Comfort, 402 / 502 extended protection, 410 / 510 extended manual). The mode shown stays
+# what it was: a zone in protection is OFF holding its protection setpoint (#383), and
+# 111 / 211 are HEAT / COOL as OWNd decodes them; the attribute ``zone_operation`` tells
+# them from a zone that is switched off (103 / 203 / 303) or in manual. 302 on a zone is
+# in no capture, so it is not given a season.
 _ZONE_OPERATION = {
     "102": "antifreeze",
     "202": "thermal_protection",
     "302": "protection",
+    "402": "protection",
+    "502": "protection",
+    "104": "timed_manual",
+    "204": "timed_manual",
+    "304": "timed_manual",
+    "107": "eco",
+    "207": "eco",
+    "407": "eco",
+    "507": "eco",
+    "108": "comfort",
+    "208": "comfort",
+    "408": "comfort",
+    "508": "comfort",
     "110": "manual",
     "210": "manual",
     "310": "manual",
+    "410": "manual",
+    "510": "manual",
     "111": "automatic",
     "211": "automatic",
     "311": "automatic",
@@ -548,6 +568,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         self._fan_coil_sides_asked_at: float | None = None
         # The dimension 19 request was queued while a sweep held the zone requests back.
         self._fan_coil_sides_held = False
+        # True once a one-shot *#4*Z*19## probe has been answered (guards single-side replies).
+        self._fan_coil_sides_probed = False
         if fan and not self._central:
             self._enable_fan_mode()
 
@@ -565,6 +587,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         # Zone: the operation last reported with its mode (``_ZONE_OPERATION``), None when the
         # zone is off or has not said.
         self._zone_operation: str | None = None
+        # True only when a seasonless 4xx/5xx zone mode (407/408/410/507/508/510) landed on
+        # HVACMode.AUTO before any season was known, so a trailing *4*1*Z## / *4*0*Z## replaces
+        # it without cancelling a real DIM 7 ``automatic`` mode (e.g. *#4*Z*7*3*0##).
+        self._seasonless_auto = False
         # Central unit: Home Assistant's last command and when its local echo stops being expected,
         # and the echo frame once seen (the same frame object can be delivered more than once).
         self._central_echo: tuple[str, float | None, float] | None = None
@@ -813,7 +839,11 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
 
     def _has_no_fan_coil_sides(self) -> bool:
         """Whether dimension 19 reported that neither side of this zone is a fan coil."""
-        return bool(self._fan_coil_sides) and not any(self._fan_coil_sides.values())
+        return (
+            "cooling" in self._fan_coil_sides
+            and "heating" in self._fan_coil_sides
+            and not any(self._fan_coil_sides.values())
+        )
 
     def _disable_fan_mode(self) -> None:
         """Retract dynamically enabled fan mode once dimension 19 proves a pure-valve zone."""
@@ -947,9 +977,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             }
         if self._current_temperature_restored:
             attrs["current_temperature_restored"] = True
-        if self._fan_coil_sides:
-            attrs["fan_coil_heating"] = self._fan_coil_sides.get("heating", False)
-            attrs["fan_coil_cooling"] = self._fan_coil_sides.get("cooling", False)
+        if "heating" in self._fan_coil_sides:
+            attrs["fan_coil_heating"] = self._fan_coil_sides["heating"]
+        if "cooling" in self._fan_coil_sides:
+            attrs["fan_coil_cooling"] = self._fan_coil_sides["cooling"]
         if self._interface is not None:
             attrs["Int"] = self._interface
         if self._standalone_detected:
@@ -1222,14 +1253,9 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 and not self._local_offset_reported
             ):
                 self._knob_pos = restored_knob
-            if (
-                "fan_coil_heating" in last_state.attributes
-                or "fan_coil_cooling" in last_state.attributes
-            ):
-                self._fan_coil_sides = {
-                    "heating": bool(last_state.attributes.get("fan_coil_heating", False)),
-                    "cooling": bool(last_state.attributes.get("fan_coil_cooling", False)),
-                }
+            for side, attr in (("heating", "fan_coil_heating"), ("cooling", "fan_coil_cooling")):
+                if attr in last_state.attributes:
+                    self._fan_coil_sides.setdefault(side, bool(last_state.attributes[attr]))
             if (
                 "fan_mode" in last_state.attributes
                 or bool(last_state.attributes.get("supported_features", 0) & ClimateEntityFeature.FAN_MODE)
@@ -1622,9 +1648,11 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # is NACKed after 2.1 s. Do not ask blindly while the answer is pending.
             return not self._fan_coil_sides_pending()
         if self._season is None:
-            return True
+            return not self._fan_coil_sides_pending()
         side = "heating" if self._season == SEASON_HEATING else "cooling"
-        return self._fan_coil_sides.get(side, False)
+        if side not in self._fan_coil_sides:
+            return not self._fan_coil_sides_pending()
+        return self._fan_coil_sides[side]
 
     @staticmethod
     def _season_side(season: str | None) -> str | None:
@@ -1650,7 +1678,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         side = self._season_side(self._season)
         if side is None or self._season_side(previous) in (None, side):
             return
-        if self._fan and self._fan_coil_sides.get(side, False):
+        if self._fan and self._fan_coil_sides and self._season_has_fan_coil():
             self._request_zone_dimension(11)
 
     def _ask_fan_coil_sides(self) -> None:
@@ -1661,7 +1689,13 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         valve's season too and NACKed after 2.1 s on the F461. Every gateway firmware of the
         oracle forwards ``*#4*Z*19##`` (own-firmware-oracle thermo-zone-requests).
         """
-        if self._central or self._fan_coil_sides or self._fan_coil_sides_pending():
+        has_both_sides = "cooling" in self._fan_coil_sides and "heating" in self._fan_coil_sides
+        if (
+            self._central
+            or has_both_sides
+            or self._fan_coil_sides_probed
+            or self._fan_coil_sides_pending()
+        ):
             return  # not asked for a central unit, as on add and on restore
         if self._request_zone_dimension(19):
             self._fan_coil_sides_asked_at = time.monotonic()
@@ -3115,6 +3149,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         prev_mode = self._attr_hvac_mode
         if master_mode == HVACMode.OFF:
             self._attr_hvac_mode = HVACMode.OFF
+            self._seasonless_auto = False
             self._attr_hvac_action = HVACAction.OFF
             self._zone_operation = None
             self._mark_actuators_off()
@@ -3122,6 +3157,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         elif master_mode in (HVACMode.HEAT, HVACMode.COOL):
             if self._attr_hvac_mode != HVACMode.OFF:
                 self._attr_hvac_mode = master_mode
+                self._seasonless_auto = False
         self._hydrate_nominal_from_local(prev_mode)
         self._refresh_hvac_modes()
         if self.hass is not None:
@@ -3944,19 +3980,25 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         state = getattr(message, "zone_state", None)
         if state in _ZONE_STATES_OFF or state in _ZONE_STATES_ON:
             # Dimension 7 state 2 is antifreeze in the heating context and thermal protection
-            # in the cooling one (the zone also reports *4*102*Z## / *4*202*Z##); the other
-            # states carry no operation of the central unit's vocabulary.
-            self._zone_operation = (
-                {"heating": "antifreeze", "cooling": "thermal_protection"}.get(
-                    getattr(message, "zone_context", None) or ""
-                )
-                if state == "protection"
-                else None
-            )
+            # in the cooling one (the zone also reports *4*102*Z## / *4*202*Z##); comfort, eco,
+            # and manual align with *4*107/108/207/208/110/210*Z## so whichever frame arrives
+            # last preserves the same zone_operation.
+            if state == "protection":
+                self._zone_operation = {
+                    "heating": "antifreeze",
+                    "cooling": "thermal_protection",
+                    "generic": "protection",
+                    "automatic": "protection",
+                }.get(getattr(message, "zone_context", None) or "")
+            elif state in ("comfort", "eco", "manual"):
+                self._zone_operation = state
+            else:
+                self._zone_operation = None
         if state in _ZONE_STATES_OFF:
             self._restore_nominal_before_protection()
             self._attr_hvac_mode = HVACMode.OFF
             self._hvac_mode_restored = False
+            self._seasonless_auto = False
             self._attr_hvac_action = HVACAction.OFF
             self._mark_actuators_off()
             self._holiday_days = None
@@ -3966,7 +4008,8 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if state not in _ZONE_STATES_ON:
             return
         prev_mode = self._attr_hvac_mode
-        mode = _ZONE_CONTEXT_MODES.get(getattr(message, "zone_context", None) or "")
+        zone_context = getattr(message, "zone_context", None) or ""
+        mode = _ZONE_CONTEXT_MODES.get(zone_context)
         if (
             mode == HVACMode.COOL
             and not self._cooling_configured
@@ -3978,8 +4021,34 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
         if mode is not None and mode in self._attr_hvac_modes:
             self._attr_hvac_mode = mode
             self._hvac_mode_restored = False  # the zone reported the mode it runs in
+            self._seasonless_auto = False
             if self._attr_hvac_action == HVACAction.OFF:
                 self._attr_hvac_action = HVACAction.IDLE
+        elif self._attr_hvac_mode in (None, HVACMode.OFF) and (
+            mode == HVACMode.AUTO
+            or (zone_context == "generic" and state in ("comfort", "eco", "manual"))
+        ):
+            season_mode = (
+                HVACMode.HEAT
+                if self._season == SEASON_HEATING
+                else HVACMode.COOL
+                if self._season in (SEASON_CONDITIONING, "cooling")
+                else None
+            )
+            fallback = next(
+                (
+                    m
+                    for m in (season_mode, HVACMode.HEAT, HVACMode.COOL)
+                    if m is not None and m in self._attr_hvac_modes
+                ),
+                None,
+            )
+            if fallback is not None:
+                self._attr_hvac_mode = fallback
+                self._hvac_mode_restored = False
+                self._seasonless_auto = False
+                if self._attr_hvac_action == HVACAction.OFF:
+                    self._attr_hvac_action = HVACAction.IDLE
         temperature = message.set_temperature if state == "setpoint" else None
         if temperature is not None:
             self._target_temperature = temperature
@@ -4756,8 +4825,13 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             # same mode (live F455 + F461, 2026-11-08), and a stale restored AUTO is replaced.
             # An AUTO the zone itself reported (a MyHomeServer1 schedule, Dimension 7 context
             # automatic) is not cancelled: the season frame that follows it is its season.
-            standalone_mode = self._standalone and not (
-                self._attr_hvac_mode == HVACMode.AUTO and not self._hvac_mode_restored
+            # However, a standalone zone leaving protection, a preset (comfort/eco), or a
+            # seasonless 4xx/5xx fallback AUTO must return to its season mode rather than stay
+            # trapped in AUTO (while a real DIM 7 automatic mode such as *#4*Z*7*3*0## stays AUTO).
+            standalone_mode = self._standalone and (
+                not (self._attr_hvac_mode == HVACMode.AUTO and not self._hvac_mode_restored)
+                or self._seasonless_auto
+                or self._zone_operation in (*_ZONE_PROTECTION_OPERATIONS, "comfort", "eco")
             )
             previous_season = self._season
             self._season = message.season
@@ -4769,11 +4843,28 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 self._note_central_reported_state(message, None)
             self._note_own_season(message)
             self._refresh_hvac_modes()
-            if self._zone_operation in _ZONE_PROTECTION_OPERATIONS:
-                # A zone in protection reports 102 / 202 in place of its season frame (live
-                # F461 reply to *#4*2## in antifreeze: 0, 12, *4*102*2##, 14, 13): the season
-                # frame says it is running again.
+            if (
+                self._zone_operation in (*_ZONE_PROTECTION_OPERATIONS, "comfort", "eco")
+                or (
+                    self._standalone
+                    and self._zone_operation == "manual"
+                    and (
+                        self._attr_hvac_mode != HVACMode.AUTO
+                        or self._seasonless_auto
+                        or self._hvac_mode_restored
+                    )
+                )
+            ):
+                # A zone in protection (102 / 202) or a preset (107 / 108 / 207 / 208) reports
+                # that mode frame in place of its season frame in D2 04 12 (bt_termo 0x5390;
+                # live F461 captures f461_live_2026-10-24 and f461_presets_live_2026-10-24):
+                # the season frame (*4*1*Z## / *4*0*Z##) returning says it left protection or
+                # the preset and is running a normal setpoint again. On a standalone zone,
+                # returning from seasonless 410 / 510 (manual) via *4*1*Z## / *4*0*Z## also
+                # leaves manual operation (central-managed zones keep "manual" because
+                # *4*110*#Z## is followed by *4*1*Z##, and DIM 7 *#4*Z*7*3*0## keeps AUTO).
                 self._zone_operation = None
+            self._seasonless_auto = False
             season_mode = HVACMode.HEAT if message.season == SEASON_HEATING else HVACMode.COOL
             prev_mode = self._attr_hvac_mode
             # A HEAT / COOL that Home Assistant restored, not one the zone reported since the
@@ -4843,7 +4934,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     if (
                         message.mode == CLIMATE_MODE_OFF
                         or plain_what in _CENTRAL_PROTECTION
-                        or plain_what == _CENTRAL_GENERIC_PROTECTION
+                        or plain_what in _CENTRAL_GENERIC_PROTECTION
                     ):
                         self._clear_master_dim12_pairing()
                     return
@@ -4873,7 +4964,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             self._daily_holiday = raw_what.split("#", 1)[0] in ("115", "215", "315")
             self._scenario = getattr(message, "scenario", None)
             protection = _CENTRAL_PROTECTION.get(raw_what) if self._central else None
-            if self._central and raw_what == _CENTRAL_GENERIC_PROTECTION and self._season is not None:
+            if self._central and raw_what in _CENTRAL_GENERIC_PROTECTION and self._season is not None:
                 protection = _CENTRAL_PROTECTION["102" if self._season == SEASON_HEATING else "202"]
             if self._central:
                 self._central_operation = protection[0] if protection is not None else None
@@ -4908,14 +4999,46 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._attr_hvac_mode = protection[1]
                 if self._attr_hvac_action == HVACAction.OFF:
                     self._attr_hvac_action = HVACAction.IDLE
-            elif message.mode == CLIMATE_MODE_AUTO and HVACMode.AUTO in self._attr_hvac_modes:
+            elif message.mode == CLIMATE_MODE_AUTO:
                 LOGGER.debug(
                     "%s %s",
                     self._gateway_handler.log_id,
                     message.human_readable_log,
                 )
-                self._attr_hvac_mode = HVACMode.AUTO
-                if self._attr_hvac_action == HVACAction.OFF:
+                # Seasonless 4xx/5xx preset/manual frames (407/408/410/507/508/510) decode as
+                # CLIMATE_MODE_AUTO with season=None. On a standalone zone that already knows
+                # its season, keep showing its real heating/cooling mode; and when AUTO is not
+                # advertised (standalone zone on a plant with a central unit), fall back to the
+                # known season or an advertised active mode so the zone never stays stuck OFF.
+                season_fallback: HVACMode | None = None
+                if self._season == SEASON_HEATING and HVACMode.HEAT in self._attr_hvac_modes:
+                    season_fallback = HVACMode.HEAT
+                elif (
+                    self._season in (SEASON_CONDITIONING, "cooling")
+                    and HVACMode.COOL in self._attr_hvac_modes
+                ):
+                    season_fallback = HVACMode.COOL
+                self._seasonless_auto = False
+                if (
+                    self._standalone
+                    and raw_what in ("407", "408", "410", "507", "508", "510")
+                    and season_fallback is not None
+                ):
+                    self._attr_hvac_mode = season_fallback
+                elif HVACMode.AUTO in self._attr_hvac_modes:
+                    self._attr_hvac_mode = HVACMode.AUTO
+                    if raw_what in ("407", "408", "410", "507", "508", "510"):
+                        self._seasonless_auto = True
+                elif season_fallback is not None:
+                    self._attr_hvac_mode = season_fallback
+                elif HVACMode.HEAT in self._attr_hvac_modes:
+                    self._attr_hvac_mode = HVACMode.HEAT
+                elif HVACMode.COOL in self._attr_hvac_modes:
+                    self._attr_hvac_mode = HVACMode.COOL
+                if (
+                    self._attr_hvac_mode != HVACMode.OFF
+                    and self._attr_hvac_action == HVACAction.OFF
+                ):
                     self._attr_hvac_action = HVACAction.IDLE
             elif message.mode == CLIMATE_MODE_COOL and HVACMode.COOL in self._attr_hvac_modes:
                 LOGGER.debug(
@@ -4923,6 +5046,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._gateway_handler.log_id,
                     message.human_readable_log,
                 )
+                self._seasonless_auto = False
                 self._attr_hvac_mode = HVACMode.COOL
                 if self._attr_hvac_action == HVACAction.OFF:
                     self._attr_hvac_action = HVACAction.IDLE
@@ -4932,6 +5056,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._gateway_handler.log_id,
                     message.human_readable_log,
                 )
+                self._seasonless_auto = False
                 self._attr_hvac_mode = HVACMode.HEAT
                 if self._attr_hvac_action == HVACAction.OFF:
                     self._attr_hvac_action = HVACAction.IDLE
@@ -4941,6 +5066,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._gateway_handler.log_id,
                     message.human_readable_log,
                 )
+                self._seasonless_auto = False
                 self._restore_nominal_before_protection()
                 if self._is_four_zone_central:
                     self._apply_pending_master_dim12_for_idle()
@@ -5017,6 +5143,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._gateway_handler.log_id,
                     message.human_readable_log,
                 )
+                self._seasonless_auto = False
                 self._attr_hvac_mode = HVACMode.AUTO
                 if self._attr_hvac_action == HVACAction.OFF:
                     self._attr_hvac_action = HVACAction.IDLE
@@ -5026,6 +5153,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._gateway_handler.log_id,
                     message.human_readable_log,
                 )
+                self._seasonless_auto = False
                 self._attr_hvac_mode = HVACMode.COOL
                 if self._attr_hvac_action == HVACAction.OFF:
                     self._attr_hvac_action = HVACAction.IDLE
@@ -5035,6 +5163,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._gateway_handler.log_id,
                     message.human_readable_log,
                 )
+                self._seasonless_auto = False
                 self._attr_hvac_mode = HVACMode.HEAT
                 if self._attr_hvac_action == HVACAction.OFF:
                     self._attr_hvac_action = HVACAction.IDLE
@@ -5044,6 +5173,7 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     self._gateway_handler.log_id,
                     message.human_readable_log,
                 )
+                self._seasonless_auto = False
                 self._restore_nominal_before_protection()
                 self._attr_hvac_mode = HVACMode.OFF
                 self._attr_hvac_action = HVACAction.OFF
@@ -5088,8 +5218,10 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
             )
             dimension = getattr(message, "dimension", None)
             sides_resolved = False
-            cooling_active = False
-            heating_active = False
+            dim19_both_sides_populated = False
+            cooling_active: bool = False
+            heating_active: bool = False
+            is_active: bool | None = False
             dim20_level: int | None = None
             if dimension == 19:
                 dim19 = thermo_dim19_status(message)
@@ -5097,13 +5229,15 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     return
                 self._note_conditioning_side(message)
                 (
-                    cooling_active,
-                    heating_active,
+                    raw_cooling_active,
+                    raw_heating_active,
                     is_active,
                     cooling_fan_on,
                     heating_fan_on,
                     msg_fan_speed,
                 ) = dim19
+                cooling_active = bool(raw_cooling_active)
+                heating_active = bool(raw_heating_active)
                 # A fan-coil code on either side shows a fan coil: ``*#4*where*19*CV*HV##``, CV the
                 # conditioning valve and HV the heating valve, both from the same value table
                 # (WHO 4 p. 21, "CV, HV = 5 → OFF Fan Coil"). The OFF codes counted on the heating side
@@ -5116,19 +5250,50 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                     msg_fan_on = False
                 else:
                     msg_fan_on = None
-                sides_resolved = not self._fan_coil_sides
-                self._fan_coil_sides = {
-                    "cooling": isinstance(cooling_fan_on, bool),
-                    "heating": isinstance(heating_fan_on, bool),
-                }
-                self._fan_coil_sides_asked_at = None
-                self._fan_coil_sides_held = False
-                if self._has_no_fan_coil_sides() and not self._fan_configured:
-                    # Pure-valve actuator channels can report value 5 on dimension 20 (issue #466 H/L4684
-                    # zones 11..88) while dimension 19 carries 0..4 on both sides once _ask_fan_coil_sides()
-                    # (*#4*Z*19##) is answered (myhomeserver1_live_2026-10-25 zones 35..70, issue_674 F455):
-                    # retract the tentative fan_mode once dimension 19 proves neither side is a fan coil.
-                    self._disable_fan_mode()
+                had_both_sides = (
+                    "cooling" in self._fan_coil_sides and "heating" in self._fan_coil_sides
+                )
+                dim19_both_sides_populated = (
+                    raw_cooling_active is not None and raw_heating_active is not None
+                )
+                if dim19_both_sides_populated:
+                    sides_resolved = not had_both_sides
+                    self._fan_coil_sides = {
+                        "cooling": isinstance(cooling_fan_on, bool),
+                        "heating": isinstance(heating_fan_on, bool),
+                    }
+                    self._fan_coil_sides_asked_at = None
+                    self._fan_coil_sides_held = False
+                    if self._has_no_fan_coil_sides() and not self._fan_configured:
+                        # Pure-valve actuator channels can report value 5 on dimension 20 (issue #466 H/L4684
+                        # zones 11..88) while dimension 19 carries 0..4 on both sides once _ask_fan_coil_sides()
+                        # (*#4*Z*19##) is answered (myhomeserver1_live_2026-10-25 zones 35..70, issue_674 F455):
+                        # retract the tentative fan_mode once dimension 19 proves neither side is a fan coil.
+                        self._disable_fan_mode()
+                else:
+                    # Single-side empty field (bt_termo D2 04 13 unmapped SCS byte):
+                    # record only the populated side and never retract fan_mode until
+                    # both sides are known.
+                    prev_had_fan = any(self._fan_coil_sides.values())
+                    updated_sides = dict(self._fan_coil_sides)
+                    if raw_cooling_active is not None:
+                        updated_sides["cooling"] = isinstance(cooling_fan_on, bool)
+                    if raw_heating_active is not None:
+                        updated_sides["heating"] = isinstance(heating_fan_on, bool)
+                    self._fan_coil_sides = updated_sides
+                    now_has_both = (
+                        "cooling" in self._fan_coil_sides and "heating" in self._fan_coil_sides
+                    )
+                    now_has_fan = any(self._fan_coil_sides.values())
+                    sides_resolved = (not had_both_sides and now_has_both) or (
+                        not prev_had_fan and now_has_fan
+                    )
+                    if self._fan_coil_sides_asked_at is not None:
+                        self._fan_coil_sides_probed = True
+                    self._fan_coil_sides_asked_at = None
+                    self._fan_coil_sides_held = False
+                    if now_has_both and self._has_no_fan_coil_sides() and not self._fan_configured:
+                        self._disable_fan_mode()
             elif dimension == 20:
                 dim20 = thermo_dim20_status(message)
                 if dim20 is None:
@@ -5164,125 +5329,129 @@ class MyHOMEClimate(MyHOMEEntity, ClimateEntity):
                 # configured speed now, or ``fan_mode`` keeps the synthetic ``auto`` (dimension 20
                 # value 5, fan off, carries no speed).
                 self._request_zone_dimension(11)
-
-            # An "off" of an actuator that was already known to be off tells nothing new. While
-            # dimension 19 leads with an active side, the actuator that is running is one that
-            # has not reported: the repeated "off" must not make the zone idle. Physical F455
-            # plant, 2026-11-17, zone 4 with its fan coil on actuator 2: another client read
-            # actuator 1, 23 s after `*#4*4*19*8*0##`, and the answer `*#4*4#1*20*0##` set the
-            # zone to idle for 3 s while the fan coil ran (`tests/fixtures/traces/issue_932`).
-            # Anything else an actuator says takes the lead as before.
-            dim20_target = (
-                thermo_dim20_actuator_target(message) if dimension == 20 else None
-            )
-            repeated_off = (
-                dimension == 20
-                and not is_active
-                and self._active_source == "zone"
-                and self._zone_active is True
-                and self._actuator_states.get(thermo_event_actuator(message)) is False
-            )
-            if repeated_off:
-                if dim20_target is not None:
-                    target_actuator = dim20_target[1]
-                    if dim20_level is not None:
-                        self._actuator_levels[target_actuator] = dim20_level
-                    elif target_actuator in self._actuator_levels:
-                        self._actuator_levels[target_actuator] = 0
-            elif dimension == 20:
-                actuator_id = thermo_event_actuator(message)
-                self._actuator_states[actuator_id] = is_active
-                self._active_source = "actuators"
-                self._actuators_assumed_off -= {actuator_id, "zone"}  # it has said so itself
-                if dim20_target is not None:
-                    target_actuator = dim20_target[1]
-                    if dim20_level is not None:
-                        self._actuator_levels[target_actuator] = dim20_level
-                    elif target_actuator in self._actuator_levels:
-                        if is_active:
-                            self._actuator_levels.pop(target_actuator, None)
-                        else:
+            # Single-side empty Dimension 19 where the populated side is off (is_active is None):
+            # skip only the actuator / hvac_action mutations while still falling through to
+            # _refresh_hvac_modes() and _publish_state() so _fan_coil_sides / _fan / _cooling
+            # updates reach Home Assistant immediately.
+            if is_active is not None:
+                # An "off" of an actuator that was already known to be off tells nothing new. While
+                # dimension 19 leads with an active side, the actuator that is running is one that
+                # has not reported: the repeated "off" must not make the zone idle. Physical F455
+                # plant, 2026-11-17, zone 4 with its fan coil on actuator 2: another client read
+                # actuator 1, 23 s after `*#4*4*19*8*0##`, and the answer `*#4*4#1*20*0##` set the
+                # zone to idle for 3 s while the fan coil ran (`tests/fixtures/traces/issue_932`).
+                # Anything else an actuator says takes the lead as before.
+                dim20_target = (
+                    thermo_dim20_actuator_target(message) if dimension == 20 else None
+                )
+                repeated_off = (
+                    dimension == 20
+                    and not is_active
+                    and self._active_source == "zone"
+                    and self._zone_active is True
+                    and self._actuator_states.get(thermo_event_actuator(message)) is False
+                )
+                if repeated_off:
+                    if dim20_target is not None:
+                        target_actuator = dim20_target[1]
+                        if dim20_level is not None:
+                            self._actuator_levels[target_actuator] = dim20_level
+                        elif target_actuator in self._actuator_levels:
                             self._actuator_levels[target_actuator] = 0
-                if is_fan:
-                    self._actuator_fan_speeds.pop(actuator_id, None)
-                    self._actuator_fan_speeds[actuator_id] = (
-                        self._decode_running_fan_speed(msg_fan_on, msg_fan_speed)
-                    )
-                    self._sync_actuator_running_fan_speed()
-                elif actuator_id in self._actuator_fan_speeds:
-                    self._actuator_fan_speeds[actuator_id] = (
-                        None if is_active else "off"
-                    )
-                    self._sync_actuator_running_fan_speed()
-                elif not self._any_actuator_active() and self._running_fan_speed in (
-                    "low",
-                    "medium",
-                    "high",
-                ):
-                    self._running_fan_speed = "off"
-            else:
-                self._zone_active = is_active
-                self._active_source = "zone"
-                self._actuators_assumed_off.clear()  # the zone's valve status speaks for both sides
-                if not self._zone_active:
-                    # Neither side is active: every actuator of the zone is off.
-                    self._actuator_states = dict.fromkeys(self._actuator_states, False)
-                    self._actuator_levels = dict.fromkeys(self._actuator_levels, 0)
-                    self._actuator_fan_speeds = dict.fromkeys(
-                        self._actuator_fan_speeds, "off"
-                    )
-                if is_fan:
-                    self._running_fan_speed = self._decode_running_fan_speed(
-                        msg_fan_on, msg_fan_speed
-                    )
-                    # What the fan runs at now comes from this report, no longer from dimension 11.
-                    self._fan_off_reported = False
-                    if self._running_fan_speed == "off":
-                        self._actuator_fan_speeds = dict.fromkeys(
-                            self._actuator_fan_speeds, "off"
+                elif dimension == 20:
+                    actuator_id = thermo_event_actuator(message)
+                    self._actuator_states[actuator_id] = is_active
+                    self._active_source = "actuators"
+                    self._actuators_assumed_off -= {actuator_id, "zone"}  # it has said so itself
+                    if dim20_target is not None:
+                        target_actuator = dim20_target[1]
+                        if dim20_level is not None:
+                            self._actuator_levels[target_actuator] = dim20_level
+                        elif target_actuator in self._actuator_levels:
+                            if is_active:
+                                self._actuator_levels.pop(target_actuator, None)
+                            else:
+                                self._actuator_levels[target_actuator] = 0
+                    if is_fan:
+                        self._actuator_fan_speeds.pop(actuator_id, None)
+                        self._actuator_fan_speeds[actuator_id] = (
+                            self._decode_running_fan_speed(msg_fan_on, msg_fan_speed)
                         )
-                elif self._fan:
-                    dim_vals = (
-                        getattr(message, "dimension_value", None)
-                        if dimension == 19
-                        else None
-                    )
-                    modulating = isinstance(dim_vals, (list, tuple)) and any(
-                        str(v).isascii() and str(v).isdigit() and 101 <= int(str(v)) <= 200
-                        for v in dim_vals[:2]
-                    )
-                    if modulating:
-                        self._actuator_fan_speeds = dict.fromkeys(
-                            self._actuator_fan_speeds, None
+                        self._sync_actuator_running_fan_speed()
+                    elif actuator_id in self._actuator_fan_speeds:
+                        self._actuator_fan_speeds[actuator_id] = (
+                            None if is_active else "off"
                         )
-                        self._running_fan_speed = None
-                    elif (dimension == 19 or not self._zone_active) and (
-                        self._actuator_fan_speeds
-                        or self._running_fan_speed in ("low", "medium", "high")
+                        self._sync_actuator_running_fan_speed()
+                    elif not self._any_actuator_active() and self._running_fan_speed in (
+                        "low",
+                        "medium",
+                        "high",
                     ):
+                        self._running_fan_speed = "off"
+                else:
+                    self._zone_active = is_active
+                    self._active_source = "zone"
+                    self._actuators_assumed_off.clear()  # the zone's valve status speaks for both sides
+                    if not self._zone_active:
+                        # Neither side is active: every actuator of the zone is off.
+                        self._actuator_states = dict.fromkeys(self._actuator_states, False)
+                        self._actuator_levels = dict.fromkeys(self._actuator_levels, 0)
                         self._actuator_fan_speeds = dict.fromkeys(
                             self._actuator_fan_speeds, "off"
                         )
-                        self._running_fan_speed = "off"
-            any_active = self._any_actuator_active()
+                    if is_fan:
+                        self._running_fan_speed = self._decode_running_fan_speed(
+                            msg_fan_on, msg_fan_speed
+                        )
+                        # What the fan runs at now comes from this report, no longer from dimension 11.
+                        self._fan_off_reported = False
+                        if self._running_fan_speed == "off":
+                            self._actuator_fan_speeds = dict.fromkeys(
+                                self._actuator_fan_speeds, "off"
+                            )
+                    elif self._fan:
+                        dim_vals = (
+                            getattr(message, "dimension_value", None)
+                            if dimension == 19
+                            else None
+                        )
+                        modulating = isinstance(dim_vals, (list, tuple)) and any(
+                            str(v).isascii() and str(v).isdigit() and 101 <= int(str(v)) <= 200
+                            for v in dim_vals[:2]
+                        )
+                        if modulating:
+                            self._actuator_fan_speeds = dict.fromkeys(
+                                self._actuator_fan_speeds, None
+                            )
+                            self._running_fan_speed = None
+                        elif (dim19_both_sides_populated or not self._zone_active) and (
+                            self._actuator_fan_speeds
+                            or self._running_fan_speed in ("low", "medium", "high")
+                        ):
+                            self._actuator_fan_speeds = dict.fromkeys(
+                                self._actuator_fan_speeds, "off"
+                            )
+                            self._running_fan_speed = "off"
+                any_active = self._any_actuator_active()
 
-            if not any_active:
-                self._active_sides = None
-            elif is_active:
-                # The sides this report named, for the frames that follow it
-                # (``_settle_action_of_active_actuators``). An "off" of one actuator while
-                # another is on leaves what the active one said.
-                self._active_sides = (heating_active, cooling_active)
-            if repeated_off:
-                pass  # hvac_action stays what dimension 19 made it
-            elif any_active:
-                action = self._action_of_active_actuators(heating_active, cooling_active)
-                if action is not None:
-                    self._attr_hvac_action = action
-            elif self._attr_hvac_mode == HVACMode.OFF:
-                self._attr_hvac_action = HVACAction.OFF
-            else:
-                self._attr_hvac_action = HVACAction.IDLE
+                if not any_active:
+                    self._active_sides = None
+                elif is_active:
+                    # The sides this report named, for the frames that follow it
+                    # (``_settle_action_of_active_actuators``). An "off" of one actuator while
+                    # another is on leaves what the active one said.
+                    self._active_sides = (heating_active, cooling_active)
+                if repeated_off:
+                    pass  # hvac_action stays what dimension 19 made it
+                elif any_active:
+                    action = self._action_of_active_actuators(heating_active, cooling_active)
+                    if action is not None:
+                        self._attr_hvac_action = action
+                elif self._attr_hvac_mode == HVACMode.OFF:
+                    self._attr_hvac_action = HVACAction.OFF
+                else:
+                    self._attr_hvac_action = HVACAction.IDLE
         elif message.message_type == MESSAGE_TYPE_FAN_SPEED or (
             hasattr(message, "fan_speed") and message.fan_speed is not None
         ):

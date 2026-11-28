@@ -241,7 +241,7 @@ async def test_the_gateway_model_is_read_when_the_sweep_is_over_not_when_the_zon
         asked.append(where)
         return False
 
-    handler, _zones = await _start_plant(hass, read, model="MH200N")
+    handler, _zones = await _start_plant(hass, read, model="MH200")
     assert handler.asks_every_actuator_at_start is False
     with patch.object(type(handler), "asks_every_actuator_at_start", new=True):  # corrected to an F455, say
         await _receive(hass, handler, ["*#4*7#1*20*0##"])  # a valve frame of the two-misses test
@@ -382,7 +382,7 @@ async def test_no_sweep_is_not_a_fresh_sweep_on_a_host_that_has_just_booted(
     assert _drain(handler) == ["*#4*0#0*20##"]
 
 
-@pytest.mark.parametrize("model", ["MH200N", "F453", "F453AV", "H4890", "H4684", "MH200", "MH201", "MH202"])
+@pytest.mark.parametrize("model", ["H4890", "H4684", "MH200", "MH201", "MH202"])
 async def test_valve_only_zones_are_read_only_where_the_sweep_asks_every_actuator(hass: HomeAssistant, model: str) -> None:
     """Where the general request is forwarded every thermostat has answered it; elsewhere nothing was measured."""
     asked: list[str] = []
